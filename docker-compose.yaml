@@ -1,7 +1,4 @@
-# ✅ Tidak perlu "version:" di Compose v2
-
 services:
-  # 🐘 PHP-FPM (Laravel App)
   app:
     build:
       context: .
@@ -11,21 +8,21 @@ services:
     working_dir: /var/www/html
     volumes:
       - ./:/var/www/html
-    environment:
-      - VIRTUAL_HOST=bill.amanisp.net.id
-      - LETSENCRYPT_HOST=bill.amanisp.net.id
-      - LETSENCRYPT_EMAIL=admin@amanisp.net.id
+    expose:
+      - "9000"
     networks:
       - laravel
-      - proxy
 
-  # 🌐 Nginx untuk Laravel
   nginx:
     image: nginx:alpine
     container_name: laravel_nginx
     restart: unless-stopped
     expose:
       - "80"
+    environment:
+      - VIRTUAL_HOST=bill.amanisp.net.id
+      - LETSENCRYPT_HOST=bill.amanisp.net.id
+      - LETSENCRYPT_EMAIL=admin@amanisp.net.id
     volumes:
       - ./:/var/www/html
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
@@ -35,7 +32,6 @@ services:
       - laravel
       - proxy
 
-  # 🔥 Redis Cache
   redis:
     image: redis:alpine
     container_name: laravel_redis
@@ -45,7 +41,6 @@ services:
     networks:
       - laravel
 
-  # ⏰ Laravel Scheduler (cron)
   scheduler:
     build:
       context: .
@@ -59,7 +54,6 @@ services:
     networks:
       - laravel
 
-  # ⚙️ Laravel Horizon (Queue Worker)
   horizon:
     build:
       context: .
@@ -72,7 +66,6 @@ services:
     networks:
       - laravel
 
-  # 🌐 Reverse Proxy (Nginx Proxy)
   nginx-proxy:
     image: jwilder/nginx-proxy:alpine
     container_name: nginx-proxy
@@ -80,8 +73,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    labels:
-      - com.github.nginx-proxy.nginx
     volumes:
       - /var/run/docker.sock:/tmp/docker.sock:ro
       - ./certs:/etc/nginx/certs:rw
@@ -90,7 +81,6 @@ services:
     networks:
       - proxy
 
-  # 🔐 Let's Encrypt Companion (Auto SSL)
   nginx-proxy-acme:
     image: nginxproxy/acme-companion
     container_name: nginx-proxy-acme
