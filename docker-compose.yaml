@@ -1,106 +1,137 @@
-version: "3.8"
+version: '3.8'
 
 services:
+  # ======================
+  # 1. Laravel App (PHP)
+  # ======================
   app:
+    container_name: laravel_app
     build:
       context: .
-      dockerfile: docker/php/Dockerfile
-    container_name: laravel_app
-    restart: unless-stopped
-    working_dir: /var/www/html
+      dockerfile: Dockerfile
     volumes:
-      - ./:/var/www/html
+      - .:/var/www/html
     environment:
-      - VIRTUAL_HOST=bill.amanisp.net.id
-      - LETSENCRYPT_HOST=bill.amanisp.net.id
-      - LETSENCRYPT_EMAIL=admin@amanisp.net.id
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=https://bill.amanisp.net.id
     networks:
       - laravel
-      - proxy
-
-  nginx:
-    image: nginx:alpine
-    container_name: laravel_nginx
-    restart: unless-stopped
     expose:
-      - "80"
-    volumes:
-      - ./:/var/www/html
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
-    depends_on:
-      - app
-    networks:
-      - laravel
-      - proxy
+      - "9000"
 
+  # ======================
+  # 2. Redis
+  # ======================
   redis:
     image: redis:alpine
     container_name: laravel_redis
-    restart: unless-stopped
     ports:
       - "6379:6379"
     networks:
       - laravel
 
-  scheduler:
-    build:
-      context: .
-      dockerfile: docker/php/Dockerfile
-    container_name: laravel_scheduler
-    restart: unless-stopped
-    volumes:
-      - ./:/var/www/html
-    command: >
-      sh -c "echo '0 0 * * * php /var/www/html/artisan schedule:run >> /var/www/html/storage/logs/scheduler.log 2>&1' | crontab - && cron -f"
-    networks:
-      - laravel
-
+  # ======================
+  # 3. Laravel Horizon
+  # ======================
   horizon:
+    container_name: laravel_horizon
     build:
       context: .
-      dockerfile: docker/php/Dockerfile
-    container_name: laravel_horizon
-    restart: unless-stopped
+      dockerfile: Dockerfile
+    command: php artisan horizon
     volumes:
-      - ./:/var/www/html
-    command: supervisord -c /etc/supervisor/supervisord.conf
+      - .:/var/www/html
+    depends_on:
+      - app
+      - redis
     networks:
       - laravel
 
-  # 🌐 Reverse Proxy (Nginx Proxy + Let's Encrypt)
+  # ======================
+  # 4. Laravel Scheduler
+  # ======================
+  scheduler:
+    container_name: laravel_scheduler
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      sh -c "while [ true ]; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - app
+      - redis
+    networks:
+      - laravel
+
+  # ======================
+  # 5. Nginx untuk Laravel App
+  # ======================
+  nginx:
+    image: nginx:alpine
+    container_name: laravel_nginx
+    expose:
+      - "80"
+    volumes:
+      - .:/var/www/html
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    environment:
+      - VIRTUAL_HOST=bill.amanisp.net.id
+      - LETSENCRYPT_HOST=bill.amanisp.net.id
+      - LETSENCRYPT_EMAIL=admin@amanisp.net.id
+    depends_on:
+      - app
+    networks:
+      - laravel
+      - proxy-tier
+
+  # ======================
+  # 6. Nginx Proxy (Reverse Proxy + SSL Gateway)
+  # ======================
   nginx-proxy:
     image: jwilder/nginx-proxy:alpine
     container_name: nginx-proxy
-    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/tmp/docker.sock:ro
-      - ./certs:/etc/nginx/certs
+      - ./certs:/etc/nginx/certs:rw
       - ./vhost.d:/etc/nginx/vhost.d
       - ./html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    labels:
+      - "com.github.nginx-proxy.nginx"
     networks:
-      - proxy
+      - proxy-tier
 
-  letsencrypt:
+  # ======================
+  # 7. Let's Encrypt Companion (Auto SSL)
+  # ======================
+  nginx-proxy-acme:
     image: nginxproxy/acme-companion
     container_name: nginx-proxy-acme
-    restart: unless-stopped
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy
+      - DEFAULT_EMAIL=admin@amanisp.net.id
     depends_on:
       - nginx-proxy
-    environment:
-      - DEFAULT_EMAIL=admin@amanisp.net.id
+    volumes_from:
+      - nginx-proxy
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./certs:/etc/nginx/certs
+      - ./certs:/etc/nginx/certs:rw
       - ./vhost.d:/etc/nginx/vhost.d
       - ./html:/usr/share/nginx/html
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - proxy
+      - proxy-tier
 
+# ======================
+# NETWORKS
+# ======================
 networks:
   laravel:
     driver: bridge
-  proxy:
+  proxy-tier:
     driver: bridge
