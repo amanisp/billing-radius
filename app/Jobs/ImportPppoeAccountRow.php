@@ -31,18 +31,20 @@ class ImportPppoeAccountRow implements ShouldQueue
     protected $rowNumber;
     protected $importBatchId;
     protected $username;
+    protected $mac;
     protected $userRole;
 
     public $timeout = 120;
     public $tries = 3;
 
-    public function __construct(array $row, $group_id, $rowNumber = null, $importBatchId = null, $username = null, $userRole = null)
+    public function __construct(array $row, $group_id, $rowNumber = null, $importBatchId = null, $username = null, $mac = null, $userRole = null)
     {
         $this->row = $row;
         $this->group_id = $group_id;
         $this->rowNumber = $rowNumber;
         $this->importBatchId = $importBatchId;
         $this->username = $username;
+        $this->mac = $mac;
         $this->userRole = $userRole;
     }
 
@@ -50,16 +52,27 @@ class ImportPppoeAccountRow implements ShouldQueue
     {
         $errors = [];
         $username = null;
+        $mac = null;
 
         try {
             // Validasi username (wajib ada)
-            if (!isset($this->row[0]) || trim((string)$this->row[0]) === '') {
-                $this->logImportError('Username is required', 'MISSING_USERNAME');
-                return;
+            if (isset($this->row[0]) || trim((string)$this->row[0]) === 'PPPoE') {
+                if (!isset($this->row[2]) || trim((string)$this->row[2]) === '') {
+
+                    $this->logImportError('Username is required', 'MISSING_USERNAME');
+                    return;
+                }
+            } else {
+                if (!isset($this->row[1]) || trim((string)$this->row[1]) === '') {
+
+                    $this->logImportError('Mac address is required', 'MISSING_MAC_ADDRESS');
+                    return;
+                }
             }
 
-            $username = trim((string)$this->row[0]);
-            $password = trim((string)($this->row[1] ?? ''));
+            $username = trim((string)$this->row[2]);
+            $mac = trim((string)$this->row[1]);
+            $password = trim((string)($this->row[3] ?? ''));
 
             // Validasi password
             if (empty($password)) {
@@ -67,7 +80,7 @@ class ImportPppoeAccountRow implements ShouldQueue
             }
 
             // Profile validation
-            $profileName = trim((string)($this->row[2] ?? ''));
+            $profileName = trim((string)($this->row[4] ?? ''));
             if (empty($profileName)) {
                 $this->logImportError('Profile name is required', 'MISSING_PROFILE', $username);
                 return;
@@ -88,7 +101,7 @@ class ImportPppoeAccountRow implements ShouldQueue
 
             // Area validation (optional but log if not found)
             $area = null;
-            if (!empty($this->row[3])) {
+            if (!empty($this->row[5])) {
                 $areaName = trim((string)$this->row[3]);
                 $area = Area::where('name', $areaName)
                     ->where('group_id', $this->group_id)
@@ -101,7 +114,7 @@ class ImportPppoeAccountRow implements ShouldQueue
 
             // ODP validation (optional but log if not found)
             $optical = null;
-            if (!empty($this->row[4])) {
+            if (!empty($this->row[6])) {
                 $odpName = trim((string)$this->row[4]);
                 $optical = OpticalDist::where('name', $odpName)
                     ->where('group_id', $this->group_id)
@@ -114,7 +127,7 @@ class ImportPppoeAccountRow implements ShouldQueue
 
             // NAS ID validation
             $nasIdFromExcel = null;
-            if (isset($this->row[5]) && !empty(trim((string)$this->row[5]))) {
+            if (isset($this->row[7]) && !empty(trim((string)$this->row[5]))) {
                 $nasIdFromExcel = (int)$this->row[5];
                 if ($nasIdFromExcel <= 0) {
                     $errors[] = "Invalid NAS ID: {$this->row[5]}";
@@ -123,11 +136,11 @@ class ImportPppoeAccountRow implements ShouldQueue
             }
 
             // Member data validation
-            $memberName = trim((string)($this->row[6] ?? ''));
-            $phoneNumber = isset($this->row[7]) ? trim((string)$this->row[7]) : '';
-            $email = isset($this->row[8]) ? trim((string)$this->row[8]) : '';
-            $idCard = isset($this->row[9]) ? trim((string)$this->row[9]) : '';
-            $address = isset($this->row[10]) ? trim((string)$this->row[10]) : '';
+            $memberName = trim((string)($this->row[8] ?? ''));
+            $phoneNumber = isset($this->row[9]) ? trim((string)$this->row[9]) : '';
+            $email = isset($this->row[10]) ? trim((string)$this->row[10]) : '';
+            $idCard = isset($this->row[11]) ? trim((string)$this->row[11]) : '';
+            $address = isset($this->row[12]) ? trim((string)$this->row[12]) : '';
 
             // Email validation if provided
             if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -141,21 +154,21 @@ class ImportPppoeAccountRow implements ShouldQueue
             }
 
             // Billing handling
-            $billingRaw = $this->row[11] ?? '';
+            $billingRaw = $this->row[13] ?? '';
             $hasBilling = $this->toBool($billingRaw);
 
             // Active date validation
             $activeDate = null;
-            if (isset($this->row[12])) {
+            if (isset($this->row[14])) {
                 try {
-                    if (is_numeric($this->row[12])) {
-                        $activeDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$this->row[12])
+                    if (is_numeric($this->row[14])) {
+                        $activeDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$this->row[14])
                             ->format('Y-m-d');
                     } else {
-                        $activeDate = date('Y-m-d', strtotime($this->row[12]));
+                        $activeDate = date('Y-m-d', strtotime($this->row[14]));
                     }
                 } catch (\Exception $e) {
-                    $errors[] = "Invalid active date format: {$this->row[12]}";
+                    $errors[] = "Invalid active date format: {$this->row[14]}";
                     $activeDate = now()->format('Y-m-d');
                 }
             } else {
@@ -204,7 +217,7 @@ class ImportPppoeAccountRow implements ShouldQueue
             // Billing data processing
             if ($hasBilling) {
                 // Payment type validation
-                $rawType = strtolower(trim((string)($this->row[13] ?? 'pascabayar')));
+                $rawType = strtolower(trim((string)($this->row[15] ?? 'pascabayar')));
                 $paymentType = match ($rawType) {
                     'prabayar' => 'prabayar',
                     'pascabayar' => 'pascabayar',
@@ -216,7 +229,7 @@ class ImportPppoeAccountRow implements ShouldQueue
                 }
 
                 // Billing period validation
-                $rawPeriod = strtolower(trim((string)($this->row[14] ?? 'renewal')));
+                $rawPeriod = strtolower(trim((string)($this->row[16] ?? 'renewal')));
                 $billingPeriod = in_array($rawPeriod, ['renewal', 'fixed'], true) ? $rawPeriod : 'renewal';
 
                 if (!in_array($rawPeriod, ['renewal', 'fixed', ''])) {
@@ -225,8 +238,8 @@ class ImportPppoeAccountRow implements ShouldQueue
 
                 // Financial data validation
                 $ppn = 0;
-                if (isset($this->row[15])) {
-                    $ppn = (float)$this->row[15];
+                if (isset($this->row[17])) {
+                    $ppn = (float)$this->row[17];
                     if ($ppn < 0 || $ppn > 100) {
                         $errors[] = "Invalid PPN value: {$ppn}, should be between 0-100";
                         $ppn = 0;
@@ -234,29 +247,18 @@ class ImportPppoeAccountRow implements ShouldQueue
                 }
 
                 $discount = 0;
-                if (isset($this->row[16])) {
-                    $discount = (float)$this->row[16];
+                if (isset($this->row[18])) {
+                    $discount = (float)$this->row[18];
                     if ($discount < 0) {
                         $errors[] = "Invalid discount value: {$discount}, cannot be negative";
                         $discount = 0;
                     }
                 }
 
-                $amountFromExcel = 0;
-                if (isset($this->row[17]) && !empty(trim((string)$this->row[17]))) {
-                    $amountFromExcel = (float)$this->row[17];
-                    if ($amountFromExcel < 0) {
-                        $errors[] = "Invalid amount: {$amountFromExcel}, cannot be negative";
-                        $amountFromExcel = 0;
-                    }
-                }
-
-                $finalAmount = $amountFromExcel > 0 ? $amountFromExcel : ($profile->price ?? 0);
-
                 $data = array_merge($data, [
                     'payment_type'    => $paymentType,
                     'billing_period'  => $billingPeriod,
-                    'amount'          => $finalAmount,
+                    'amount'          => $profile->price,
                     'discount'        => $discount,
                     'ppn'             => $ppn,
                 ]);
@@ -312,7 +314,6 @@ class ImportPppoeAccountRow implements ShouldQueue
                 ]);
                 $this->logImportSuccess($username, []);
             }
-
         } catch (\Throwable $e) {
             DB::rollBack();
 
@@ -339,7 +340,7 @@ class ImportPppoeAccountRow implements ShouldQueue
      */
     protected function logImportError($message, $errorType, $username = null, $additionalData = [])
     {
-        
+
         $errorData = [
             'import_batch_id' => $this->importBatchId,
             'row_number' => $this->rowNumber,

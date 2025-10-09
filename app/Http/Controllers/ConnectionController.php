@@ -730,6 +730,27 @@ class ConnectionController extends Controller
         }
     }
 
+    // public function importStatus($batchId)
+    // {
+    //     $batch = ImportBa::findOrFail($batchId);
+
+    //     $errors = [];
+    //     if (in_array($batch->status, ['completed_with_errors', 'failed'])) {
+    //         $errors = ImportErrorLog::where('import_batch_id', $batchId)
+    //             ->take(5) // ambil 5 error terbaru
+    //             ->get(['row_number', 'username', 'error_message']);
+    //     }
+
+    //     return response()->json([
+    //         'status' => $batch->status,
+    //         'processed' => $batch->processed_rows,
+    //         'total' => $batch->total_rows,
+    //         'failed' => $batch->failed_rows,
+    //         'percentage' => $batch->total_rows > 0 ? round(($batch->processed_rows / $batch->total_rows) * 100, 2) : 0,
+    //         'errors' => $errors,
+    //     ]);
+    // }
+
     public function getImportStatus(Request $request, $batchId)
     {
         $groupId = $request->user()->group_id;

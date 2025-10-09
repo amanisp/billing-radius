@@ -51,15 +51,32 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
                 continue;
             }
 
-            // Skip if username is empty
-            if (!isset($row[0]) || trim($row[0]) === '') {
-                $this->totalSkipped++;
-                Log::warning('Skipping row due to empty username', [
-                    'row_number' => $this->currentRow,
-                    'batch_id' => $this->importBatchId
-                ]);
-                continue;
+            // Jika kolom 0 berisi 'PPPoE' (case-insensitive)
+            if (isset($row[0]) && strcasecmp(trim($row[0]), 'PPPoE') === 0) {
+                // Cek kolom 2 (username)
+                if (!isset($row[2]) || trim($row[2]) === '') {
+                    $this->totalSkipped++;
+                    Log::warning('Skipping row due to empty username (type PPPoE)', [
+                        'row_number' => $this->currentRow,
+                        'batch_id' => $this->importBatchId
+                    ]);
+                    continue;
+                }
+
+                // Ganti kolom 0 menjadi username agar konsisten ke job
+                $row[0] = trim($row[2]);
+            } else {
+                // Jika bukan PPPoE, pastikan MAC address (kolom 1) tidak kosong
+                if (!isset($row[1]) || trim($row[1]) === '') {
+                    $this->totalSkipped++;
+                    Log::warning('Skipping row due to empty MAC address', [
+                        'row_number' => $this->currentRow,
+                        'batch_id' => $this->importBatchId
+                    ]);
+                    continue;
+                }
             }
+
 
             // Dispatch job dengan row number dan batch ID
             ImportPppoeAccountRow::dispatch(
