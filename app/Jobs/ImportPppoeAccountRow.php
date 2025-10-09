@@ -202,6 +202,8 @@ class ImportPppoeAccountRow implements ShouldQueue
                 'nas_id'          => $nasIdFromExcel,
                 'area_id'         => optional($area)->id,
                 'optical_id'      => optional($optical)->id,
+                'mac_address'     => $mac,
+                'type'            => $this->row[0] == 'PPPoE' ? 'PPPoE' : 'DHCP'
             ];
 
             // Add member data if available
