@@ -332,7 +332,7 @@
                 <div class="card-body">
                     <div class="table-responsive">
                         {{-- Pure DataTables implementation - no server-side rendered data --}}
-                        <table class="table table-bordered" id="dataTable">
+                        <table class="table" id="dataTable">
                             <thead>
                                 <tr>
                                     <th>#</th>
