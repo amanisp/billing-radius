@@ -67,8 +67,14 @@ class ImportPppoeAccountRow implements ShouldQueue
         }
 
         // --- Tentukan type dari kolom 0 (jika ada) ---
-        $typeRaw = $row[0] ?? '';
-        $type = strtolower($typeRaw);
+        $type = strtolower(trim($this->row[0] ?? ''));
+
+        if (in_array($type, ['static/dhcp', 'dhcp static', 'static'])) {
+            $type = 'dhcp';
+        } elseif (in_array($type, ['pppoe', 'ppp'])) {
+            $type = 'pppoe';
+        }
+
 
         // Jika import sebelumnya mengganti row[0] menjadi username untuk PPPoE,
         // kita support dua kemungkinan:
