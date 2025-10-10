@@ -37,14 +37,19 @@ class ImportPppoeAccountRow implements ShouldQueue
     public $timeout = 120;
     public $tries = 3;
 
-    public function __construct(array $row, $group_id, $rowNumber = null, $importBatchId = null, $username = null, $mac = null, $userRole = null)
+    /**
+     * NOTE: disesuaikan dengan dispatch sebelumnya yang mengirim 6 argumen.
+     * Jika kamu ingin mengirim userRole juga, ubah dispatch menjadi mengirim 7 argumen
+     * atau ubah signature lagi.
+     */
+    public function __construct(array $row, $group_id, $rowNumber = null, $importBatchId = null, $username = null, $userRole = null)
     {
         $this->row = $row;
         $this->group_id = $group_id;
         $this->rowNumber = $rowNumber;
         $this->importBatchId = $importBatchId;
         $this->username = $username;
-        $this->mac = $mac;
+        $this->mac = null;
         $this->userRole = $userRole;
     }
 
@@ -54,33 +59,79 @@ class ImportPppoeAccountRow implements ShouldQueue
         $username = null;
         $mac = null;
 
-        try {
-            // Validasi username (wajib ada)
-            if (isset($this->row[0]) || trim((string)$this->row[0]) === 'PPPoE') {
-                if (!isset($this->row[2]) || trim((string)$this->row[2]) === '') {
+        // --- Normalisasi row: pastikan array dengan numeric indexes ---
+        $row = is_array($this->row) ? $this->row : (array)$this->row;
+        // trim semua values untuk aman
+        foreach ($row as $k => $v) {
+            $row[$k] = is_null($v) ? '' : trim((string)$v);
+        }
 
-                    $this->logImportError('Username is required', 'MISSING_USERNAME');
+        // --- Tentukan type dari kolom 0 (jika ada) ---
+        $typeRaw = $row[0] ?? '';
+        $type = strtolower($typeRaw);
+
+        // Jika import sebelumnya mengganti row[0] menjadi username untuk PPPoE,
+        // kita support dua kemungkinan:
+        // - Format lama: [type, mac, username, password, profile, ...]
+        // - Format normalisasi di import: [username, ...] (untuk PPPoE)
+        if ($type === 'pppoe') {
+            // original: type in col 0, username in col 2
+            $username = $row[2] ?? '';
+            $mac = $row[1] ?? '';
+        } else {
+            // bukan PPPoE (anggap DHCP): mac biasanya di col 1, username bisa kosong
+            $mac = $row[1] ?? '';
+            // juga support case jika import sudah memindahkan username ke index 0
+            if (!empty($row[0]) && strcasecmp($row[0], 'pppoe') !== 0) {
+                // kemungkinan import sudah set row[0] = username
+                $username = $row[0] ?? '';
+            } else {
+                // fallback username di col 2
+                $username = $row[2] ?? '';
+            }
+        }
+
+        // Jika import sisi collection set row[0] = username (new flow), detect:
+        if (empty($username) && !empty($row[0]) && strcasecmp($row[0], 'pppoe') !== 0) {
+            $username = $row[0];
+        }
+
+        // Debug log singkat (hapus atau turunkan level saat produksi)
+        Log::debug('Import job received row', [
+            'batch' => $this->importBatchId,
+            'row_number' => $this->rowNumber,
+            'raw_row' => $row,
+            'detected_type' => $type,
+            'username' => $username,
+            'mac' => $mac
+        ]);
+
+        try {
+            // VALIDASI: jika type PPPoE, username wajib; jika DHCP, mac wajib
+            if ($type === 'pppoe') {
+                if (empty($username)) {
+                    $this->logImportError('Username is required for PPPoE', 'MISSING_USERNAME');
                     return;
                 }
             } else {
-                if (!isset($this->row[1]) || trim((string)$this->row[1]) === '') {
-
-                    $this->logImportError('Mac address is required', 'MISSING_MAC_ADDRESS');
+                if (empty($mac)) {
+                    $this->logImportError('Mac address is required for DHCP', 'MISSING_MAC_ADDRESS');
                     return;
                 }
             }
 
-            $username = trim((string)$this->row[2]);
-            $mac = trim((string)$this->row[1]);
-            $password = trim((string)($this->row[3] ?? ''));
+            // Assign final values
+            $username = trim((string)$username);
+            $mac = trim((string)$mac);
+            $password = trim((string)($row[3] ?? ''));
 
-            // Validasi password
-            if (empty($password)) {
+            // Validasi password (jika PPPoE)
+            if ($type === 'pppoe' && empty($password)) {
                 $errors[] = 'Password is empty';
             }
 
-            // Profile validation
-            $profileName = trim((string)($this->row[4] ?? ''));
+            // PROFILE di kolom yang semestinya: cek index yang benar (misal col 4)
+            $profileName = trim((string)($row[4] ?? ''));
             if (empty($profileName)) {
                 $this->logImportError('Profile name is required', 'MISSING_PROFILE', $username);
                 return;
@@ -91,18 +142,16 @@ class ImportPppoeAccountRow implements ShouldQueue
                 ->first();
 
             if (!$profile) {
-                $this->logImportError(
-                    "Profile not found: {$profileName}",
-                    'PROFILE_NOT_FOUND',
-                    $username
-                );
+                $this->logImportError("Profile not found: {$profileName}", 'PROFILE_NOT_FOUND', $username);
                 return;
             }
 
-            // Area validation (optional but log if not found)
+            // Area / Optical / NAS mapping: pastikan kolom index sesuai struktur excel yang kamu pakai.
+            // Saya gunakan index 5 (area), 6 (optical), 7 (nas) seperti versi sebelumnya but
+            // kalau struktur excel berbeda, sesuaikan index berikut.
             $area = null;
-            if (!empty($this->row[5])) {
-                $areaName = trim((string)$this->row[3]);
+            if (!empty($row[5])) {
+                $areaName = $row[5];
                 $area = Area::where('name', $areaName)
                     ->where('group_id', $this->group_id)
                     ->first();
@@ -112,10 +161,9 @@ class ImportPppoeAccountRow implements ShouldQueue
                 }
             }
 
-            // ODP validation (optional but log if not found)
             $optical = null;
-            if (!empty($this->row[6])) {
-                $odpName = trim((string)$this->row[4]);
+            if (!empty($row[6])) {
+                $odpName = $row[6];
                 $optical = OpticalDist::where('name', $odpName)
                     ->where('group_id', $this->group_id)
                     ->first();
@@ -125,88 +173,80 @@ class ImportPppoeAccountRow implements ShouldQueue
                 }
             }
 
-            // NAS ID validation
             $nasIdFromExcel = null;
-            if (isset($this->row[7]) && !empty(trim((string)$this->row[5]))) {
-                $nasIdFromExcel = (int)$this->row[5];
+            if (isset($row[7]) && $row[7] !== '') {
+                $nasIdFromExcel = (int)$row[7];
                 if ($nasIdFromExcel <= 0) {
-                    $errors[] = "Invalid NAS ID: {$this->row[5]}";
+                    $errors[] = "Invalid NAS ID: {$row[7]}";
                     $nasIdFromExcel = null;
                 }
             }
 
-            // Member data validation
-            $memberName = trim((string)($this->row[8] ?? ''));
-            $phoneNumber = isset($this->row[9]) ? trim((string)$this->row[9]) : '';
-            $email = isset($this->row[10]) ? trim((string)$this->row[10]) : '';
-            $idCard = isset($this->row[11]) ? trim((string)$this->row[11]) : '';
-            $address = isset($this->row[12]) ? trim((string)$this->row[12]) : '';
+            // Member data
+            $memberName = trim((string)($row[8] ?? ''));
+            $phoneNumber = isset($row[9]) ? trim((string)$row[9]) : '';
+            $email = isset($row[10]) ? trim((string)$row[10]) : '';
+            $idCard = isset($row[11]) ? trim((string)$row[11]) : '';
+            $address = isset($row[12]) ? trim((string)$row[12]) : '';
 
-            // Email validation if provided
             if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $errors[] = "Invalid email format: {$email}";
-                $email = ''; // Reset invalid email
+                $email = '';
             }
 
-            // Phone number validation if provided
             if (!empty($phoneNumber) && !preg_match('/^[0-9+\-\s()]+$/', $phoneNumber)) {
                 $errors[] = "Invalid phone number format: {$phoneNumber}";
             }
 
-            // Billing handling
-            $billingRaw = $this->row[13] ?? '';
+            // Billing
+            $billingRaw = $row[13] ?? '';
             $hasBilling = $this->toBool($billingRaw);
 
-            // Active date validation
+            // Active date
             $activeDate = null;
-            if (isset($this->row[14])) {
+            if (isset($row[14]) && $row[14] !== '') {
                 try {
-                    if (is_numeric($this->row[14])) {
-                        $activeDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$this->row[14])
+                    if (is_numeric($row[14])) {
+                        $activeDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$row[14])
                             ->format('Y-m-d');
                     } else {
-                        $activeDate = date('Y-m-d', strtotime($this->row[14]));
+                        $activeDate = date('Y-m-d', strtotime($row[14]));
                     }
                 } catch (\Exception $e) {
-                    $errors[] = "Invalid active date format: {$this->row[14]}";
+                    $errors[] = "Invalid active date format: {$row[14]}";
                     $activeDate = now()->format('Y-m-d');
                 }
             } else {
                 $activeDate = now()->format('Y-m-d');
             }
 
-            // Check username uniqueness
-            $exists = Connection::where('username', $username)
-                ->where('group_id', $this->group_id)
-                ->exists();
+            // Check username uniqueness only when type == pppoe and username not empty
+            if ($type === 'pppoe') {
+                $exists = Connection::where('username', $username)
+                    ->where('group_id', $this->group_id)
+                    ->exists();
 
-            if ($exists) {
-                $this->logImportError(
-                    'Username already exists',
-                    'DUPLICATE_USERNAME',
-                    $username,
-                    ['warnings' => $errors]
-                );
-                return;
+                if ($exists) {
+                    $this->logImportError('Username already exists', 'DUPLICATE_USERNAME', $username, ['warnings' => $errors]);
+                    return;
+                }
             }
 
-            // Base data
+            // Prepare payload for service
             $data = [
-                'group_id'        => $this->group_id,
-                'type'            => 'pppoe',
-                'username'        => $username,
-                'password'        => $password,
-                'profile_id'      => $profile->id,
-                'isolir'          => false,
-                'active_date'     => $activeDate,
-                'nas_id'          => $nasIdFromExcel,
-                'area_id'         => optional($area)->id,
-                'optical_id'      => optional($optical)->id,
-                'mac_address'     => $mac,
-                'type'            => $this->row[0] == 'PPPoE' ? 'PPPoE' : 'DHCP'
+                'group_id'    => $this->group_id,
+                'type'        => $type === 'pppoe' ? 'pppoe' : 'dhcp',
+                'username'    => $username ?: null,
+                'password'    => $password ?: null,
+                'profile_id'  => $profile->id,
+                'isolir'      => false,
+                'active_date' => $activeDate,
+                'nas_id'      => $nasIdFromExcel,
+                'area_id'     => optional($area)->id,
+                'optical_id'  => optional($optical)->id,
+                'mac_address' => $mac ?: null,
             ];
 
-            // Add member data if available
             if (!empty($memberName)) {
                 $data['fullname'] = $memberName;
                 $data['phone_number'] = $phoneNumber;
@@ -216,56 +256,25 @@ class ImportPppoeAccountRow implements ShouldQueue
                 $data['billing'] = $hasBilling;
             }
 
-            // Billing data processing
             if ($hasBilling) {
-                // Payment type validation
-                $rawType = strtolower(trim((string)($this->row[15] ?? 'pascabayar')));
-                $paymentType = match ($rawType) {
-                    'prabayar' => 'prabayar',
-                    'pascabayar' => 'pascabayar',
-                    default => 'pascabayar'
-                };
+                $rawType = strtolower(trim((string)($row[15] ?? 'pascabayar')));
+                $paymentType = in_array($rawType, ['prabayar', 'pascabayar']) ? $rawType : 'pascabayar';
 
-                if (!in_array($rawType, ['prabayar', 'pascabayar', ''])) {
-                    $errors[] = "Invalid payment type: {$rawType}, using default: pascabayar";
-                }
+                $rawPeriod = strtolower(trim((string)($row[16] ?? 'renewal')));
+                $billingPeriod = in_array($rawPeriod, ['renewal', 'fixed']) ? $rawPeriod : 'renewal';
 
-                // Billing period validation
-                $rawPeriod = strtolower(trim((string)($this->row[16] ?? 'renewal')));
-                $billingPeriod = in_array($rawPeriod, ['renewal', 'fixed'], true) ? $rawPeriod : 'renewal';
-
-                if (!in_array($rawPeriod, ['renewal', 'fixed', ''])) {
-                    $errors[] = "Invalid billing period: {$rawPeriod}, using default: renewal";
-                }
-
-                // Financial data validation
-                $ppn = 0;
-                if (isset($this->row[17])) {
-                    $ppn = (float)$this->row[17];
-                    if ($ppn < 0 || $ppn > 100) {
-                        $errors[] = "Invalid PPN value: {$ppn}, should be between 0-100";
-                        $ppn = 0;
-                    }
-                }
-
-                $discount = 0;
-                if (isset($this->row[18])) {
-                    $discount = (float)$this->row[18];
-                    if ($discount < 0) {
-                        $errors[] = "Invalid discount value: {$discount}, cannot be negative";
-                        $discount = 0;
-                    }
-                }
+                $ppn = isset($row[17]) && $row[17] !== '' ? (float)$row[17] : 0;
+                $discount = isset($row[18]) && $row[18] !== '' ? (float)$row[18] : 0;
+                $amount = $profile->price ?? 0;
 
                 $data = array_merge($data, [
-                    'payment_type'    => $paymentType,
-                    'billing_period'  => $billingPeriod,
-                    'amount'          => $profile->price,
-                    'discount'        => $discount,
-                    'ppn'             => $ppn,
+                    'payment_type' => $paymentType,
+                    'billing_period' => $billingPeriod,
+                    'amount' => $amount,
+                    'discount' => $discount,
+                    'ppn' => $ppn,
                 ]);
 
-                // Calculate next invoice for renewal
                 if ($billingPeriod === 'renewal') {
                     try {
                         $dt = new DateTime($activeDate);
@@ -274,14 +283,11 @@ class ImportPppoeAccountRow implements ShouldQueue
                         $errors[] = "Failed to calculate next invoice date";
                     }
                 }
-            } else {
-                // Set billing to false if no billing
-                if (!empty($memberName)) {
-                    $data['billing'] = false;
-                }
             }
 
-            // Execute service
+            // DEBUG: tampilkan data yang akan dikirim ke service
+            Log::debug('Import -> calling ConnectionService with data', ['data' => $data, 'batch' => $this->importBatchId]);
+
             DB::beginTransaction();
 
             $service = new ConnectionService();
@@ -289,23 +295,13 @@ class ImportPppoeAccountRow implements ShouldQueue
 
             if (empty($result['success'])) {
                 DB::rollBack();
-
                 $errorMessage = $result['message'] ?? 'Service failed';
-                $this->logImportError(
-                    $errorMessage,
-                    'SERVICE_ERROR',
-                    $username,
-                    [
-                        'warnings' => $errors,
-                        'service_result' => $result
-                    ]
-                );
+                $this->logImportError($errorMessage, 'SERVICE_ERROR', $username, ['warnings' => $errors, 'service_result' => $result]);
                 return;
             }
 
             DB::commit();
 
-            // Log success with warnings if any
             if (!empty($errors)) {
                 $this->logImportSuccess($username, $errors);
             } else {
@@ -318,21 +314,13 @@ class ImportPppoeAccountRow implements ShouldQueue
             }
         } catch (\Throwable $e) {
             DB::rollBack();
-
-            $this->logImportError(
-                $e->getMessage(),
-                'EXCEPTION',
-                $username,
-                [
-                    'warnings' => $errors,
-                    'exception_class' => get_class($e),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                    'trace' => $e->getTraceAsString()
-                ]
-            );
-
-            // Re-throw for retry mechanism
+            $this->logImportError($e->getMessage(), 'EXCEPTION', $username, [
+                'warnings' => $errors,
+                'exception_class' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
             throw $e;
         }
     }
