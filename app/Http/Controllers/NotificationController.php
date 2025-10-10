@@ -2,18 +2,29 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\globalSettings;
+use App\Models\GlobalSettings;
 use App\Models\InvoiceHomepass;
-use App\Models\payout;
-use App\Models\WhatsappMessageLog;
+use App\Models\Payout;
+use App\Services\WhatsappService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class NotificationController extends Controller
 {
+    protected $whatsappService;
+    public function __construct(WhatsappService $whatsappService)
+    {
+        $this->whatsappService = $whatsappService;
+    }
+
+    private function getApiKey($groupId)
+    {
+        $settings = GlobalSettings::where('group_id', $groupId)->first();
+        return $settings->whatsapp_api_key ?? null;
+    }
+
     public function notifPayment(Request $request)
     {
         $callbackToken = env('XENDIT_WEBHOOK_SECRET');
@@ -49,7 +60,7 @@ class NotificationController extends Controller
                 ]);
 
                 // Update saldo Xendit di global settings
-                globalSettings::where(function ($query) use ($invoice) {
+                GlobalSettings::where(function ($query) use ($invoice) {
                     $invoice->group_id
                         ? $query->where('group_id', $invoice->group_id)
                         : $query->whereNull('group_id');
@@ -60,45 +71,35 @@ class NotificationController extends Controller
                 // Kirim notifikasi WhatsApp
                 if (!empty($invoice->member->phone_number)) {
                     $ppn = $invoice->pppoe->ppn ?? 0;
+                    $groupId = $invoice->group_id;
                     $discount = $invoice->pppoe->discount ?? 0;
                     $total = $invoice->amount + ($invoice->amount * $ppn / 100) - $discount;
 
-                    // $message = "Salam Bpk/Ibu {$invoice->member->name}\n\n" .
-                    //     "*Pembayaran Berhasil!*\n\n" .
-                    //     "ID Pelanggan: {$invoice->pppoe->internet_number}\n" .
-                    //     "Nomor Invoice: {$invoice->inv_number}\n" .
-                    //     "Amount: Rp " . number_format($invoice->amount, 0, ',', '.') . "\n" .
-                    //     "PPN: {$ppn}\n" .
-                    //     "Discount: {$discount}\n" .
-                    //     "Total: Rp " . number_format($total, 0, ',', '.') . "\n" .
-                    //     "Item: Internet {$invoice->pppoe->username} - Paket {$invoice->pppoe->profile->name}\n" .
-                    //     "Period: {$invoice->subscription_period}\n" .
-                    //     "Status: *LUNAS*\n" .
-                    //     "Payment Method: Xendit Payment Gateway\n\n" .
-                    //     "Terima kasih.\n" .
-                    //     "Jika ada pertanyaan silakan hubungi admin.\n" .
-                    //     "PT Anugerah Media Data Nusantara - AMAN ISP\n\n" .
-                    //     "_Pesan otomatis - mohon tidak membalas_";
+                    $apiKey = $this->getApiKey($groupId);
 
-                    // Http::withHeaders([
-                    //     'x-api-key' => env('WA_API_TOKEN'),
-                    // ])->post('https://wa.amanisp.net.id/api/send-message', [
-                    //     'sessionId' => $invoice->group->wa_api_token,
-                    //     'number' => $invoice->member->phone_number,
-                    //     'message' => $message,
-                    //     'group_id' => $invoice->group->id,
-                    //     'subject' => 'Invoice Paid'
-                    // ]);
+                    if (isset($apiKey)) {
+                        $footer = GlobalSettings::where('group_id', $groupId)
+                            ->value('footer');
 
-                    // whatsappMessageLog::create([
-                    //     'group_id' => $invoice->group->id,
-                    //     'phone' => $invoice->member->phone_number,
-                    //     'subject' => 'Payment PAID ' . $invoice->inv_number,
-                    //     'message' => $message,
-                    //     'session_id' => $invoice->group->wa_api_token,
-                    //     'status' => 'sent',
-                    //     'sent_at' => now(),
-                    // ]);
+                        $this->whatsappService->sendFromTemplate(
+                            $apiKey,
+                            $invoice->member->phone_number,
+                            'payment_paid',
+                            [
+                                'full_name'   => $invoice->member->fullname,
+                                'no_invoice'  => $invoice->inv_number,
+                                'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                                'pppoe_user' => $invoice->connection->username,
+                                'pppoe_profile' => $invoice->connection->profile->name,
+                                'period'    => $invoice->subscription_period,
+                                'payment_gateway' => 'PAYMENT GATEWAY',
+                                'footer' => $footer
+                            ],
+                            [
+                                'group_id' => $invoice->group_id,
+                            ]
+                        );
+                    }
                 }
             } else {
                 // Pembayaran dibatalkan atau gagal
@@ -143,7 +144,7 @@ class NotificationController extends Controller
             $referenceId = $request->external_id;
 
             // Cari berdasarkan reference_id
-            $payout = payout::where('external_id', $referenceId)->first();
+            $payout = Payout::where('external_id', $referenceId)->first();
 
             if (!$payout) {
                 return response()->json([
@@ -162,7 +163,7 @@ class NotificationController extends Controller
                     'updated_at' => now(),
                 ]);
 
-                $balance = globalSettings::where('group_id', $payout->group_id)->first();
+                $balance = GlobalSettings::where('group_id', $payout->group_id)->first();
                 if ($balance) {
                     $newBalance = (int) $balance->xendit_balance - (int) $payout->amount;
                     $balance->update(['xendit_balance' => $newBalance]);

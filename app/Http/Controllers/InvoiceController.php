@@ -3,26 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\InvoiceHelper;
-use App\Mail\InvoiceCreatedMail;
 use App\Models\Connection;
-use App\Models\globalSettings;
-use App\Models\invoice;
+use App\Models\GlobalSettings;
 use App\Models\InvoiceHomepass;
 use App\Models\Member;
-use App\Models\Mitra;
 use App\Models\PaymentDetail;
-use App\Models\PppoeAccount;
-use App\Models\WhatsappMessageLog;
 use App\Services\WhatsappService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\View;
-use Mpdf\Mpdf;
 use Xendit\Configuration;
 use Xendit\Invoice\CreateInvoiceRequest;
 use Xendit\Invoice\InvoiceApi;
