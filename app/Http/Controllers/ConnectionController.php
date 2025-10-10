@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Models\Area;
+use App\Models\Batch;
 use App\Models\OpticalDist;
 use App\Models\Profiles;
 use App\Models\Member;
@@ -278,6 +279,7 @@ class ConnectionController extends Controller
     public function createWithMember(Request $request)
     {
         $groupId = Auth::user()->group_id;
+
         // Base validation for connection
         $connectionRules = [
             'type' => 'required|string|in:pppoe,dhcp',
@@ -301,7 +303,7 @@ class ConnectionController extends Controller
                 }),
             ];
             $connectionRules['password'] = 'required|string';
-        } elseif ($request->type === 'dhcp') {
+        } else if ($request->type === 'dhcp') {
             $connectionRules['mac_address'] = 'required|string|max:17';
         }
 
@@ -342,6 +344,7 @@ class ConnectionController extends Controller
             'phone_number',
             'email',
             'id_card',
+            'mac_address',
             'address',
             'payment_type',
             'billing_period',
@@ -349,6 +352,8 @@ class ConnectionController extends Controller
             'discount',
             'ppn'
         ]);
+
+
         //Data For Activity Log
         $memberData = [
             'fullname' => $data['fullname'],
@@ -730,26 +735,26 @@ class ConnectionController extends Controller
         }
     }
 
-    // public function importStatus($batchId)
-    // {
-    //     $batch = ImportBa::findOrFail($batchId);
+    public function importStatus($batchId)
+    {
+        $batch = Batch::findOrFail($batchId);
 
-    //     $errors = [];
-    //     if (in_array($batch->status, ['completed_with_errors', 'failed'])) {
-    //         $errors = ImportErrorLog::where('import_batch_id', $batchId)
-    //             ->take(5) // ambil 5 error terbaru
-    //             ->get(['row_number', 'username', 'error_message']);
-    //     }
+        $errors = [];
+        if (in_array($batch->status, ['completed_with_errors', 'failed'])) {
+            $errors = ImportErrorLog::where('import_batch_id', $batchId)
+                ->take(5) // ambil 5 error terbaru
+                ->get(['row_number', 'username', 'error_message']);
+        }
 
-    //     return response()->json([
-    //         'status' => $batch->status,
-    //         'processed' => $batch->processed_rows,
-    //         'total' => $batch->total_rows,
-    //         'failed' => $batch->failed_rows,
-    //         'percentage' => $batch->total_rows > 0 ? round(($batch->processed_rows / $batch->total_rows) * 100, 2) : 0,
-    //         'errors' => $errors,
-    //     ]);
-    // }
+        return response()->json([
+            'status' => $batch->status,
+            'processed' => $batch->processed_rows,
+            'total' => $batch->total_rows,
+            'failed' => $batch->failed_rows,
+            'percentage' => $batch->total_rows > 0 ? round(($batch->processed_rows / $batch->total_rows) * 100, 2) : 0,
+            'errors' => $errors,
+        ]);
+    }
 
     public function getImportStatus(Request $request, $batchId)
     {

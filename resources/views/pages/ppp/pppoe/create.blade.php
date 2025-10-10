@@ -59,7 +59,7 @@
                             <div class="row mb-3 d-none" id="rowMac">
                                 <div class="col-12">
                                     <label class="form-label">MAC Address <span class="text-danger">*</span></label>
-                                    <input id="macAddress" type="text" class="form-control" name="mac_address "
+                                    <input id="macAddress" type="text" class="form-control" name="mac_address"
                                         placeholder="xx:xx:xx:xx:xx:xx" value="{{ old('mac_address') }}">
                                 </div>
                             </div>

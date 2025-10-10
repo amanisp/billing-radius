@@ -3,7 +3,7 @@
 namespace App\Imports;
 
 use App\Jobs\ImportPppoeAccountRow;
-use App\Models\ImportBatch;
+use App\Models\Batch;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -149,7 +149,7 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
     protected function createImportBatchRecord()
     {
         try {
-            DB::table('import_batches')->insert([
+            Batch::create([
                 'id' => $this->importBatchId,
                 'group_id' => $this->group_id,
                 'type' => 'pppoe_accounts',
@@ -158,8 +158,6 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
                 'processed_rows' => 0,
                 'failed_rows' => 0,
                 'started_at' => now(),
-                'created_at' => now(),
-                'updated_at' => now()
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to create import batch record', [

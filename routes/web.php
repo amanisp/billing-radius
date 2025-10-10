@@ -98,6 +98,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/pppoe/session/{username}', [ConnectionController::class, 'getSession'])->name('pppoe.getSession');
         Route::get('/pppoe/profile-price/{profileId}', [ConnectionController::class, 'getProfilePrice'])->name('pppoe.profile-price');
         Route::post('/pppoe/import', [ConnectionController::class, 'import'])->name('pppoe.import');
+        Route::get('/pppoe/import/status/{batchId}', [ConnectionController::class, 'importStatus'])->name('import.status');
+
         Route::post('/pppoe/store', [ConnectionController::class, 'store'])->name('pppoe.store');
         Route::post('/pppoe/create-with-member', [ConnectionController::class, 'createWithMember'])->name('connection.create-with-member');
         Route::put('/pppoe/update/{id}', [ConnectionController::class, 'update'])->name('pppoe.update');
