@@ -13,14 +13,39 @@ use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithStartRow;
 use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Maatwebsite\Excel\Events\BeforeImport;
 use Maatwebsite\Excel\Events\AfterImport;
 
-class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRow, WithEvents
+class PppoeAccountsImport implements WithMultipleSheets
+{
+    protected $group_id;
+
+    public function __construct($group_id)
+    {
+        $this->group_id = $group_id;
+    }
+
+    /**
+     * Ambil hanya sheet pertama
+     */
+    public function sheets(): array
+    {
+        // Sheet index dimulai dari 0, jadi [0] adalah sheet pertama
+        return [
+            0 => new PppoeAccountsFirstSheetImport($this->group_id)
+        ];
+    }
+}
+
+/**
+ * Kelas khusus untuk menangani sheet pertama
+ */
+class PppoeAccountsFirstSheetImport implements ToCollection, WithChunkReading, WithStartRow, WithEvents
 {
     protected $group_id;
     protected $importBatchId;
-    protected $currentRow = 6; // Starting from row 7 (0-indexed + 1)
+    protected $currentRow = 6;
     protected $totalProcessed = 0;
     protected $totalSkipped = 0;
 
@@ -32,12 +57,12 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
 
     public function startRow(): int
     {
-        return 7; // Skip header rows
+        return 7;
     }
 
     public function chunkSize(): int
     {
-        return 500; // Process 500 rows per chunk
+        return 500;
     }
 
     public function collection(Collection $rows)
@@ -45,15 +70,12 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
         foreach ($rows as $index => $row) {
             $this->currentRow++;
 
-            // Skip completely empty rows
             if ($this->isEmptyRow($row)) {
                 $this->totalSkipped++;
                 continue;
             }
 
-            // Jika kolom 0 berisi 'PPPoE' (case-insensitive)
             if (isset($row[0]) && strcasecmp(trim($row[0]), 'PPPoE') === 0) {
-                // Cek kolom 2 (username)
                 if (!isset($row[2]) || trim($row[2]) === '') {
                     $this->totalSkipped++;
                     Log::warning('Skipping row due to empty username (type PPPoE)', [
@@ -62,11 +84,8 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
                     ]);
                     continue;
                 }
-
-                // Ganti kolom 0 menjadi username agar konsisten ke job
                 $row[0] = trim($row[2]);
             } else {
-                // Jika bukan PPPoE, pastikan MAC address (kolom 1) tidak kosong
                 if (!isset($row[1]) || trim($row[1]) === '') {
                     $this->totalSkipped++;
                     Log::warning('Skipping row due to empty MAC address', [
@@ -77,8 +96,6 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
                 }
             }
 
-
-            // Dispatch job dengan row number dan batch ID
             ImportPppoeAccountRow::dispatch(
                 $row->toArray(),
                 $this->group_id,
@@ -86,15 +103,12 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
                 $this->importBatchId,
                 Auth::user()->name,
                 Auth::user()->role
-            )->onQueue('imports'); // Use dedicated queue for imports
+            )->onQueue('imports');
 
             $this->totalProcessed++;
         }
     }
 
-    /**
-     * Check if row is completely empty
-     */
     protected function isEmptyRow($row): bool
     {
         if ($row instanceof Collection) {
@@ -109,26 +123,19 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
         return true;
     }
 
-    /**
-     * Register events
-     */
     public function registerEvents(): array
     {
         return [
             BeforeImport::class => function (BeforeImport $event) {
-                // Log import start
                 Log::info('Import started', [
                     'batch_id' => $this->importBatchId,
                     'group_id' => $this->group_id,
                     'started_at' => now()
                 ]);
-
-                // Optionally create import batch record
                 $this->createImportBatchRecord();
             },
 
             AfterImport::class => function (AfterImport $event) {
-                // Log import completion
                 Log::info('Import completed', [
                     'batch_id' => $this->importBatchId,
                     'group_id' => $this->group_id,
@@ -136,16 +143,11 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
                     'total_skipped' => $this->totalSkipped,
                     'completed_at' => now()
                 ]);
-
-                // Update import batch record
                 $this->updateImportBatchRecord();
             },
         ];
     }
 
-    /**
-     * Create import batch record for tracking
-     */
     protected function createImportBatchRecord()
     {
         try {
@@ -167,9 +169,6 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
         }
     }
 
-    /**
-     * Update import batch record after completion
-     */
     protected function updateImportBatchRecord()
     {
         try {
@@ -188,14 +187,12 @@ class PppoeAccountsImport implements ToCollection, WithChunkReading, WithStartRo
                     'updated_at' => now()
                 ]);
 
-            //Debug log
             Log::info("updateImportBatchRecord called", [
                 'batch_id' => $this->importBatchId,
                 'total_rows' => $this->totalProcessed + $this->totalSkipped,
                 'processed_rows' => $this->totalProcessed,
                 'failed_rows' => $failedCount,
             ]);
-            //end debug log
         } catch (\Exception $e) {
             Log::error('Failed to update import batch record', [
                 'error' => $e->getMessage(),
