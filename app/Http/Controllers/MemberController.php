@@ -22,7 +22,6 @@ class MemberController extends Controller
             ->orderBy('created_at', 'desc') // urutkan terbaru dulu
             ->get();
 
-
         return DataTables::of($query)
             ->addIndexColumn()
             ->addColumn('action', function ($account) {

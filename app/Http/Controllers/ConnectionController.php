@@ -24,6 +24,7 @@ use DateInterval;
 use DateTime;
 use Yajra\DataTables\DataTables;
 use App\Models\Nas;
+use App\Models\PaymentDetail;
 use Google\Service\AnalyticsReporting\Activity;
 use Illuminate\Validation\Rule;
 
@@ -547,35 +548,43 @@ class ConnectionController extends Controller
 
     public function destroy($id)
     {
-        $connection = Connection::findOrFail($id);
+        $connection = Connection::with(['member.paymentDetail'])->findOrFail($id);
         $username = $connection->username ?? $connection->mac_address;
 
         try {
             DB::beginTransaction();
 
-            // Delete from all radius tables
+            // --- Hapus Payment Detail jika ada ---
+            if ($connection->member && $connection->member->paymentDetail) {
+                $connection->member->paymentDetail->delete();
+            }
+
+
+
+            // --- Hapus dari semua tabel Radius ---
             DB::connection('radius')->table('radcheck')
                 ->where('username', $username)
-                ->where('group_id', $connection->group_id)
                 ->delete();
 
             DB::connection('radius')->table('radusergroup')
                 ->where('username', $username)
-                ->where('group_id', $connection->group_id)
                 ->delete();
 
             DB::connection('radius')->table('radacct')
                 ->where('username', $username)
                 ->delete();
 
+            // --- Hapus koneksi di billing ---
             $connection->delete();
 
             DB::commit();
+
+            // Log aktivitas
             ActivityLogController::logDelete($connection);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Data berhasil dihapus!',
+                'message' => 'Data koneksi dan billing berhasil dihapus!',
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -585,6 +594,7 @@ class ConnectionController extends Controller
             ], 500);
         }
     }
+
 
     public function import(Request $request)
     {

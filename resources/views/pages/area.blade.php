@@ -63,7 +63,7 @@
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-striped" id="areaTable">
+                        <table class="table" id="areaTable">
                             <thead>
                                 <tr>
                                     <th>#</th>

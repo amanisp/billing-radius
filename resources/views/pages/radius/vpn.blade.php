@@ -135,7 +135,7 @@
                         <div class="card-body">
                             <h5 class="card-title mb-3">Daftar VPN</h5>
                             <div class="table-responsive">
-                                <table class="table table-striped" id="vpnTable">
+                                <table class="table" id="vpnTable">
                                     <thead>
                                         <tr>
                                             <th>#</th>

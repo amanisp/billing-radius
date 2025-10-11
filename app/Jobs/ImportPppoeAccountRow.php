@@ -9,9 +9,11 @@ use App\Models\Connection;
 use App\Models\Profiles;
 use App\Models\ImportErrorLog;
 use App\Services\ConnectionService;
+use App\Helpers\ActivityLogger;
 use App\Http\Controllers\ActivityLogController;
 use DateTime;
 use DateInterval;
+use Google\Service\AnalyticsReporting\Activity;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -47,218 +49,296 @@ class ImportPppoeAccountRow implements ShouldQueue
     public function handle()
     {
         $errors = [];
-        $row = array_map(fn($v) => is_null($v) ? '' : trim((string)$v), $this->row);
-        $typeRaw = strtolower(trim($row[0] ?? ''));
-
-        // --- Deteksi tipe koneksi ---
-        if (in_array($typeRaw, ['pppoe', 'ppp'])) {
-            $type = 'pppoe';
-        } elseif (in_array($typeRaw, ['static/dhcp', 'dhcp', 'static'])) {
-            $type = 'dhcp';
-        } else {
-            $this->logImportError("Unknown connection type: {$typeRaw}", 'UNKNOWN_TYPE');
-            return;
-        }
-
-        // --- Parsing username, password, MAC sesuai tipe ---
         $username = null;
-        $password = null;
-        $mac = null;
 
-        if ($type === 'pppoe') {
-            $username = trim($row[2] ?? '');
-            $password = trim($row[3] ?? '');
-            $mac = null; // PPPoE tidak butuh MAC
-        } elseif ($type === 'dhcp') {
-            $mac = trim($row[1] ?? '');
-            $username = null;
-            $password = null;
-        }
+        try {
+            // Validasi username (wajib ada)
+            if (!isset($this->row[0]) || trim((string)$this->row[0]) === '') {
+                $this->logImportError('Username is required', 'MISSING_USERNAME');
+                return;
+            }
 
-        // --- Validasi dasar ---
-        if ($type === 'pppoe' && empty($username)) {
-            $this->logImportError('Username is required for PPPoE', 'MISSING_USERNAME');
-            return;
-        }
+            $username = trim((string)$this->row[0]);
+            $password = trim((string)($this->row[1] ?? ''));
 
-        if ($type === 'pppoe' && empty($password)) {
-            $this->logImportError('Password is required for PPPoE', 'MISSING_PASSWORD', $username);
-            return;
-        }
+            // Validasi password
+            if (empty($password)) {
+                $errors[] = 'Password is empty';
+            }
 
-        if ($type === 'dhcp' && empty($mac)) {
-            $this->logImportError('MAC Address is required for DHCP', 'MISSING_MAC');
-            return;
-        }
+            // Profile validation
+            $profileName = trim((string)($this->row[2] ?? ''));
+            if (empty($profileName)) {
+                $this->logImportError('Profile name is required', 'MISSING_PROFILE', $username);
+                return;
+            }
 
-        // --- Profile ---
-        $profileName = trim($row[4] ?? '');
-        if (empty($profileName)) {
-            $this->logImportError('Profile name is required', 'MISSING_PROFILE', $username);
-            return;
-        }
+            $profile = Profiles::where('name', $profileName)
+                ->where('group_id', $this->group_id)
+                ->first();
 
-        $profile = Profiles::where('name', $profileName)
-            ->where('group_id', $this->group_id)
-            ->first();
+            if (!$profile) {
+                $this->logImportError(
+                    "Profile not found: {$profileName}",
+                    'PROFILE_NOT_FOUND',
+                    $username
+                );
+                return;
+            }
 
-        if (!$profile) {
-            $this->logImportError("Profile not found: {$profileName}", 'PROFILE_NOT_FOUND', $username);
-            return;
-        }
+            // Area validation (optional but log if not found)
+            $area = null;
+            if (!empty($this->row[3])) {
+                $areaName = trim((string)$this->row[3]);
+                $area = Area::where('name', $areaName)
+                    ->where('group_id', $this->group_id)
+                    ->first();
 
-        // --- Area & ODP ---
-        $area = !empty($row[5]) ? Area::where('name', $row[5])->where('group_id', $this->group_id)->first() : null;
-        if (!empty($row[5]) && !$area) $errors[] = "Area not found: {$row[5]}";
+                if (!$area) {
+                    $errors[] = "Area not found: {$areaName}";
+                }
+            }
 
-        $optical = !empty($row[6]) ? OpticalDist::where('name', $row[6])->where('group_id', $this->group_id)->first() : null;
-        if (!empty($row[6]) && !$optical) $errors[] = "ODP not found: {$row[6]}";
+            // ODP validation (optional but log if not found)
+            $optical = null;
+            if (!empty($this->row[4])) {
+                $odpName = trim((string)$this->row[4]);
+                $optical = OpticalDist::where('name', $odpName)
+                    ->where('group_id', $this->group_id)
+                    ->first();
 
-        // --- NAS ID ---
-        $nasIdFromExcel = null;
-        if (!empty($row[7]) && is_numeric($row[7])) {
-            $nasIdFromExcel = (int)$row[7];
-        }
+                if (!$optical) {
+                    $errors[] = "ODP not found: {$odpName}";
+                }
+            }
 
-        // --- Member data ---
-        $memberName = trim($row[8] ?? '');
-        $phoneNumber = trim($row[9] ?? '');
-        $email = trim($row[10] ?? '');
-        $idCard = trim($row[11] ?? '');
-        $address = trim($row[12] ?? '');
+            // NAS ID validation
+            $nasIdFromExcel = null;
+            if (isset($this->row[5]) && !empty(trim((string)$this->row[5]))) {
+                $nasIdFromExcel = (int)$this->row[5];
+                if ($nasIdFromExcel <= 0) {
+                    $errors[] = "Invalid NAS ID: {$this->row[5]}";
+                    $nasIdFromExcel = null;
+                }
+            }
 
-        if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors[] = "Invalid email format: {$email}";
-            $email = '';
-        }
+            // Member data validation
+            $memberName = trim((string)($this->row[6] ?? ''));
+            $phoneNumber = isset($this->row[7]) ? trim((string)$this->row[7]) : '';
+            $email = isset($this->row[8]) ? trim((string)$this->row[8]) : '';
+            $idCard = isset($this->row[9]) ? trim((string)$this->row[9]) : '';
+            $address = isset($this->row[10]) ? trim((string)$this->row[10]) : '';
 
-        if (!empty($phoneNumber) && !preg_match('/^[0-9+\-\s()]+$/', $phoneNumber)) {
-            $errors[] = "Invalid phone number format: {$phoneNumber}";
-        }
+            // Email validation if provided
+            if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors[] = "Invalid email format: {$email}";
+                $email = ''; // Reset invalid email
+            }
 
-        // --- Billing ---
-        $hasBilling = $this->toBool($row[13] ?? '');
-        $activeDate = $this->parseExcelDate($row[14] ?? null);
+            // Phone number validation if provided
+            if (!empty($phoneNumber) && !preg_match('/^[0-9+\-\s()]+$/', $phoneNumber)) {
+                $errors[] = "Invalid phone number format: {$phoneNumber}";
+            }
 
-        if ($type === 'pppoe') {
+            // Billing handling
+            $billingRaw = $this->row[11] ?? '';
+            $hasBilling = $this->toBool($billingRaw);
+
+            // Active date validation
+            $activeDate = null;
+            if (isset($this->row[12])) {
+                try {
+                    if (is_numeric($this->row[12])) {
+                        $activeDate = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$this->row[12])
+                            ->format('Y-m-d');
+                    } else {
+                        $activeDate = date('Y-m-d', strtotime($this->row[12]));
+                    }
+                } catch (\Exception $e) {
+                    $errors[] = "Invalid active date format: {$this->row[12]}";
+                    $activeDate = now()->format('Y-m-d');
+                }
+            } else {
+                $activeDate = now()->format('Y-m-d');
+            }
+
+            // Check username uniqueness
             $exists = Connection::where('username', $username)
                 ->where('group_id', $this->group_id)
                 ->exists();
 
             if ($exists) {
-                $this->logImportError('Username already exists', 'DUPLICATE_USERNAME', $username);
+                $this->logImportError(
+                    'Username already exists',
+                    'DUPLICATE_USERNAME',
+                    $username,
+                    ['warnings' => $errors]
+                );
                 return;
             }
-        }
 
-        $data = [
-            'group_id' => $this->group_id,
-            'type' => $type,
-            'username' => $username,
-            'password' => $password,
-            'profile_id' => $profile->id,
-            'isolir' => false,
-            'active_date' => $activeDate,
-            'nas_id' => $nasIdFromExcel,
-            'area_id' => optional($area)->id,
-            'optical_id' => optional($optical)->id,
-            'mac_address' => $mac,
-        ];
+            // Base data
+            $data = [
+                'group_id'        => $this->group_id,
+                'type'            => 'pppoe',
+                'username'        => $username,
+                'password'        => $password,
+                'profile_id'      => $profile->id,
+                'isolir'          => false,
+                'active_date'     => $activeDate,
+                'nas_id'          => $nasIdFromExcel,
+                'area_id'         => optional($area)->id,
+                'optical_id'      => optional($optical)->id,
+            ];
 
-        if (!empty($memberName)) {
-            $data = array_merge($data, [
-                'fullname' => $memberName,
-                'phone_number' => $phoneNumber,
-                'email' => $email,
-                'id_card' => $idCard,
-                'address' => $address,
-                'billing' => $hasBilling,
-            ]);
-        }
+            // Add member data if available
+            if (!empty($memberName)) {
+                $data['fullname'] = $memberName;
+                $data['phone_number'] = $phoneNumber;
+                $data['email'] = $email;
+                $data['id_card'] = $idCard;
+                $data['address'] = $address;
+                $data['billing'] = $hasBilling;
+            }
 
-        if ($hasBilling) {
-            $paymentType = strtolower(trim($row[15] ?? 'pascabayar'));
-            $paymentType = in_array($paymentType, ['prabayar', 'pascabayar']) ? $paymentType : 'pascabayar';
+            // Billing data processing
+            if ($hasBilling) {
+                // Payment type validation
+                $rawType = strtolower(trim((string)($this->row[13] ?? 'pascabayar')));
+                $paymentType = match ($rawType) {
+                    'prabayar' => 'prabayar',
+                    'pascabayar' => 'pascabayar',
+                    default => 'pascabayar'
+                };
 
-            $billingPeriod = strtolower(trim($row[16] ?? 'renewal'));
-            $billingPeriod = in_array($billingPeriod, ['fixed', 'renewal']) ? $billingPeriod : 'renewal';
+                if (!in_array($rawType, ['prabayar', 'pascabayar', ''])) {
+                    $errors[] = "Invalid payment type: {$rawType}, using default: pascabayar";
+                }
 
-            $ppn = (float)($row[17] ?? 0);
-            $discount = (float)($row[18] ?? 0);
-            $amount = $profile->price ?? 0;
+                // Billing period validation
+                $rawPeriod = strtolower(trim((string)($this->row[14] ?? 'renewal')));
+                $billingPeriod = in_array($rawPeriod, ['renewal', 'fixed'], true) ? $rawPeriod : 'renewal';
 
-            $data = array_merge($data, [
-                'payment_type' => $paymentType,
-                'billing_period' => $billingPeriod,
-                'amount' => $amount,
-                'discount' => $discount,
-                'ppn' => $ppn,
-            ]);
+                if (!in_array($rawPeriod, ['renewal', 'fixed', ''])) {
+                    $errors[] = "Invalid billing period: {$rawPeriod}, using default: renewal";
+                }
 
-            if ($billingPeriod === 'renewal') {
-                try {
-                    $dt = new DateTime($activeDate);
-                    $data['next_invoice'] = $dt->add(new DateInterval('P1M'))->format('Y-m-d');
-                } catch (\Exception $e) {
-                    $errors[] = "Failed to calculate next invoice date";
+                // Financial data validation
+                $ppn = 0;
+                if (isset($this->row[15])) {
+                    $ppn = (float)$this->row[15];
+                    if ($ppn < 0 || $ppn > 100) {
+                        $errors[] = "Invalid PPN value: {$ppn}, should be between 0-100";
+                        $ppn = 0;
+                    }
+                }
+
+                $discount = 0;
+                if (isset($this->row[16])) {
+                    $discount = (float)$this->row[16];
+                    if ($discount < 0) {
+                        $errors[] = "Invalid discount value: {$discount}, cannot be negative";
+                        $discount = 0;
+                    }
+                }
+
+                $amountFromExcel = 0;
+                if (isset($this->row[17]) && !empty(trim((string)$this->row[17]))) {
+                    $amountFromExcel = (float)$this->row[17];
+                    if ($amountFromExcel < 0) {
+                        $errors[] = "Invalid amount: {$amountFromExcel}, cannot be negative";
+                        $amountFromExcel = 0;
+                    }
+                }
+
+                $finalAmount = $amountFromExcel > 0 ? $amountFromExcel : ($profile->price ?? 0);
+
+                $data = array_merge($data, [
+                    'payment_type'    => $paymentType,
+                    'billing_period'  => $billingPeriod,
+                    'amount'          => $finalAmount,
+                    'discount'        => $discount,
+                    'ppn'             => $ppn,
+                ]);
+
+                // Calculate next invoice for renewal
+                if ($billingPeriod === 'renewal') {
+                    try {
+                        $dt = new DateTime($activeDate);
+                        $data['next_invoice'] = $dt->add(new DateInterval('P1M'))->format('Y-m-d');
+                    } catch (\Exception $e) {
+                        $errors[] = "Failed to calculate next invoice date";
+                    }
+                }
+            } else {
+                // Set billing to false if no billing
+                if (!empty($memberName)) {
+                    $data['billing'] = false;
                 }
             }
-        }
 
-        Log::debug('📦 [Import] Ready to send data to ConnectionService', [
-            'data' => $data,
-            'batch' => $this->importBatchId,
-            'row_number' => $this->rowNumber,
-        ]);
-
-        try {
+            // Execute service
             DB::beginTransaction();
+
             $service = new ConnectionService();
             $result = $service->createOrUpdateMemberConnectionPaymentDetail($data);
 
             if (empty($result['success'])) {
                 DB::rollBack();
-                $this->logImportError($result['message'] ?? 'Service failed', 'SERVICE_ERROR', $username, ['service' => $result]);
+
+                $errorMessage = $result['message'] ?? 'Service failed';
+                $this->logImportError(
+                    $errorMessage,
+                    'SERVICE_ERROR',
+                    $username,
+                    [
+                        'warnings' => $errors,
+                        'service_result' => $result
+                    ]
+                );
                 return;
             }
 
             DB::commit();
-            $this->logImportSuccess($username, $errors);
+
+            // Log success with warnings if any
+            if (!empty($errors)) {
+                $this->logImportSuccess($username, $errors);
+            } else {
+                Log::info('Import success without warnings', [
+                    'username' => $username,
+                    'row_number' => $this->rowNumber,
+                    'connection_id' => $result['connection']->id ?? null
+                ]);
+                $this->logImportSuccess($username, []);
+            }
         } catch (\Throwable $e) {
             DB::rollBack();
-            $this->logImportError($e->getMessage(), 'EXCEPTION', $username, [
-                'trace' => $e->getTraceAsString(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-            ]);
+
+            $this->logImportError(
+                $e->getMessage(),
+                'EXCEPTION',
+                $username,
+                [
+                    'warnings' => $errors,
+                    'exception_class' => get_class($e),
+                    'file' => $e->getFile(),
+                    'line' => $e->getLine(),
+                    'trace' => $e->getTraceAsString()
+                ]
+            );
+
+            // Re-throw for retry mechanism
             throw $e;
         }
     }
 
-    protected function parseExcelDate($value)
-    {
-        if (empty($value)) return now()->format('Y-m-d');
-        try {
-            if (is_numeric($value)) {
-                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float)$value)
-                    ->format('Y-m-d');
-            }
-            return date('Y-m-d', strtotime($value));
-        } catch (\Exception $e) {
-            return now()->format('Y-m-d');
-        }
-    }
-
-    protected function toBool($val): bool
-    {
-        $s = strtolower(trim((string)$val));
-        if ($s === '') return false;
-        if (is_numeric($s)) return ((int)$s) === 1;
-        return in_array($s, ['ya', 'yes', 'true', 'aktif', 'active', 'on'], true);
-    }
-
+    /**
+     * Log import error to database and activity log
+     */
     protected function logImportError($message, $errorType, $username = null, $additionalData = [])
     {
+
         $errorData = [
             'import_batch_id' => $this->importBatchId,
             'row_number' => $this->rowNumber,
@@ -271,18 +351,27 @@ class ImportPppoeAccountRow implements ShouldQueue
             'created_at' => now()
         ];
 
+        // Save to import error logs table
         try {
             ImportErrorLog::create($errorData);
+            // Log to activity log
         } catch (\Exception $e) {
-            Log::error('Failed to save import error log', ['error' => $e->getMessage(), 'data' => $errorData]);
+            Log::error('Failed to save import error log', [
+                'error' => $e->getMessage(),
+                'data' => $errorData
+            ]);
         }
-
         ActivityLogController::logImportF($errorData, 'connections', $this->username, $this->userRole);
-        Log::error('❌ Import row failed', $errorData);
+        // Log to file
+        Log::error('Import row failed', $errorData);
     }
 
+    /**
+     * Log successful import with warnings
+     */
     protected function logImportSuccess($username, $warnings)
     {
+
         $data = [
             'import_batch_id' => $this->importBatchId,
             'row_number' => $this->rowNumber,
@@ -290,23 +379,40 @@ class ImportPppoeAccountRow implements ShouldQueue
             'warnings' => $warnings,
             'group_id' => $this->group_id
         ];
-
         if (!empty($warnings)) {
             ActivityLogController::logImportSuccesswithWarnings($data, 'connections', $this->username, $this->userRole);
-            Log::warning('⚠️ Import succeeded with warnings', $data);
+            Log::warning('Import succeeded with warnings', $data);
         } else {
             ActivityLogController::logImportSuccess($data, 'connections', $this->username, $this->userRole);
-            Log::info('✅ Import succeeded without warnings', $data);
+            Log::info('Import succeeded without warnings', $data);
         }
     }
 
+    /**
+     * Convert various truthy forms to bool
+     */
+    protected function toBool($val): bool
+    {
+        if (is_bool($val)) return $val;
+        $s = strtolower(trim((string)$val));
+        if ($s === '') return false;
+        if (is_numeric($s)) return ((int)$s) === 1;
+        return in_array($s, ['ya', 'yes', 'true', 'aktif', 'active', 'on', '1'], true);
+    }
+
+    /**
+     * Handle job failure
+     */
     public function failed(\Throwable $exception)
     {
         $this->logImportError(
             'Job failed after all retries: ' . $exception->getMessage(),
             'JOB_FAILED',
-            $this->row[0] ?? null,
-            ['attempts' => $this->attempts(), 'exception' => $exception->getMessage()]
+            isset($this->row[0]) ? trim((string)$this->row[0]) : null,
+            [
+                'attempts' => $this->attempts(),
+                'exception' => $exception->getMessage()
+            ]
         );
     }
 }

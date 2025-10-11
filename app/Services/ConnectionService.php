@@ -23,124 +23,128 @@ class ConnectionService
     {
         return DB::transaction(function () use ($data) {
             try {
-                // FIX: Use group_id from data (for job context) or Auth (for web context)
+                // Tentukan group_id (dari data atau user login)
                 $groupId = $data['group_id'] ?? Auth::user()->group_id ?? null;
-
                 if (!$groupId) {
                     throw new \Exception('Group ID is required');
                 }
 
-                Log::info('Creating connection', [
-                    'username' => $data['username'] ?? $data['mac_address'],
+                Log::info('ConnectionService: Start createOrUpdateMemberConnectionPaymentDetail', [
+                    'username' => $data['username'] ?? $data['mac_address'] ?? null,
                     'group_id' => $groupId,
-                    'type' => $data['type']
+                    'billing_flag' => $data['billing'] ?? null,
                 ]);
 
-                // FIX: Add missing billing_active field
+                // === 1️⃣ Buat koneksi (connection)
                 $connection = Connection::create([
-                    'username' => $data['username'] ?? null,
-                    'type' => $data['type'],
-                    'password' => $data['password'] ?? null,
-                    'mac_address' => $data['mac_address'] ?? null,
-                    'profile_id' => $data['profile_id'],
-                    'group_id' => $groupId,
+                    'username'        => $data['username'] ?? null,
+                    'type'            => $data['type'] ?? 'pppoe',
+                    'password'        => $data['password'] ?? null,
+                    'mac_address'     => $data['mac_address'] ?? null,
+                    'profile_id'      => $data['profile_id'] ?? null,
+                    'group_id'        => $groupId,
                     'internet_number' => Connection::generateNomorLayanan($groupId),
-                    'billing_active' => $data['billing_active'] ?? false, // FIX: Add this field
-                    'isolir' => $data['isolir'] ?? false,
-                    'nas_id' => $data['nas_id'] ?? null,
-                    'area_id' => $data['area_id'] ?? null,
-                    'optical_id' => $data['optical_id'] ?? null,
-                    'active_date' => $data['active_date'] ?? now(),
+                    'billing_active'  => $data['billing_active'] ?? false,
+                    'isolir'          => $data['isolir'] ?? false,
+                    'nas_id'          => $data['nas_id'] ?? null,
+                    'area_id'         => $data['area_id'] ?? null,
+                    'optical_id'      => $data['optical_id'] ?? null,
+                    'active_date'     => $data['active_date'] ?? now(),
                 ]);
 
                 Log::info('Connection created', ['connection_id' => $connection->id]);
 
-                // Create radius records only if username exists (PPPoE type)
+                // === 2️⃣ Jika PPPoE → buat record radius
                 if ($connection->username && $connection->type === 'pppoe') {
                     $this->createRadiusRecords($connection, $groupId);
                     Log::info('Radius records created', ['username' => $connection->username]);
                 }
 
-                // FIX: Better member logic
+                // === 3️⃣ Jika billing = TRUE → buat member & payment detail
                 $member = null;
-
-                // If member_id provided, try to find existing
-                if (!empty($data['member_id'])) {
-                    $member = Member::where('id', $data['member_id'])
-                        ->where('group_id', $groupId)
-                        ->first();
-                }
-
-                // If no existing member found, try to find by fullname
-                if (!$member && !empty($data['fullname'])) {
-                    $member = Member::where('fullname', $data['fullname'])
-                        ->where('group_id', $groupId)
-                        ->first();
-                }
-
-                // Create or update member
-                if ($member) {
-                    // Update existing member
-                    $member->update([
-                        'fullname' => $data['fullname'] ?? $member->fullname,
-                        'phone_number' => $data['phone_number'] ?? $member->phone_number,
-                        'email' => $data['email'] ?? $member->email,
-                        'id_card' => $data['id_card'] ?? $member->id_card,
-                        'address' => $data['address'] ?? $member->address,
-                        'connection_id' => $connection->id,
-                        'billing' => $data['billing'] ?? $member->billing,
-                    ]);
-                    Log::info('Member updated', ['member_id' => $member->id]);
-                } else {
-                    // Create new member
-                    $member = Member::create([
-                        'fullname' => $data['fullname'] ?? 'Unknown Member',
-                        'phone_number' => $data['phone_number'] ?? null,
-                        'email' => $data['email'] ?? null,
-                        'id_card' => $data['id_card'] ?? null,
-                        'address' => $data['address'] ?? null,
-                        'group_id' => $groupId,
-                        'connection_id' => $connection->id,
-                        'billing' => $data['billing'] ?? false,
-                    ]);
-                    Log::info('Member created', ['member_id' => $member->id]);
-                }
-
-                // Create payment detail if billing is active
                 $paymentDetail = null;
-                if ($data['billing'] ?? false) {
-                    $paymentDetail = PaymentDetail::create([
-                        'group_id' => $groupId,
-                        'payment_type' => $data['payment_type'] ?? 'pascabayar',
-                        'billing_period' => $data['billing_period'] ?? 'renewal',
-                        'amount' => $data['amount'] ?? 0,
-                        'discount' => $data['discount'] ?? 0,
-                        'ppn' => $data['ppn'] ?? 0,
-                        'active_date' => $data['active_date'] ?? now(),
-                        'next_invoice' => $data['next_invoice'] ?? null,
+
+                if (!empty($data['billing']) && $data['billing'] === true) {
+                    Log::info('Billing enabled, creating member...', [
+                        'username' => $data['username'] ?? $data['mac_address'] ?? null
                     ]);
 
-                    // Update member with payment_detail_id
-                    $member->update(['payment_detail_id' => $paymentDetail->id]);
+                    // 🔹 Cari member existing
+                    if (!empty($data['member_id'])) {
+                        $member = Member::where('id', $data['member_id'])
+                            ->where('group_id', $groupId)
+                            ->first();
+                    }
 
+                    if (!$member && !empty($data['fullname'])) {
+                        $member = Member::where('fullname', $data['fullname'])
+                            ->where('group_id', $groupId)
+                            ->first();
+                    }
+
+                    // 🔹 Update atau buat member baru
+                    if ($member) {
+                        $member->update([
+                            'fullname'      => $data['fullname'] ?? $member->fullname,
+                            'phone_number'  => $data['phone_number'] ?? $member->phone_number,
+                            'email'         => $data['email'] ?? $member->email,
+                            'id_card'       => $data['id_card'] ?? $member->id_card,
+                            'address'       => $data['address'] ?? $member->address,
+                            'connection_id' => $connection->id,
+                            'billing'       => true,
+                        ]);
+                        Log::info('Member updated', ['member_id' => $member->id]);
+                    } else {
+                        $member = Member::create([
+                            'fullname'      => $data['fullname'],
+                            'phone_number'  => $data['phone_number'] ?? null,
+                            'email'         => $data['email'] ?? null,
+                            'id_card'       => $data['id_card'] ?? null,
+                            'address'       => $data['address'] ?? null,
+                            'group_id'      => $groupId,
+                            'connection_id' => $connection->id,
+                            'billing'       => true,
+                        ]);
+                        Log::info('Member created', ['member_id' => $member->id]);
+                    }
+
+                    // 🔹 Buat Payment Detail
+                    $paymentDetail = PaymentDetail::create([
+                        'group_id'      => $groupId,
+                        'payment_type'  => $data['payment_type'] ?? 'pascabayar',
+                        'billing_period' => $data['billing_period'] ?? 'renewal',
+                        'amount'        => $data['amount'] ?? 0,
+                        'discount'      => $data['discount'] ?? 0,
+                        'ppn'           => $data['ppn'] ?? 0,
+                        'active_date'   => $data['active_date'] ?? now(),
+                        'next_invoice'  => $data['next_invoice'] ?? null,
+                    ]);
+
+                    $member->update(['payment_detail_id' => $paymentDetail->id]);
                     Log::info('Payment detail created', ['payment_detail_id' => $paymentDetail->id]);
+                } else {
+                    // ❌ Billing = false → skip member & payment detail
+                    Log::info('Billing disabled — skipping member & payment detail', [
+                        'username' => $data['username'] ?? $data['mac_address'] ?? null,
+                        'group_id' => $groupId,
+                    ]);
                 }
 
-                // Log the activity
+                // === 4️⃣ Catat aktivitas
                 ActivityLogController::logCreate($connection, 'connections');
 
                 return [
-                    'success' => true,
-                    'message' => 'Data berhasil disimpan!',
-                    'connection' => $connection,
-                    'member' => $member,
+                    'success'       => true,
+                    'message'       => 'Data berhasil disimpan!',
+                    'connection'    => $connection,
+                    'member'        => $member,
                     'paymentDetail' => $paymentDetail,
                 ];
             } catch (\Exception $e) {
                 Log::error('ConnectionService error', [
                     'message' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                    'data' => $data
+                    'trace'   => $e->getTraceAsString(),
+                    'data'    => $data,
                 ]);
 
                 ActivityLogController::logCreateF(['ConnectionService Error: ' . $e->getMessage()]);
@@ -148,11 +152,12 @@ class ConnectionService
                 return [
                     'success' => false,
                     'message' => 'Error: ' . $e->getMessage(),
-                    'debug_data' => $data
+                    'debug_data' => $data,
                 ];
             }
         });
     }
+
 
     /**
      * Create radius records for PPPoE connection

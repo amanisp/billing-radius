@@ -13,13 +13,6 @@
                 {{ session('error') }}</div>
         @endif
 
-        <div class="d-flex">
-            <button class="btn btn-outline-primary btn-sm  px-4  mt-2 mb-4" data-bs-toggle="modal"
-                data-bs-target="#formCreateModal"><i class="fa-solid fa-plus"></i>
-                Create
-            </button>
-        </div>
-
         {{-- Modal Create --}}
         @if (Auth::user()->role === 'superadmin')
             @include('pages.optical.store-superadmin')
@@ -45,7 +38,7 @@
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-striped" id="opticalTable">
+                        <table class="table" id="opticalTable">
                             <thead>
                                 <tr>
                                     <th>#</th>
@@ -57,7 +50,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @forelse ($data as $index => $optical)
+                                @foreach ($data as $index => $optical)
                                     <tr>
                                         <td>{{ $index + 1 }}</td>
                                         <td>{{ $optical->name }}</td>
@@ -92,11 +85,7 @@
                                             </div>
                                         </td>
                                     </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="6" class="text-center">ODP/ODC Belum Tersedia</td>
-                                    </tr>
-                                @endforelse
+                                @endforeach
                             </tbody>
                         </table>
                     </div>
