@@ -409,52 +409,96 @@ class ConnectionController extends Controller
         $connection = Connection::findOrFail($id);
         $oldData = $connection->toArray();
 
-        // Validation rules
+        // Validasi dasar
         $rules = [
-            'profile_id' => 'required|exists:profiles,id',
+            'profile_id'     => 'required|exists:profiles,id',
             'billing_active' => 'boolean',
-            'isolir' => 'boolean',
-            'nas_id' => 'nullable|exists:nas,id',
-            'area_id' => 'nullable|exists:areas,id',
-            'optical_id' => 'nullable|exists:optical_dists,id',
+            'isolir'         => 'boolean',
+            'nas_id'         => 'nullable|exists:nas,id',
+            'area_id'        => 'nullable|exists:areas,id',
+            'optical_id'     => 'nullable|exists:optical_dists,id',
         ];
 
-        // Add type-specific validation
+        // Validasi tambahan berdasarkan tipe
         if ($request->type === 'dhcp') {
             $rules['mac_address'] = 'required|string|max:17';
         } elseif ($request->type === 'pppoe') {
             $rules['username'] = "required|string|max:255|unique:connections,username,$id,id,group_id," . Auth::user()->group_id;
-            $rules['password'] = 'required|string|';
+            $rules['password'] = 'required|string';
         }
 
         $request->validate($rules);
 
-        $groupId = $connection->group_id;
+        $groupId     = $connection->group_id;
         $oldUsername = $connection->username ?? $connection->mac_address;
         $newUsername = trim($request->username ?? $request->mac_address);
+        $newPassword = $request->password;
 
         try {
             DB::beginTransaction();
 
-            // Update radius tables for PPPoE
-            if ($connection->type === 'pppoe' && $oldUsername && $newUsername) {
-                $this->updateRadiusRecords($oldUsername, $newUsername, $request->password, $request->profile_id, $groupId);
-            }
-
-            // Update connection
+            // 🔹 Update data utama koneksi
             $connection->update([
-                'username' => $request->username,
-                'password' => $request->password,
-                'mac_address' => $request->mac_address,
-                'profile_id' => $request->profile_id,
+                'username'       => $newUsername,
+                'password'       => $newPassword,
+                'mac_address'    => $request->mac_address,
+                'profile_id'     => $request->profile_id,
                 'billing_active' => $request->input('billing_active', false),
-                'isolir' => $request->input('isolir', false),
-                'nas_id' => $request->nas_id,
-                'area_id' => $request->area_id,
-                'optical_id' => $request->optical_id,
+                'isolir'         => $request->input('isolir', false),
+                'nas_id'         => $request->nas_id,
+                'area_id'        => $request->area_id,
+                'optical_id'     => $request->optical_id,
             ]);
 
+            // 🔹 Hapus entri lama di Radius (radcheck & radusergroup)
+            DB::connection('radius')->table('radcheck')
+                ->where('username', $oldUsername)
+                ->where('group_id', $groupId)
+                ->delete();
+
+            DB::connection('radius')->table('radusergroup')
+                ->where('username', $oldUsername)
+                ->where('group_id', $groupId)
+                ->delete();
+
+            // 🔹 Tambahkan kembali radcheck (Cleartext-Password)
+            DB::connection('radius')->table('radcheck')->insert([
+                'username'  => $newUsername,
+                'attribute' => 'Cleartext-Password',
+                'op'        => ':=',
+                'value'     => $newPassword ?? '',
+                'group_id'  => $groupId
+            ]);
+
+            // 🔹 Dapatkan profile dari tabel profiles
+            $profile = DB::table('profiles')->find($request->profile_id);
+
+            if ($profile) {
+                // Masukkan dua entri ke radusergroup
+                DB::connection('radius')->table('radusergroup')->insert([
+                    [
+                        'username'  => $newUsername,
+                        'groupname' => 'mitra_' . $groupId,
+                        'priority'  => 1,
+                        'group_id'  => $groupId
+                    ],
+                    [
+                        'username'  => $newUsername,
+                        'groupname' => $profile->name . '-' . $groupId,
+                        'priority'  => 1,
+                        'group_id'  => $groupId
+                    ]
+                ]);
+            }
+
+            // 🔹 Update username di radreply jika ada
+            DB::connection('radius')->table('radreply')
+                ->where('username', $oldUsername)
+                ->where('group_id', $groupId)
+                ->update(['username' => $newUsername]);
+
             DB::commit();
+
             ActivityLogController::logUpdate($oldData, 'connections', $connection);
 
             return response()->json([
@@ -470,6 +514,7 @@ class ConnectionController extends Controller
         }
     }
 
+
     public function assignIsolirIp(Request $request, $id)
     {
         $user = Auth::user();
@@ -481,34 +526,45 @@ class ConnectionController extends Controller
         try {
             DB::beginTransaction();
 
+            // Ambil daftar IP yang sudah digunakan
+            $usedIps = DB::connection('radius')->table('radreply')
+                ->where('attribute', 'Framed-IP-Address')
+                ->pluck('value')
+                ->toArray();
+
+            $isolirIp = $this->findAvailableIsolirIp($usedIps);
+
             if (!$connection->isolir) {
-                // Activate isolir
+                // Aktifkan isolir
                 $connection->update(['isolir' => true]);
 
-                if ($isolirMode && $isolirMode->isolir_mode == true) {
-                    // Get used IPs and assign isolir IP
-                    $usedIps = DB::connection('radius')->table('radreply')
-                        ->where('attribute', 'Framed-IP-Address')
-                        ->pluck('value')->toArray();
 
-                    $isolirIp = $this->findAvailableIsolirIp($usedIps);
-
-                    DB::connection('radius')->table('radreply')
+                if ($isolirMode->isolir_mode == true) {
+                    // Cek apakah user sudah memiliki IP isolir
+                    $existingIp = DB::connection('radius')->table('radreply')
                         ->where('username', $username)
                         ->where('attribute', 'Framed-IP-Address')
-                        ->delete();
+                        ->exists();
 
+                    if ($existingIp) {
+                        DB::connection('radius')->table('radreply')
+                            ->where('username', $username)
+                            ->where('attribute', 'Framed-IP-Address')
+                            ->delete();
+                    }
+
+                    // Tambahkan IP isolir baru
                     DB::connection('radius')->table('radreply')->insert([
-                        'username' => $username,
+                        'username'  => $username,
                         'attribute' => 'Framed-IP-Address',
-                        'op' => ':=',
-                        'value' => $isolirIp,
-                        'group_id' => $user->group_id
+                        'op'        => ':=',
+                        'value'     => $isolirIp,
+                        'group_id'  => $user->group_id
                     ]);
 
                     $message = "IP isolir $isolirIp diberikan ke $username";
                 } else {
-                    // Disable account
+                    // Jika isolir_mode = false → disable akun
                     DB::connection('radius')->table('radcheck')->updateOrInsert(
                         ['username' => $username, 'attribute' => 'Auth-Type', 'group_id' => $user->group_id],
                         ['op' => ':=', 'value' => 'Reject']
@@ -517,16 +573,16 @@ class ConnectionController extends Controller
                     $message = "Akun $username telah dinonaktifkan";
                 }
             } else {
-                // Remove isolir
+                // Nonaktifkan isolir
                 $connection->update(['isolir' => false]);
 
-                // Remove isolir IP
+                // Hapus IP isolir
                 DB::connection('radius')->table('radreply')
                     ->where('username', $username)
                     ->where('attribute', 'Framed-IP-Address')
                     ->delete();
 
-                // Remove reject
+                // Hapus 'Reject' agar user aktif kembali
                 DB::connection('radius')->table('radcheck')
                     ->where('username', $username)
                     ->where('attribute', 'Auth-Type')
@@ -545,6 +601,7 @@ class ConnectionController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
 
     public function destroy($id)
     {
@@ -1366,39 +1423,5 @@ class ConnectionController extends Controller
                 'group_id' => $groupId
             ]);
         }
-    }
-
-    /**
-     * Update radius records for existing connection
-     */
-    private function updateRadiusRecords($oldUsername, $newUsername, $password, $profileId, $groupId)
-    {
-        // Update radcheck
-        DB::connection('radius')->table('radcheck')
-            ->where('username', $oldUsername)
-            ->where('group_id', $groupId)
-            ->update([
-                'username' => $newUsername,
-                'value' => $password ?? ''
-            ]);
-
-        // Update radreply
-        $profile = DB::table('profiles')->find($profileId);
-        if ($profile) {
-
-            DB::connection('radius')->table('radreply')
-                ->where('username', $oldUsername)
-                ->where('group_id', $groupId)
-                ->update([
-                    'username' => $newUsername,
-                    'value' => "{$profile->rate_rx}/{$profile->rate_tx} {$profile->burst_rx}/{$profile->burst_tx} {$profile->threshold_rx}/{$profile->threshold_tx} {$profile->time_rx}/{$profile->time_tx} {$profile->priority}"
-                ]);
-        }
-
-        // Update radusergroup
-        DB::connection('radius')->table('radusergroup')
-            ->where('username', $oldUsername)
-            ->where('group_id', $groupId)
-            ->update(['username' => $newUsername]);
     }
 }

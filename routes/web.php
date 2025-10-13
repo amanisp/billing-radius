@@ -116,6 +116,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/ppp/profiles/data', [PProfileController::class, 'getData'])->name('profiles.getData');
         Route::get('/settings', [SettingsController::class, 'settingPPP'])->name('ppp.settings');
         Route::put('/settings/{id}', [SettingsController::class, 'UpdateSetPPP'])->name('ppp.settings.update');
+        Route::put('/settings/billing/{id}', [SettingsController::class, 'BillingSettings'])->name('ppp.settings.bill');
     });
 
     Route::prefix('server')->group(function () {

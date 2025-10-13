@@ -18,11 +18,20 @@ class SettingsController extends Controller
     public function UpdateSetPPP(Request $request, $id)
     {
         $data = $request->has('isolir_mode');
-        // dd($request->all(), $id);
+
+        globalSettings::updateOrInsert(
+            ['id' => $id],
+            ['isolir_mode' => $data]
+        );
+
+        return back()->with('success', 'Pengaturan diperbarui!');
+    }
+
+    public function BillingSettings(Request $request, $id)
+    {
         GlobalSettings::updateOrInsert(
             ['group_id' => $id], // Search condition
             [
-                'isolir_mode' => $data,
                 'invoice_generate_days' => $request->invoice_generate_days,
                 'notification_days' => $request->notification_days,
                 'due_date_pascabayar' => $request->due_date_pascabayar,

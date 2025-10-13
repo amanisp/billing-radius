@@ -53,7 +53,7 @@
             <div class="card shadow-sm">
                 <div class="card-body">
                     <h4 class="card-title mb-3">Billing Setting</h4>
-                    <form class=" mb-3" action="{{ route('ppp.settings.update', ['id' => $globalSet->group_id]) }}"
+                    <form class=" mb-3" action="{{ route('ppp.settings.bill', ['id' => $globalSet->group_id]) }}"
                         method="post">
                         @csrf
                         @method('PUT')
