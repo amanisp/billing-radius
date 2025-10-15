@@ -1,4 +1,7 @@
+version: "3.8"
+
 services:
+  # 🐘 PHP-FPM (Laravel App)
   app:
     build:
       context: .
@@ -8,11 +11,22 @@ services:
     working_dir: /var/www/html
     volumes:
       - ./:/var/www/html
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=https://bill.amanisp.net.id
+      - VIRTUAL_HOST=bill.amanisp.net.id
+      - LETSENCRYPT_HOST=bill.amanisp.net.id
+      - LETSENCRYPT_EMAIL=admin@amanisp.net.id
     expose:
       - "9000"
+    depends_on:
+      - redis
     networks:
       - laravel
+      - proxy
 
+  # 🌐 Nginx Web Server
   nginx:
     image: nginx:alpine
     container_name: laravel_nginx
@@ -32,6 +46,7 @@ services:
       - laravel
       - proxy
 
+  # 🧠 Redis untuk Cache & Queue
   redis:
     image: redis:alpine
     container_name: laravel_redis
@@ -41,6 +56,7 @@ services:
     networks:
       - laravel
 
+  # ⏰ Laravel Scheduler (cron)
   scheduler:
     build:
       context: .
@@ -50,10 +66,14 @@ services:
     volumes:
       - ./:/var/www/html
     command: >
-      sh -c "echo '* * * * * php /var/www/html/artisan schedule:run >> /var/www/html/storage/logs/scheduler.log 2>&1' | crontab - && cron -f"
+      sh -c "echo '* * * * * php /var/www/html/artisan schedule:run >> /var/www/html/storage/logs/scheduler.log 2>&1' | crontab - && crond -f"
     networks:
       - laravel
+    depends_on:
+      - app
+      - redis
 
+  # ⚙️ Laravel Horizon (Queue Worker)
   horizon:
     build:
       context: .
@@ -62,10 +82,14 @@ services:
     restart: unless-stopped
     volumes:
       - ./:/var/www/html
-    command: supervisord -c /etc/supervisor/supervisord.conf
+    command: sh -c "php artisan horizon"
+    depends_on:
+      - redis
+      - app
     networks:
       - laravel
 
+  # 🌍 Nginx Proxy (reverse proxy untuk SSL otomatis)
   nginx-proxy:
     image: jwilder/nginx-proxy:alpine
     container_name: nginx-proxy
@@ -81,6 +105,7 @@ services:
     networks:
       - proxy
 
+  # 🔐 ACME Companion (Let's Encrypt)
   nginx-proxy-acme:
     image: nginxproxy/acme-companion
     container_name: nginx-proxy-acme

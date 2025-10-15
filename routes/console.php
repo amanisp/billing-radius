@@ -32,4 +32,4 @@ use App\Models\GlobalSettings;
 // Schedule::command('app:generate-invoice-history --dummy')->monthlyOn($dayOfMonth, '12:22');
 
 // cara 1: lebih spesifik (jam 00:00 setiap hari)
-Schedule::command('app:generate-monthly-invoice')->dailyAt('00:00');
+// Schedule::command('app:generate-monthly-invoice')->dailyAt('00:00');
