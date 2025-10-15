@@ -163,6 +163,9 @@
                     data: 'nas'
                 },
                 {
+                    data: 'area'
+                },
+                {
                     data: 'profile'
                 },
                 {

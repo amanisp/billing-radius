@@ -77,6 +77,7 @@ class ConnectionController extends Controller
             ->orderBy('created_at', 'desc')
             ->with(['profile', 'member', 'area', 'optical', 'nas']);
 
+
         // Filter berdasarkan Status (isolir/active)
         if ($request->has('status_filter') && !empty($request->status_filter)) {
             if ($request->status_filter == 'CREATE') { // Active

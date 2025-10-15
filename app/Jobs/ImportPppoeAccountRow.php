@@ -217,11 +217,22 @@ class ImportPppoeAccountRow implements ShouldQueue
 
                 // Billing period validation
                 $rawPeriod = strtolower(trim((string)($this->row[14] ?? 'renewal')));
-                $billingPeriod = in_array($rawPeriod, ['renewal', 'fixed'], true) ? $rawPeriod : 'renewal';
 
-                if (!in_array($rawPeriod, ['renewal', 'fixed', ''])) {
+                // Mapping dari Excel ke format internal
+                $periodMap = [
+                    'fixed date' => 'fixed',
+                    'fixed'      => 'fixed',
+                    'renewal'    => 'renewal',
+                ];
+
+                // Normalisasi nilai input
+                $billingPeriod = $periodMap[$rawPeriod] ?? 'renewal';
+
+                // Validasi jika format tidak dikenal
+                if (!array_key_exists($rawPeriod, $periodMap) && $rawPeriod !== '') {
                     $errors[] = "Invalid billing period: {$rawPeriod}, using default: renewal";
                 }
+
 
                 // Financial data validation
                 $ppn = 0;
