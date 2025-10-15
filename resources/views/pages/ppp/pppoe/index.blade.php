@@ -91,6 +91,7 @@
                                     <th>Username</th>
                                     <th>Type</th>
                                     <th>Nas</th>
+                                    <th>Area</th>
                                     <th>Profile</th>
                                     <th>Isolir</th>
                                     <th>Status</th>
