@@ -23,20 +23,22 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www/html
 
 # ===========================
-# 4️⃣ Supervisor Configuration
+# 4️⃣ Copy project files
+# ===========================
+COPY . /var/www/html
+
+# ===========================
+# 5️⃣ Supervisor Configuration
 # ===========================
 COPY ./docker/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
 COPY ./docker/supervisor/horizon.conf /etc/supervisor/conf.d/horizon.conf
 
 # ===========================
-# 5️⃣ Timezone & Environment
+# 6️⃣ Timezone & Permissions
 # ===========================
 ENV TZ=Asia/Jakarta
-
-# ===========================
-# 6️⃣ Permissions (optional, untuk artisan)
-# ===========================
-RUN chown -R www-data:www-data /var/www/html \
+RUN mkdir -p /var/www/html/storage /var/www/html/bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/storage /var/www/html/bootstrap/cache
 
 # ===========================
