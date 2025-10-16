@@ -58,21 +58,20 @@ services:
 
   # ⏰ Laravel Scheduler (cron)
   scheduler:
-  build:
-    context: .
-    dockerfile: docker/php/Dockerfile
-  container_name: laravel_scheduler
-  restart: unless-stopped
-  volumes:
-    - ./:/var/www/html
-  command: >
-    sh -c "echo '* * * * * cd /var/www/html && php artisan schedule:run >> /var/www/html/storage/logs/scheduler.log 2>&1' | crontab - && cron -f"
-  depends_on:
-    - app
-    - redis
-  networks:
-    - laravel
-
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: laravel_scheduler
+    restart: unless-stopped
+    volumes:
+      - ./:/var/www/html
+    command: >
+      sh -c "echo '* * * * * cd /var/www/html && php artisan schedule:run >> /var/www/html/storage/logs/scheduler.log 2>&1' | crontab - && cron -f"
+    depends_on:
+      - app
+      - redis
+    networks:
+      - laravel
 
   # ⚙️ Laravel Horizon (Queue Worker)
   horizon:
