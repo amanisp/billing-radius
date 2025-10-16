@@ -161,6 +161,9 @@ class InvoiceController extends Controller
         $status = $request->query('status');
         $type = $request->query('type');
         $payer = $request->query('payer');
+        $template = "Salam [full_name]\n\nKami informasikan bahwa invoice Anda telah terbit dan dapat segera dibayarkan. Berikut rinciannya:\n\nID Pelanggan: [uid]\nNomor Invoice: [no_invoice]\nJumlah: Rp [amount]\nPPN: [ppn]\nDiskon: [discount]\nTotal: Rp [total]\nLayanan: Internet [pppoe_user] - [pppoe_profile]\nJatuh Tempo: [due_date]\nPeriode: [period]\n\nPembayaran Otomatis: [payment_url]\n\nMohon segera lakukan pembayaran sebelum jatuh tempo.\n\nTerima kasih.\n[footer]\n\n_Ini adalah pesan otomatis - mohon untuk tidak membalas langsung ke pesan ini_";
+
+
 
         $query = InvoiceHomepass::where('group_id', $user->group_id)
             ->when($status, function ($q) use ($status) {
@@ -214,50 +217,88 @@ class InvoiceController extends Controller
                 return '<span class="' . $badgeColor . '">' . $statusText . '</span>';
             })
             ->addColumn('type', fn($invoice) => ucwords($invoice->member->paymentDetail->payment_type) ?? '-')
-            ->addColumn('action', function ($invoice) {
+            ->addColumn('action', function ($invoice) use ($template) {
+                // Ganti placeholder dengan data sebenarnya
+                $message = str_replace(
+                    [
+                        '[full_name]',
+                        '[uid]',
+                        '[no_invoice]',
+                        '[amount]',
+                        '[ppn]',
+                        '[discount]',
+                        '[total]',
+                        '[pppoe_user]',
+                        '[pppoe_profile]',
+                        '[due_date]',
+                        '[period]',
+                        '[payment_url]',
+                        '[footer]'
+                    ],
+                    [
+                        $invoice->member->fullname ?? '-',
+                        $invoice->member->uid ?? '-',
+                        $invoice->inv_number ?? '-',
+                        number_format($invoice->amount, 0, ',', '.'),
+                        number_format($invoice->ppn ?? 0, 0, ',', '.'),
+                        number_format($invoice->discount ?? 0, 0, ',', '.'),
+                        number_format($invoice->total ?? $invoice->amount, 0, ',', '.'),
+                        $invoice->member->pppoe_user ?? '-',
+                        $invoice->member->pppoe_profile ?? '-',
+                        $invoice->due_date ?? '-',
+                        $invoice->period ?? '-',
+                        $invoice->payment_url ?? '-',
+                        'PT. Anugerah Media Nusantara' // footer default
+                    ],
+                    $template
+                );
+
+                // Encode untuk URL WhatsApp
+                $waMessage = urlencode($message);
+                $waUrl = 'https://wa.me/' . $invoice->member->phone_number . '?text=' . $waMessage;
+
                 if ($invoice->status === 'unpaid') {
                     return '<div class="btn-group gap-1">
-                            <button id="btn-pay" class="btn btn-outline-primary btn-sm "
-                                data-inv="' . $invoice->inv_number . '"
-                                data-name="' . $invoice->member->name . '"
-                                data-id="' . $invoice->id . '">
-                               PAY
-                            </button>
-                            <button  data-inv="' . $invoice->inv_number . '"
-                                data-name="' . $invoice->member->name . '"
-                                data-id="' . $invoice->id . '" class="btn btn-outline-success btn-sm" id="btn-send-notif">
-                                <i class="fa-brands fa-whatsapp"></i>
-                            </button>
-                            <a href="' . $invoice->payment_url . '"  target="_blank" class="btn btn-outline-info btn-sm">
-                                <i class="fa-solid fa-file-invoice-dollar"></i>
-                            </a>
-                            <button data-inv="' . $invoice->inv_number . '"   id="btn-delete" data-name="' . $invoice->member->name . '" data-id="' . $invoice->id . '" class="btn btn-outline-danger btn-sm">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>';
+                <button id="btn-pay" class="btn btn-outline-primary btn-sm"
+                    data-inv="' . $invoice->inv_number . '"
+                    data-name="' . $invoice->member->name . '"
+                    data-id="' . $invoice->id . '">
+                   PAY
+                </button>
+                <a href="' . $waUrl . '" target="_blank" class="btn btn-outline-success btn-sm" id="btn-send-notif">
+                    <i class="fa-brands fa-whatsapp"></i>
+                </a>
+                <a href="' . $invoice->payment_url . '" target="_blank" class="btn btn-outline-info btn-sm">
+                    <i class="fa-solid fa-file-invoice-dollar"></i>
+                </a>
+                <button data-inv="' . $invoice->inv_number . '" id="btn-delete"
+                    data-name="' . $invoice->member->name . '"
+                    data-id="' . $invoice->id . '"
+                    class="btn btn-outline-danger btn-sm">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>';
                 } else {
                     $buttons = '<div class="btn-group gap-1">';
 
-                    // Hanya tampilkan tombol cancel jika payment_method BUKAN payment_gateway
-                    if ($invoice->payment_method !== 'payment_gateway') {
+                    if ($invoice->payment_method !== 'payment_gateway' && Auth::user()->role === 'mitra') {
                         $buttons .= '
-            <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
-                data-name="' . $invoice->member->name . '"
-                data-id="' . $invoice->id . '"
-                class="btn btn-outline-warning btn-sm" id="btn-edit">
-                <i class="fa-solid fa-rotate-right"></i>
-            </button>';
+                <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
+                    data-name="' . $invoice->member->name . '"
+                    data-id="' . $invoice->id . '"
+                    class="btn btn-outline-warning btn-sm">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>';
                     }
 
-                    // Tombol delete tetap ada
                     $buttons .= '
-        <button data-inv="' . $invoice->inv_number . '"
-            id="btn-delete"
-            data-name="' . $invoice->member->name . '"
-            data-id="' . $invoice->id . '"
-            class="btn btn-outline-danger btn-sm">
-            <i class="fa-solid fa-trash"></i>
-        </button>';
+            <button data-inv="' . $invoice->inv_number . '"
+                id="btn-delete"
+                data-name="' . $invoice->member->name . '"
+                data-id="' . $invoice->id . '"
+                class="btn btn-outline-danger btn-sm">
+                <i class="fa-solid fa-trash"></i>
+            </button>';
 
                     $buttons .= '</div>';
 
