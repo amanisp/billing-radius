@@ -18,6 +18,7 @@ use App\Http\Controllers\PProfileController;
 use App\Http\Controllers\RadiusController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TransactionController;
+
 use App\Http\Controllers\VpnController;
 use App\Http\Controllers\WhatsappController;
 use App\Http\Controllers\ActivityLogController;
@@ -71,6 +72,9 @@ Route::middleware('isSignin')->group(
 Route::middleware(['auth', 'verified'])->group(function () {
     // Dashboard
     Route::resource('/dashboard', DashboardController::class);
+
+    // Area List
+    Route::get('/areas/list', [AreaController::class, 'getAreaList']);
 
 
     // Role Super Admin
@@ -127,6 +131,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::prefix('master-data')->group(function () {
         Route::resource('/optical', OpticalController::class);
         Route::resource('/area', AreaController::class);
+
+        // Tambahkan routes untuk assign technician
+        Route::post('/area/assign-technician', [AreaController::class, 'assignTechnician'])
+            ->name('area.assignTechnician');
+        Route::post('/area/unassign-technician', [AreaController::class, 'unassignTechnician'])
+            ->name('area.unassignTechnician');
     });
 
     Route::group(['prefix' => 'tools/whatsapp'], function () {

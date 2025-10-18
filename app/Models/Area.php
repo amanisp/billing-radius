@@ -48,4 +48,13 @@ class Area extends Model
     {
         return $this->connection()->count();
     }
+    /**
+ * Relasi area dengan teknisi yang di-assign
+ */
+public function assignedTechnicians()
+{
+    return $this->belongsToMany(User::class, 'technician_areas', 'area_id', 'user_id')
+                ->where('role', 'teknisi')
+                ->withTimestamps();
+}
 }
