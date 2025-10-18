@@ -12,6 +12,7 @@ use App\Services\WhatsappService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Xendit\Configuration;
 use Xendit\Invoice\CreateInvoiceRequest;
 use Xendit\Invoice\InvoiceApi;
@@ -69,14 +70,54 @@ class InvoiceController extends Controller
         $lastMonth = $now->copy()->subMonth();
         $startOfThisMonth = Carbon::now()->startOfMonth();
 
-        $customer = Connection::where('group_id', $user->group_id)
-            ->with(['member.paymentDetail', 'profile', 'group', 'latestInvoice'])
+        // Build customer query with role-based scoping
+        $customerQuery = Connection::with(['member.paymentDetail', 'profile', 'group', 'latestInvoice'])
             ->whereHas('member', function ($query) {
                 $query->where('billing', 1);
-            })
-            ->get();
+            });
 
-        $unpaidCount = InvoiceHomepass::where('group_id', $user->group_id)
+        /** @var \App\Models\User $user */
+        if ($user->role === 'teknisi') {
+            // fetch assigned areas via User relation if available, otherwise fallback to pivot table
+            if (method_exists($user, 'assignedAreas')) {
+                $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
+            } else {
+                $assignedAreaIds = DB::table('technician_areas')->where('user_id', $user->id)->pluck('area_id')->toArray();
+            }
+            if (empty($assignedAreaIds)) {
+                $customerQuery->whereRaw('1 = 0');
+            } else {
+                $customerQuery->whereIn('area_id', $assignedAreaIds);
+            }
+        } else {
+            // default: show only group members
+            $customerQuery->where('group_id', $user->group_id);
+        }
+
+        $customer = $customerQuery->get();
+
+        // Build base invoice query with role-based scoping
+        $baseInvoiceQuery = InvoiceHomepass::query();
+        /** @var \App\Models\User $user */
+        if ($user->role === 'teknisi') {
+            // fetch assigned areas via User relation if available, otherwise fallback to pivot table
+            if (method_exists($user, 'assignedAreas')) {
+                $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
+            } else {
+                $assignedAreaIds = DB::table('technician_areas')->where('user_id', $user->id)->pluck('area_id')->toArray();
+            }
+            if (empty($assignedAreaIds)) {
+                $baseInvoiceQuery->whereRaw('1 = 0');
+            } else {
+                $baseInvoiceQuery->whereHas('member.connection', function ($q) use ($assignedAreaIds) {
+                    $q->whereIn('area_id', $assignedAreaIds);
+                });
+            }
+        } else {
+            $baseInvoiceQuery->where('group_id', $user->group_id);
+        }
+
+        $unpaidCount = (clone $baseInvoiceQuery)
             ->where('status', 'unpaid')
             ->whereMonth('created_at', $now->month)
             ->whereYear('created_at', $now->year)
@@ -87,35 +128,34 @@ class InvoiceController extends Controller
             ->whereYear('created_at', $now->year)
             ->sum('amount');
 
-        $paidCount = InvoiceHomepass::where('group_id', $user->group_id)
+        $paidCount = (clone $baseInvoiceQuery)
             ->where('status', 'paid')
             ->whereMonth('paid_at', $now->month)
             ->whereYear('paid_at', $now->year)
             ->count();
 
-        $paidTotal = InvoiceHomepass::where('group_id', $user->group_id)
+        $paidTotal = (clone $baseInvoiceQuery)
             ->where('status', 'paid')
             ->whereMonth('paid_at', $now->month)
             ->whereYear('paid_at', $now->year)
             ->sum('amount');
 
-        $overdueCount = InvoiceHomepass::where('group_id', $user->group_id)
+        $overdueCount = (clone $baseInvoiceQuery)
             ->where('status', '!=', 'paid')
             ->where('created_at', '<', $startOfThisMonth)
             ->count();
 
-        $overdueTotal = InvoiceHomepass::where('group_id', $user->group_id)
+        $overdueTotal = (clone $baseInvoiceQuery)
             ->where('status', '!=', 'paid')
             ->where('created_at', '<', $startOfThisMonth)
             ->sum('amount');
 
-
-        $invoiceCount = InvoiceHomepass::where('group_id', $user->group_id)
+        $invoiceCount = (clone $baseInvoiceQuery)
             ->whereMonth('created_at', $now->month)
             ->whereYear('created_at', $now->year)
             ->count();
 
-        $invoiceTotal = InvoiceHomepass::where('group_id', $user->group_id)
+        $invoiceTotal = (clone $baseInvoiceQuery)
             ->whereMonth('created_at', $now->month)
             ->whereYear('created_at', $now->year)
             ->sum('amount');
@@ -161,42 +201,80 @@ class InvoiceController extends Controller
         $status = $request->query('status');
         $type = $request->query('type');
         $payer = $request->query('payer');
-        $template = "Salam [full_name]\n\nKami informasikan bahwa invoice Anda telah terbit dan dapat segera dibayarkan. Berikut rinciannya:\n\nID Pelanggan: [uid]\nNomor Invoice: [no_invoice]\nJumlah: Rp [amount]\nPPN: [ppn]\nDiskon: [discount]\nTotal: Rp [total]\nLayanan: Internet [pppoe_user] - [pppoe_profile]\nJatuh Tempo: [due_date]\nPeriode: [period]\n\nPembayaran Otomatis: [payment_url]\n\nMohon segera lakukan pembayaran sebelum jatuh tempo.\n\nTerima kasih.\n[footer]\n\n_Ini adalah pesan otomatis - mohon untuk tidak membalas langsung ke pesan ini_";
+        $area = $request->query('area');
 
+        // Base query: include relations used in datatable
+        $query = InvoiceHomepass::with(['member.paymentDetail', 'payer', 'member.connection.profile', 'member.connection.area'])->latest();
 
+        // Role-based filtering: teknisi only sees invoices for assigned area(s)
+        /** @var \App\Models\User $user */
+        if ($user->role === 'teknisi') {
+            // relation + fallback
+            if (method_exists($user, 'assignedAreas')) {
+                $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
+            } else {
+                $assignedAreaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id')
+                    ->toArray();
+            }
 
-        $query = InvoiceHomepass::where('group_id', $user->group_id)
-            ->when($status, function ($q) use ($status) {
-                $q->where('status', $status);
-            })
-            ->when($payer, function ($q) use ($payer) {
-                if ($payer === 'kasir') {
-                    $q->whereHas('payer', function ($q2) {
-                        $q2->where('role', 'kasir');
-                    });
-                } elseif ($payer === 'admin') {
-                    $q->whereHas('payer', function ($q2) {
-                        $q2->where('role', 'mitra');
-                    });
-                } elseif ($payer === 'teknisi') {
-                    $q->whereHas('payer', function ($q2) {
-                        $q2->where('role', 'teknisi');
-                    });
-                }
-            })
-            ->when($type, function ($q) use ($type) {
-                $q->whereHas('member.paymentDetail', function ($q2) use ($type) {
-                    $q2->where('payment_type', strtolower($type));
+            if (empty($assignedAreaIds)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereHas('member.connection', function ($q) use ($assignedAreaIds) {
+                    $q->whereIn('area_id', $assignedAreaIds);
                 });
-            })
-            ->with(['member.paymentDetail', 'payer'])
-            ->latest();
+            }
+        } elseif (in_array($user->role, ['mitra', 'kasir'])) {
+            // Mitra and kasir can only see invoices in their group
+            $query->where('group_id', $user->group_id);
+        } else {
+            // Default to group scoping for other roles as a safe fallback
+            $query->where('group_id', $user->group_id);
+        }
+
+        // Apply filters from request
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        if ($payer) {
+            if ($payer === 'kasir') {
+                $query->whereHas('payer', function ($q2) {
+                    $q2->where('role', 'kasir');
+                });
+            } elseif ($payer === 'admin') {
+                $query->whereHas('payer', function ($q2) {
+                    $q2->where('role', 'mitra');
+                });
+            } elseif ($payer === 'teknisi') {
+                $query->whereHas('payer', function ($q2) {
+                    $q2->where('role', 'teknisi');
+                });
+            }
+        }
+
+        if ($type) {
+            $query->whereHas('member.paymentDetail', function ($q2) use ($type) {
+                $q2->where('payment_type', strtolower($type));
+            });
+        }
+
+        if ($area) {
+            $query->whereHas('member.connection', function ($q2) use ($area) {
+                $q2->where('area_id', $area);
+            });
+        }
 
         // return dd($query);
 
         return DataTables::of($query)
             ->addIndexColumn()
             ->addColumn('name', fn($invoice) => $invoice->member->fullname)
+            ->addColumn('area', function ($invoice) {
+                return $invoice->member->connection->area->name ?? '-';
+            })
             ->addColumn('inv_number', fn($invoice) => $invoice->inv_number)
             ->addColumn('invoice_date', fn($invoice) => $invoice->start_date)
             ->addColumn('payer', fn($invoice) => $invoice->payer->name ?? 'System')

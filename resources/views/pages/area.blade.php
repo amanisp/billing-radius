@@ -19,6 +19,32 @@
                 Create
             </button>
         </div>
+        {{-- Modal Assign Technician --}}
+        <x-modal-form id="assignTechnicianModal" title="Assign Teknisi ke Area"
+            action="{{ route('area.assignTechnician') }}">
+            <input type="hidden" name="area_id" id="assign_area_id">
+
+            <div class="col-12 mb-3">
+                <label class="form-label">Pilih Teknisi</label>
+                <div class="border rounded p-3" style="max-height: 300px; overflow-y: auto;">
+                    @forelse($technicians as $tech)
+                        <div class="form-check mb-2">
+                            <input class="form-check-input technician-checkbox" type="checkbox" name="technician_ids[]"
+                                value="{{ $tech->id }}" id="tech_{{ $tech->id }}">
+                            <label class="form-check-label" for="tech_{{ $tech->id }}">
+                                {{ $tech->name }}
+                                <small class="text-muted">({{ $tech->username }})</small>
+                            </label>
+                        </div>
+                    @empty
+                        <p class="text-muted">Tidak ada teknisi tersedia</p>
+                    @endforelse
+                </div>
+                @error('technician_ids')
+                    <div class="text-danger small mt-1">{{ $message }}</div>
+                @enderror
+            </div>
+        </x-modal-form>
 
         <x-modal-form id="formCreateModal" title="Tambah Data Area" action="{{ route('area.store') }}">
             <div class="col-12 mb-3">
@@ -69,6 +95,9 @@
                                     <th>#</th>
                                     <th>Nama</th>
                                     <th>Kode Area</th>
+                                    @if ($user->role === 'mitra')
+                                        <th>Teknisi di Area</th>
+                                    @endif
                                     <th>{{ $user->role === 'mitra' ? 'Total ODP/ODC' : 'Total POP' }}</th>
                                     <th>{{ $user->role === 'mitra' ? 'Total Customer' : 'Total Mitra' }}</th>
                                     <th>Action</th>
@@ -80,10 +109,31 @@
                                         <td>{{ $index + 1 }}</td>
                                         <td>{{ $area->name }}</td>
                                         <td>{{ $area->area_code }}</td>
+
+                                        @if ($user->role === 'mitra')
+                                            <td>
+                                                @if ($area->assignedTechnicians->count() > 0)
+                                                    @foreach ($area->assignedTechnicians as $tech)
+                                                        <span class="badge bg-primary me-1 mb-1">{{ $tech->name }}</span>
+                                                    @endforeach
+                                                @else
+                                                    <span class="text-muted small">Belum ada teknisi</span>
+                                                @endif
+                                            </td>
+                                        @endif
+
                                         <td>{{ $area->opticals()->count() }}</td>
-                                        <td>{{ Auth::user()->role === 'mitra' ? $area->connection()->count() : $area->mitras()->count() }}
+                                        <td>
+                                            {{ Auth::user()->role === 'mitra' ? $area->connection()->count() : $area->mitras()->count() }}
                                         </td>
                                         <td>
+                                            @if ($user->role === 'mitra')
+                                                <button class="btn btn-outline-primary btn-sm btn-assign"
+                                                    data-id="{{ $area->id }}" data-name="{{ $area->name }}"
+                                                    data-technicians="{{ $area->assignedTechnicians->pluck('id')->toJson() }}">
+                                                    <i class="fa-solid fa-user-plus"></i>
+                                                </button>
+                                            @endif
                                             <button class="btn btn-outline-danger btn-sm btn-delete"
                                                 data-id="{{ $area->id }}" data-name="{{ $area->name }}">
                                                 <i class="fa-solid fa-trash"></i>
@@ -109,37 +159,66 @@
                             [10, 25, 50, 100, -1],
                             [10, 25, 50, 100, "All"]
                         ],
-
                         order: [
                             [1, 'asc']
-                        ], // Sort by name column by default
+                        ],
                         columnDefs: [{
-                                targets: [0], // # column
+                                targets: [0],
                                 orderable: false
                             },
                             {
-                                targets: [-1], // Action column
+                                targets: [-1],
                                 orderable: false,
                                 searchable: false
                             }
                         ],
-                        dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>' +
-                            '<"row"<"col-sm-12"tr>>' +
-                            '<"row"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
                         drawCallback: function() {
-                            // Re-initialize event listeners after table redraw
-                            initializeDeleteButtons();
+                            initializeButtons();
                         }
                     });
 
-                    // Initial delete button setup
-                    initializeDeleteButtons();
+                    initializeButtons();
 
+                    function initializeButtons() {
+                        initializeDeleteButtons();
+                        initializeAssignButtons();
+                    }
+
+                    // Handle Assign Technician
+                    function initializeAssignButtons() {
+                        const assignButtons = document.querySelectorAll(".btn-assign");
+                        assignButtons.forEach(button => {
+                            button.removeEventListener("click", handleAssignClick);
+                            button.addEventListener("click", handleAssignClick);
+                        });
+                    }
+
+                    function handleAssignClick() {
+                        const areaId = this.getAttribute("data-id");
+                        const areaName = this.getAttribute("data-name");
+                        const assignedTechs = JSON.parse(this.getAttribute("data-technicians") || "[]");
+
+                        // Set area ID
+                        document.getElementById('assign_area_id').value = areaId;
+
+                        // Update modal title
+                        document.querySelector('#assignTechnicianModal .modal-title').textContent =
+                            `Assign Teknisi ke Area: ${areaName}`;
+
+                        // Check assigned technicians
+                        document.querySelectorAll('.technician-checkbox').forEach(checkbox => {
+                            checkbox.checked = assignedTechs.includes(parseInt(checkbox.value));
+                        });
+
+                        // Show modal
+                        const modal = new bootstrap.Modal(document.getElementById('assignTechnicianModal'));
+                        modal.show();
+                    }
+
+                    // Handle Delete
                     function initializeDeleteButtons() {
                         const deleteButtons = document.querySelectorAll(".btn-delete");
-
                         deleteButtons.forEach(button => {
-                            // Remove existing listeners to prevent duplicates
                             button.removeEventListener("click", handleDeleteClick);
                             button.addEventListener("click", handleDeleteClick);
                         });
@@ -161,19 +240,16 @@
                             reverseButtons: true
                         }).then((result) => {
                             if (result.isConfirmed) {
-                                // Create and submit form
                                 const form = document.createElement("form");
                                 form.method = "POST";
                                 form.action = `{{ route('area.destroy', '') }}/${areaId}`;
 
-                                // Add CSRF token
                                 const csrfInput = document.createElement("input");
                                 csrfInput.type = "hidden";
                                 csrfInput.name = "_token";
                                 csrfInput.value = document.querySelector('meta[name="csrf-token"]').getAttribute(
                                     'content');
 
-                                // Add DELETE method
                                 const methodInput = document.createElement("input");
                                 methodInput.type = "hidden";
                                 methodInput.name = "_method";
@@ -182,7 +258,6 @@
                                 form.appendChild(csrfInput);
                                 form.appendChild(methodInput);
                                 document.body.appendChild(form);
-
                                 form.submit();
                             }
                         });
