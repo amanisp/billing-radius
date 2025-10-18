@@ -18,6 +18,7 @@ use App\Http\Controllers\PProfileController;
 use App\Http\Controllers\RadiusController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TransactionController;
+
 use App\Http\Controllers\VpnController;
 use App\Http\Controllers\WhatsappController;
 use App\Http\Controllers\ActivityLogController;
@@ -71,6 +72,9 @@ Route::middleware('isSignin')->group(
 Route::middleware(['auth', 'verified'])->group(function () {
     // Dashboard
     Route::resource('/dashboard', DashboardController::class);
+
+    // Area List
+    Route::get('/areas/list', [AreaController::class, 'getAreaList']);
 
 
     // Role Super Admin
