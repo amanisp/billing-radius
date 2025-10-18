@@ -16,6 +16,18 @@ class AreaController extends Controller
      * Ensure we always have a User model instance from the current auth.
      * This handles cases where Auth::user() may not be an Eloquent model.
      */
+    public function getAreaList()
+    {
+        $user = Auth::user();
+        $query = ModelArea::select('id', 'name');
+
+        if ($user->role === 'mitra') {
+            $query->where('group_id', $user->group_id);
+        }
+
+        return response()->json($query->get());
+    }
+
     private function getAuthUser()
     {
         $user = Auth::user();

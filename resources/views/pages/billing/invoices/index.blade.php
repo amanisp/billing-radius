@@ -14,7 +14,7 @@
         @endif
 
         {{-- Only show create modal for Mitra and Kasir --}}
-        @if(in_array(Auth::user()->role, ['mitra', 'kasir']))
+        @if (in_array(Auth::user()->role, ['mitra', 'kasir']))
             @include('pages.billing.invoices.create')
             @include('pages.billing.invoices.detail')
         @endif
@@ -91,7 +91,7 @@
             <div class="card">
                 <div class="card-header">
                     {{-- Only show create button for Mitra and Kasir --}}
-                    @if(in_array(Auth::user()->role, ['mitra', 'kasir']))
+                    @if (in_array(Auth::user()->role, ['mitra', 'kasir']))
                         <div class="btn-group gap-1">
                             <button class="btn btn-outline-primary btn-sm px-5 py-2" data-bs-toggle="modal"
                                 data-bs-target="#formCreateModal"><i class="fa-solid fa-file-invoice-dollar"></i>
@@ -115,6 +115,10 @@
                             <option value="prabayar">Prabayar</option>
                             <option value="pascabayar">Pascabayar</option>
                         </select>
+                        <select id="areaFilter" class="form-select px-5 py-2">
+                            <option value="">Area</option>
+                            <!-- Area options will be populated dynamically -->
+                        </select>
                     </div>
                 </div>
                 <hr>
@@ -125,6 +129,7 @@
                                 <tr>
                                     <th>#</th>
                                     <th>Nama</th>
+                                    <th>Area</th>
                                     <th>Nomor Invoice</th>
                                     <th>Invoice Date</th>
                                     <th>Due Date</th>
@@ -144,6 +149,17 @@
             <script>
                 $(document).ready(function() {
                     const userRole = "{{ Auth::user()->role }}";
+                    // Populate area filter options
+                    $.ajax({
+                        url: '/areas/list', // Buat endpoint baru untuk get list area
+                        type: 'GET',
+                        success: function(areas) {
+                            areas.forEach(function(area) {
+                                $('#areaFilter').append(
+                                    `<option value="${area.id}">${area.name}</option>`);
+                            });
+                        }
+                    });
 
                     // Read Data
                     let table = $('#dataTables').DataTable({
@@ -164,6 +180,7 @@
                             data: function(d) {
                                 d.status = $('#statusFilter').val();
                                 d.type = $('#typeFilter').val();
+                                d.area = $('#areaFilter').val();
                             }
                         },
                         columns: [{
@@ -172,8 +189,9 @@
                                 searchable: false
                             }, {
                                 data: 'name',
-                            },
-                            {
+                            }, {
+                                data: 'area',
+                            }, {
                                 data: 'inv_number',
                             },
                             {
@@ -198,7 +216,7 @@
                     });
 
                     // Filter Event
-                    $('#statusFilter, #typeFilter').on('change', function() {
+                    $('#statusFilter, #typeFilter, #areaFilter').on('change', function() {
                         table.ajax.reload();
                     });
 
@@ -223,7 +241,8 @@
                                         url: "/billing/paid/cancel",
                                         type: "POST",
                                         headers: {
-                                            "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr("content")
+                                            "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr(
+                                                "content")
                                         },
                                         data: {
                                             id: id
@@ -292,7 +311,8 @@
                                         url: "/billing/unpaid/pay",
                                         type: "POST",
                                         headers: {
-                                            "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr("content")
+                                            "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr(
+                                                "content")
                                         },
                                         data: {
                                             payment_method: paymentMethod,

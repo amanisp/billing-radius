@@ -76,8 +76,8 @@ class InvoiceController extends Controller
                 $query->where('billing', 1);
             });
 
-    /** @var \App\Models\User $user */
-    if ($user->role === 'teknisi') {
+        /** @var \App\Models\User $user */
+        if ($user->role === 'teknisi') {
             // fetch assigned areas via User relation if available, otherwise fallback to pivot table
             if (method_exists($user, 'assignedAreas')) {
                 $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
@@ -98,8 +98,8 @@ class InvoiceController extends Controller
 
         // Build base invoice query with role-based scoping
         $baseInvoiceQuery = InvoiceHomepass::query();
-    /** @var \App\Models\User $user */
-    if ($user->role === 'teknisi') {
+        /** @var \App\Models\User $user */
+        if ($user->role === 'teknisi') {
             // fetch assigned areas via User relation if available, otherwise fallback to pivot table
             if (method_exists($user, 'assignedAreas')) {
                 $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
@@ -201,13 +201,14 @@ class InvoiceController extends Controller
         $status = $request->query('status');
         $type = $request->query('type');
         $payer = $request->query('payer');
+        $area = $request->query('area');
 
         // Base query: include relations used in datatable
         $query = InvoiceHomepass::with(['member.paymentDetail', 'payer', 'member.connection.profile', 'member.connection.area'])->latest();
 
-    // Role-based filtering: teknisi only sees invoices for assigned area(s)
-    /** @var \App\Models\User $user */
-    if ($user->role === 'teknisi') {
+        // Role-based filtering: teknisi only sees invoices for assigned area(s)
+        /** @var \App\Models\User $user */
+        if ($user->role === 'teknisi') {
             // relation + fallback
             if (method_exists($user, 'assignedAreas')) {
                 $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
@@ -260,11 +261,20 @@ class InvoiceController extends Controller
             });
         }
 
+        if ($area) {
+            $query->whereHas('member.connection', function ($q2) use ($area) {
+                $q2->where('area_id', $area);
+            });
+        }
+
         // return dd($query);
 
         return DataTables::of($query)
             ->addIndexColumn()
             ->addColumn('name', fn($invoice) => $invoice->member->fullname)
+            ->addColumn('area', function ($invoice) {
+                return $invoice->member->connection->area->name ?? '-';
+            })
             ->addColumn('inv_number', fn($invoice) => $invoice->inv_number)
             ->addColumn('invoice_date', fn($invoice) => $invoice->start_date)
             ->addColumn('payer', fn($invoice) => $invoice->payer->name ?? 'System')
