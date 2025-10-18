@@ -49,12 +49,13 @@ class GenerateMonthlyInvoice extends Command
             $today = Carbon::today();
 
             foreach ($settings as $setting) {
-                $groupId       = $setting->group_id;
+                // $groupId       = $setting->group_id;
+                $groupId       = 9;
                 $generateDays  = $setting->invoice_generate_days ?? 7; // default 7 hari sebelum due date
                 $pascabayarDay = $setting->due_date_pascabayar ?? 10; // default tanggal 10
 
                 // ambil semua koneksi aktif billing
-                $connections = Connection::with(['member.PaymentDetail', 'profile'])
+                $connections = Connection::with(['member.PaymentDetail', 'profile', 'area'])
                     ->where('group_id', $groupId)
                     ->whereHas('member', function ($q) {
                         $q->where('billing', 1);
@@ -157,7 +158,7 @@ class GenerateMonthlyInvoice extends Command
                     $total_amount = $subtotal + $ppnAmount - $discountAmount;
 
                     // nomor invoice
-                    $invNumber = InvoiceHelper::generateInvoiceNumber($conn->group_id ?? 1, 'H');
+                    $invNumber = InvoiceHelper::generateInvoiceNumber($conn->area->id ?? 0, 'H');
                     $duration  = InvoiceHelper::invoiceDurationThisMonth();
                     $next_inv_date = $dueDate->copy()->addMonth();
 
