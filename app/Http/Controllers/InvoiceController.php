@@ -330,7 +330,7 @@ class InvoiceController extends Controller
                         $invoice->due_date ?? '-',
                         $invoice->subscription_period ?? '-',
                         $invoice->payment_url ?? '-',
-                        'PT. Anugerah Media Nusantara' // footer default
+                        'PT. Anugerah Media Data Nusantara' // footer default
                     ],
                     $template->content
                 );
