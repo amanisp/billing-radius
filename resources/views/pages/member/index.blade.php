@@ -27,7 +27,6 @@
                                     <th>Nama Lengkap</th>
                                     <th>Nomor HP</th>
                                     <th>Email</th>
-                                    <th>Layanan Aktif</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
