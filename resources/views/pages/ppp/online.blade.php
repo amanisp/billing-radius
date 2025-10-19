@@ -37,7 +37,7 @@
                 $(document).ready(function() {
                     let table = $('#dataTable').DataTable({
                         processing: true,
-                        serverSide: true,
+                        serverSide: false,
                         responsive: true,
                         ajax: @json(route('online.getData')),
                         columns: [{

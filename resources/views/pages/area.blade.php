@@ -13,15 +13,8 @@
                 {{ session('error') }}</div>
         @endif
 
-        <div class="d-flex">
-            <button class="btn btn-outline-primary btn-sm px-4 mt-2 mb-4" data-bs-toggle="modal"
-                data-bs-target="#formCreateModal"><i class="fa-solid fa-plus"></i>
-                Create
-            </button>
-        </div>
         {{-- Modal Assign Technician --}}
-        <x-modal-form id="assignTechnicianModal" title="Assign Teknisi ke Area"
-            action="{{ route('area.assignTechnician') }}">
+        <x-modal-form id="assignTechnicianModal" title="Assign Teknisi ke Area" action="{{ route('area.assignTechnician') }}">
             <input type="hidden" name="area_id" id="assign_area_id">
 
             <div class="col-12 mb-3">
@@ -127,17 +120,19 @@
                                             {{ Auth::user()->role === 'mitra' ? $area->connection()->count() : $area->mitras()->count() }}
                                         </td>
                                         <td>
-                                            @if ($user->role === 'mitra')
-                                                <button class="btn btn-outline-primary btn-sm btn-assign"
-                                                    data-id="{{ $area->id }}" data-name="{{ $area->name }}"
-                                                    data-technicians="{{ $area->assignedTechnicians->pluck('id')->toJson() }}">
-                                                    <i class="fa-solid fa-user-plus"></i>
+                                            <div class="btn-group gap-1">
+                                                @if ($user->role === 'mitra')
+                                                    <button class="btn btn-outline-primary btn-sm btn-assign"
+                                                        data-id="{{ $area->id }}" data-name="{{ $area->name }}"
+                                                        data-technicians="{{ $area->assignedTechnicians->pluck('id')->toJson() }}">
+                                                        <i class="fa-solid fa-user-plus"></i>
+                                                    </button>
+                                                @endif
+                                                <button class="btn btn-outline-danger btn-sm btn-delete"
+                                                    data-id="{{ $area->id }}" data-name="{{ $area->name }}">
+                                                    <i class="fa-solid fa-trash"></i>
                                                 </button>
-                                            @endif
-                                            <button class="btn btn-outline-danger btn-sm btn-delete"
-                                                data-id="{{ $area->id }}" data-name="{{ $area->name }}">
-                                                <i class="fa-solid fa-trash"></i>
-                                            </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 @endforeach
@@ -154,24 +149,7 @@
                     // Initialize DataTable
                     $('#areaTable').DataTable({
                         responsive: true,
-                        pageLength: 10,
-                        lengthMenu: [
-                            [10, 25, 50, 100, -1],
-                            [10, 25, 50, 100, "All"]
-                        ],
-                        order: [
-                            [1, 'asc']
-                        ],
-                        columnDefs: [{
-                                targets: [0],
-                                orderable: false
-                            },
-                            {
-                                targets: [-1],
-                                orderable: false,
-                                searchable: false
-                            }
-                        ],
+
                         drawCallback: function() {
                             initializeButtons();
                         }

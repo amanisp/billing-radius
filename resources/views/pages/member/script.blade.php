@@ -3,7 +3,7 @@
         $(document).ready(function() {
             let table = $('#dataTable').DataTable({
                 processing: true,
-                serverSide: true,
+                serverSide: false,
                 responsive: true,
                 autoWidth: false,
                 ajax: @json(route('members.getData')),

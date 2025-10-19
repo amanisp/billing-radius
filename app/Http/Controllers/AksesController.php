@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\ActivityLogged;
 use App\Models\User;
 use Google\Service\AnalyticsReporting\Activity;
 use Illuminate\Http\Request;
@@ -165,11 +166,10 @@ class AksesController extends Controller
     {
         try {
             $user = User::where('id', $id)->firstOrFail();
-            $deletedData = $user->toArray();
+            $deletedData = $user;
 
             $user->delete();
-
-            ActivityLogController::logDelete('users', $deletedData);
+            ActivityLogged::dispatch('DELETE', null, $deletedData);
 
             return redirect()->route('admin.index')->with('success', 'Data User berhasil dihapus.');
         } catch (\Throwable $th) {

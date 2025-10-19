@@ -19,14 +19,13 @@ class AreaController extends Controller
     public function getAreaList()
     {
         $user = Auth::user();
-        $query = ModelArea::select('id', 'name');
 
-        if ($user->role === 'mitra') {
-            $query->where('group_id', $user->group_id);
-        }
+        $query = ModelArea::select('id', 'name')
+            ->where('group_id', $user->group_id);
 
         return response()->json($query->get());
     }
+
 
     private function getAuthUser()
     {
@@ -45,44 +44,45 @@ class AreaController extends Controller
         return null;
     }
 
-   public function index()
-{
-    $user = $this->getAuthUser();
+    public function index()
+    {
+        $user = $this->getAuthUser();
 
-    if (!$user) {
-        return redirect()->route('login')->with('error', 'Session expired. Please login again.');
-    }
-
-    if ($user->role === 'teknisi') {
-        // fetch assigned areas via relation if available, otherwise fallback to pivot table
-        if (method_exists($user, 'assignedAreas')) {
-            $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
-        } else {
-            $assignedAreaIds = DB::table('technician_areas')
-                ->where('user_id', $user->id)
-                ->pluck('area_id')
-                ->toArray();
+        if (!$user) {
+            return redirect()->route('login')->with('error', 'Session expired. Please login again.');
         }
 
-        if (empty($assignedAreaIds)) {
-            $data = collect(); // Empty collection
+        if ($user->role === 'teknisi' || $user->role === 'kasir') {
+            // fetch assigned areas via relation if available, otherwise fallback to pivot table
+            if (method_exists($user, 'assignedAreas')) {
+                $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
+            } else {
+                $assignedAreaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id')
+                    ->toArray();
+            }
+
+            if (empty($assignedAreaIds)) {
+                $data = collect(); // Empty collection
+            } else {
+                $data = ModelArea::whereIn('id', $assignedAreaIds)
+                    ->with(['opticals', 'connection'])
+                    ->get();
+            }
         } else {
-            $data = ModelArea::whereIn('id', $assignedAreaIds)
+            $data = ModelArea::where('group_id', $user->group_id)
                 ->with(['opticals', 'connection'])
                 ->get();
         }
-    } else {
-        $data = ModelArea::where('group_id', $user->group_id)
-            ->with(['opticals', 'connection'])
+
+        $technicians = User::where('group_id', $user->group_id)
+            ->whereIn('role', ['teknisi', 'kasir'])
             ->get();
+
+        return view('pages.area', compact('data', 'user', 'technicians'));
     }
 
-    $technicians = User::where('group_id', $user->group_id)
-        ->where('role', 'teknisi')
-        ->get();
-
-    return view('pages.area', compact('data', 'user', 'technicians'));
-}
     public function store(Request $request)
     {
         try {
@@ -117,57 +117,74 @@ class AreaController extends Controller
         try {
             $request->validate([
                 'area_id' => 'required|exists:areas,id',
-                'technician_ids' => 'required|array',
+                'technician_ids' => 'array',
                 'technician_ids.*' => 'exists:users,id'
             ]);
 
             $user = $this->getAuthUser();
-
             $area = ModelArea::findOrFail($request->area_id);
 
-            // Verify area belongs to same group as authenticated user
+            // Pastikan area milik group yang sama
             if ($area->group_id !== $user->group_id) {
                 return back()->with('error', 'Area tidak ditemukan!');
             }
 
-            // Sync technicians (will remove old assignments and add new ones)
-            $area->assignedTechnicians()->sync($request->technician_ids);
+            // Ambil semua teknisi yang sudah terassign
+            $currentTechnicians = $area->assignedTechnicians()->pluck('user_id')->toArray();
 
+            // Ambil daftar yang dikirim dari form (centang)
+            $newTechnicians = $request->technician_ids ?? [];
+
+            // Tambah teknisi baru yang belum ada
+            $toAttach = array_diff($newTechnicians, $currentTechnicians);
+            if (!empty($toAttach)) {
+                $area->assignedTechnicians()->attach($toAttach);
+            }
+
+            // Hapus teknisi yang sebelumnya ada tapi sekarang tidak dicentang
+            $toDetach = array_diff($currentTechnicians, $newTechnicians);
+            if (!empty($toDetach)) {
+                $area->assignedTechnicians()->detach($toDetach);
+            }
+
+            // Log aktivitas
             ActivityLogged::dispatch('UPDATE', null, [
                 'action' => 'assign_technicians',
                 'area' => $area->name,
-                'technicians' => User::whereIn('id', $request->technician_ids)->pluck('name')->toArray()
+                'added' => User::whereIn('id', $toAttach)->pluck('name')->toArray(),
+                'removed' => User::whereIn('id', $toDetach)->pluck('name')->toArray(),
             ]);
 
-            return back()->with('success', 'Teknisi berhasil di-assign ke area!');
+            return back()->with('success', 'Data teknisi area berhasil diperbarui!');
         } catch (\Throwable $th) {
             return back()->with('error', $th->getMessage());
         }
     }
 
-    public function unassignTechnician(Request $request)
-    {
-        try {
-            $request->validate([
-                'area_id' => 'required|exists:areas,id',
-                'technician_id' => 'required|exists:users,id'
-            ]);
 
-            $user = $this->getAuthUser();
+    // public function unassignTechnician(Request $request)
+    // {
+    //     try {
+    //         $request->validate([
+    //             'area_id' => 'required|exists:areas,id',
+    //             'technician_id' => 'required|exists:users,id'
+    //         ]);
 
-            $area = ModelArea::findOrFail($request->area_id);
+    //         $user = $this->getAuthUser();
 
-            if ($area->group_id !== $user->group_id) {
-                return back()->with('error', 'Area tidak ditemukan!');
-            }
+    //         $area = ModelArea::findOrFail($request->area_id);
 
-            $area->assignedTechnicians()->detach($request->technician_id);
+    //         if ($area->group_id !== $user->group_id) {
+    //             return back()->with('error', 'Area tidak ditemukan!');
+    //         }
 
-            return back()->with('success', 'Teknisi berhasil dihapus dari area!');
-        } catch (\Throwable $th) {
-            return back()->with('error', $th->getMessage());
-        }
-    }
+    //         $area->assignedTechnicians()->detach($request->technician_id);
+
+    //         return back()->with('success', 'Teknisi berhasil dihapus dari area!');
+    //     } catch (\Throwable $th) {
+    //         return back()->with('error', $th->getMessage());
+    //     }
+    // }
     public function destroy($id)
     {
         $area = ModelArea::where('id', $id)->firstOrFail();

@@ -106,7 +106,7 @@
                             @else
                                 <select class="form-control" name="role" id="role">
                                     <option value="teknisi">Teknisi</option>
-                                    <option value="kasir">Kasir</option>
+                                    {{-- <option value="kasir">Kasir</option> --}}
                                 </select>
                             @endif
                         </div>

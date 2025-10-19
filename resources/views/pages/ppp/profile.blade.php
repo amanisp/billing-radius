@@ -358,7 +358,7 @@
                     // Initialize DataTable with proper server-side processing
                     let table = $('#dataTable').DataTable({
                         processing: true,
-                        serverSide: true,
+                        serverSide: false,
                         responsive: true,
                         autoWidth: false,
                         language: {

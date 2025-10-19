@@ -119,7 +119,7 @@
 
                     let table = $('#dataTables').DataTable({
                         processing: true,
-                        serverSide: true,
+                        serverSide: false,
                         responsive: true,
                         autoWidth: false,
                         columnDefs: [{
