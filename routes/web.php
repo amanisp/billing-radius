@@ -130,13 +130,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::prefix('master-data')->group(function () {
         Route::resource('/optical', OpticalController::class);
-        Route::resource('/area', AreaController::class);
 
-        // Tambahkan routes untuk assign technician
+        // Area
+        Route::resource('/area', AreaController::class);
         Route::post('/area/assign-technician', [AreaController::class, 'assignTechnician'])
             ->name('area.assignTechnician');
-        Route::post('/area/unassign-technician', [AreaController::class, 'unassignTechnician'])
-            ->name('area.unassignTechnician');
+        // Route::post('/area/unassign-technician', [AreaController::class, 'unassignTechnician'])
+        //     ->name('area.unassignTechnician');
     });
 
     Route::group(['prefix' => 'tools/whatsapp'], function () {

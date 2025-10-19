@@ -131,7 +131,7 @@
     $(document).ready(function() {
         let table = $('#dataTable').DataTable({
             processing: true,
-            serverSide: true,
+            serverSide: false,
             responsive: true,
             autoWidth: false,
             ajax: {
@@ -452,7 +452,7 @@
             // Inisialisasi ulang DataTables dengan limit 5 dan tanpa sorting
             $('#dataSession').DataTable({
                 processing: true,
-                serverSide: true,
+                serverSide: false,
                 responsive: true,
                 autoWidth: false,
                 pageLength: 5, // Default 5 data per halaman

@@ -13,7 +13,7 @@
                 {{ session('error') }}</div>
         @endif
 
-        
+
         <section class="row">
             <div class="row">
                 <div class="col-md">
@@ -106,7 +106,7 @@
                 $(document).ready(function() {
                     let table = $('#dataTables').DataTable({
                         processing: true,
-                        serverSide: true,
+                        serverSide: false,
                         responsive: true,
                         autoWidth: false,
                         columnDefs: [{

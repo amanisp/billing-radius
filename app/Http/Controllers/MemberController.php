@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Member;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\DataTables;
 
 class MemberController extends Controller
@@ -17,24 +18,52 @@ class MemberController extends Controller
     public function getData()
     {
         $user = Auth::user();
-        $query = Member::where('group_id', $user->group_id)
-            ->with(['paymentDetail', 'connection'])
-            ->orderBy('created_at', 'desc') // urutkan terbaru dulu
-            ->get();
 
-        return DataTables::of($query)
+        // Base query
+        $query = Member::with(['paymentDetail', 'connection.profile', 'connection.area'])
+            ->orderBy('created_at', 'desc');
+
+        // 🔹 Filter berdasarkan role
+        if (in_array($user->role, ['mitra', 'kasir'])) {
+            // Mitra & kasir → lihat semua member dalam grup yang sama
+            $query->where('group_id', $user->group_id);
+        } elseif ($user->role === 'teknisi') {
+            // Teknisi → hanya lihat member dari area yang di-assign ke dia
+            $assignedAreaIds = DB::table('technician_areas')
+                ->where('user_id', $user->id)
+                ->pluck('area_id')
+                ->toArray();
+
+            if (empty($assignedAreaIds)) {
+                // Tidak punya area → jangan tampilkan data
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereHas('connection', function ($q) use ($assignedAreaIds) {
+                    $q->whereIn('area_id', $assignedAreaIds);
+                });
+            }
+        } else {
+            // Role lain (superadmin, admin, dll) → default filter group_id
+            $query->where('group_id', $user->group_id);
+        }
+
+        // 🔹 Eksekusi query
+        $data = $query->get();
+
+        // 🔹 Return ke DataTables
+        return DataTables::of($data)
             ->addIndexColumn()
             ->addColumn('action', function ($account) {
                 return '
                 <div class="btn-group">
-                <button type="button" class="btn btn-outline-warning btn-edit btn-sm ms-1"
-                    data-id="' . $account->id . '"
-                    data-fullname="' . e($account->fullname) . '"
-                    data-phone_number="' . e($account->phone_number) . '"
-                    data-email="' . e($account->email) . '"
-                    data-id_card="' . e($account->id_card) . '"
-                    data-address="' . e($account->address) . '"
-                ><i class="fa-solid fa-pencil"></i></button>
+                    <button type="button" class="btn btn-outline-warning btn-edit btn-sm ms-1"
+                        data-id="' . $account->id . '"
+                        data-fullname="' . e($account->fullname) . '"
+                        data-phone_number="' . e($account->phone_number) . '"
+                        data-email="' . e($account->email) . '"
+                        data-id_card="' . e($account->id_card) . '"
+                        data-address="' . e($account->address) . '"
+                    ><i class="fa-solid fa-pencil"></i></button>
                 </div>
             ';
             })
@@ -42,14 +71,14 @@ class MemberController extends Controller
                 return '<button 
                 class="btn btn-sm btn-outline-primary btnCreateInvoice" 
                 data-id="' . $account->id . '" 
-                data-fullname="' . $account->fullname . '" 
-                data-internet="' . $account->connection->internet_number . '" 
-                data-username="' . $account->connection->username . '" 
-                data-price="' . $account->connection->profile->price . '"
-                data-item="' . $account->connection->profile->name . '"
-                data-vats="' . $account->paymentDetail->ppn . '"
-                data-discounts="' . $account->paymentDetail->discount . '"
-                data-active="' . $account->paymentDetail->active_date . '" 
+                data-fullname="' . e($account->fullname) . '" 
+                data-internet="' . e(optional($account->connection)->internet_number) . '" 
+                data-username="' . e(optional($account->connection)->username) . '" 
+                data-price="' . e(optional(optional($account->connection)->profile)->price) . '"
+                data-item="' . e(optional(optional($account->connection)->profile)->name) . '"
+                data-vats="' . e(optional($account->paymentDetail)->ppn) . '"
+                data-discounts="' . e(optional($account->paymentDetail)->discount) . '"
+                data-active="' . e(optional($account->paymentDetail)->active_date) . '" 
             >
                 Create Invoice
             </button>';
@@ -60,6 +89,7 @@ class MemberController extends Controller
             ->rawColumns(['action', 'actionCreate'])
             ->make(true);
     }
+
 
     public function update(Request $request, $id)
     {

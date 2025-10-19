@@ -69,7 +69,7 @@
         $(document).ready(function() {
             let table = $('#dataTables').DataTable({
                 processing: true,
-                serverSide: true,
+                serverSide: false,
                 responsive: true,
                 autoWidth: false,
                 headers: {

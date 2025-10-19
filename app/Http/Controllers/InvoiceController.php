@@ -8,6 +8,7 @@ use App\Models\GlobalSettings;
 use App\Models\InvoiceHomepass;
 use App\Models\Member;
 use App\Models\PaymentDetail;
+use App\Models\WhatsappTemplate;
 use App\Services\WhatsappService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -202,6 +203,9 @@ class InvoiceController extends Controller
         $type = $request->query('type');
         $payer = $request->query('payer');
         $area = $request->query('area');
+        $template = WhatsappTemplate::where('template_type', 'invoice_terbit')
+            ->where('group_id', $user->group_id)
+            ->first();
 
         // Base query: include relations used in datatable
         $query = InvoiceHomepass::with(['member.paymentDetail', 'payer', 'member.connection.profile', 'member.connection.area'])->latest();
@@ -328,7 +332,7 @@ class InvoiceController extends Controller
                         $invoice->payment_url ?? '-',
                         'PT. Anugerah Media Nusantara' // footer default
                     ],
-                    $template
+                    $template->content
                 );
 
                 // Encode untuk URL WhatsApp
@@ -357,9 +361,9 @@ class InvoiceController extends Controller
                 </button>
             </div>';
                 } else {
-                    $buttons = '<div class="btn-group gap-1">';
-
                     if ($invoice->payment_method !== 'payment_gateway' && Auth::user()->role === 'mitra') {
+                        $buttons = '<div class="btn-group gap-1">';
+
                         $buttons .= '
                 <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
                     data-name="' . $invoice->member->name . '"
@@ -367,9 +371,9 @@ class InvoiceController extends Controller
                     class="btn btn-outline-warning btn-sm">
                     <i class="fa-solid fa-rotate-right"></i>
                 </button>';
-                    }
 
-                    $buttons .= '
+
+                        $buttons .= '
             <button data-inv="' . $invoice->inv_number . '"
                 id="btn-delete"
                 data-name="' . $invoice->member->name . '"
@@ -378,9 +382,10 @@ class InvoiceController extends Controller
                 <i class="fa-solid fa-trash"></i>
             </button>';
 
-                    $buttons .= '</div>';
+                        $buttons .= '</div>';
 
-                    return $buttons;
+                        return $buttons;
+                    }
                 }
             })
             ->rawColumns(['action', 'total', 'status'])

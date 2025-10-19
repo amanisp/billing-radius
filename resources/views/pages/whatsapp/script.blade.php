@@ -2,7 +2,7 @@
     <script>
         $('#logsTable').DataTable({
             processing: true,
-            serverSide: true,
+            serverSide: false,
             ajax: '/tools/whatsapp/logs',
             columns: [{
                     data: 'created_at',

@@ -115,7 +115,7 @@
             $(document).ready(function() {
                 let table = $('#auditTable').DataTable({
                     processing: true,
-                    serverSide: true,
+                    serverSide: false,
                     // scrollY: '200px',
                     scrollCollapse: true,
                     paging: true,
