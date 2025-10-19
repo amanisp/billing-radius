@@ -24,9 +24,6 @@
                         data: 'email',
                     },
                     {
-                        data: 'service_active',
-                    },
-                    {
                         data: 'action',
                     },
                 ]
