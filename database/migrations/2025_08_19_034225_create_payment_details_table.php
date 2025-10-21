@@ -20,7 +20,7 @@ return new class extends Migration
             $table->unsignedBigInteger('amount')->default(0);
             $table->integer('discount')->default(0);
             $table->integer('ppn')->default(0);
-            $table->date('next_invoice')->nullable();
+            $table->date('last_invoice')->nullable();
             $table->timestamps();
         });
     }

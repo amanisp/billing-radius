@@ -18,7 +18,6 @@ class InvoiceHomepass extends Model
         'amount',
         'status',
         'group_id',
-        'next_inv_date',
         'payment_url',
         'payment_method',
         'paid_at'

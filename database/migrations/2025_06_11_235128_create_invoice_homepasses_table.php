@@ -20,7 +20,6 @@ return new class extends Migration
             $table->enum('invoice_type', ['C', 'P', 'H']);
             $table->date('start_date');
             $table->date('due_date');
-            $table->date('next_inv_date');
             $table->date('paid_at')->nullable();
             $table->string('subscription_period')->nullable();
             $table->string('inv_number');
