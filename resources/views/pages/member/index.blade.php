@@ -14,19 +14,19 @@
         @endif
 
         @include('pages.member.edit')
+        @include('pages.member.paymentdetail')
 
         <section class="row">
             <div class="card">
-
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table" id="dataTable">
                             <thead>
                                 <tr>
-                                    <th>#</th>
+                                    <th>No</th>
+                                    <th>Area</th>
                                     <th>Nama Lengkap</th>
                                     <th>Nomor HP</th>
-                                    <th>Email</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -38,4 +38,5 @@
 
         {{-- Get AJAX --}}
         @include('pages.member.script')
-    @endsection
+    </div>
+@endsection
