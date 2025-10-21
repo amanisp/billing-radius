@@ -38,28 +38,40 @@ class InvoiceController extends Controller
 
     public function checkInvoice(Request $request)
     {
-        // cek apakah sudah ada invoice bulan ini
         $year = (int) $request->year;
         $month = (int) $request->month;
 
+        // Cek apakah sudah ada invoice bulan ini
         $exists = InvoiceHomepass::where('member_id', $request->member_id)
-            ->whereYear('due_date', $year)
-            ->whereMonth('due_date', $month)
+            ->whereYear('start_date', $year)
+            ->whereMonth('start_date', $month)
             ->exists();
 
-        // cari invoice terakhir
-        $lastInvoice = InvoiceHomepass::where('member_id', $request->member_id)
-            ->orderByDesc('due_date')
-            ->first();
+        // Ambil member dengan payment detail
+        $member = Member::with('paymentDetail')->find($request->member_id);
+
+        $lastInvoiceDate = null;
+        $nextInvoiceDate = null;
+
+        if ($member && $member->paymentDetail) {
+            $lastInvoiceDate = $member->paymentDetail->last_invoice;
+
+            if ($lastInvoiceDate) {
+                // Next invoice date adalah last_invoice (karena sudah di-update setelah pembayaran)
+                $nextInvoiceDate = $lastInvoiceDate;
+            } else {
+                // Jika belum pernah ada invoice, gunakan active_date
+                $nextInvoiceDate = $member->paymentDetail->active_date;
+            }
+        }
 
         return response()->json([
-            'year' => $request->year,
-            'month' => $request->month,
+            'year' => $year,
+            'month' => $month,
             'id' => $request->member_id,
             'exists' => $exists,
-            'next_inv_date' => $lastInvoice?->next_inv_date,
-            'last_due_date' => $lastInvoice?->due_date,
-            'last_period'   => $lastInvoice?->subscription_period,
+            'next_inv_date' => $nextInvoiceDate,
+            'last_invoice' => $lastInvoiceDate,
         ]);
     }
 
@@ -203,17 +215,22 @@ class InvoiceController extends Controller
         $type = $request->query('type');
         $payer = $request->query('payer');
         $area = $request->query('area');
+
         $template = WhatsappTemplate::where('template_type', 'invoice_terbit')
             ->where('group_id', $user->group_id)
             ->first();
 
-        // Base query: include relations used in datatable
-        $query = InvoiceHomepass::with(['member.paymentDetail', 'payer', 'member.connection.profile', 'member.connection.area'])->latest();
+        // Base query with all necessary relations
+        $query = InvoiceHomepass::with([
+            'member.paymentDetail',
+            'member.connection.profile',
+            'member.connection.area',
+            'payer'
+        ])->latest();
 
-        // Role-based filtering: teknisi only sees invoices for assigned area(s)
+        // Role-based filtering
         /** @var \App\Models\User $user */
         if ($user->role === 'teknisi') {
-            // relation + fallback
             if (method_exists($user, 'assignedAreas')) {
                 $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
             } else {
@@ -231,14 +248,12 @@ class InvoiceController extends Controller
                 });
             }
         } elseif (in_array($user->role, ['mitra', 'kasir'])) {
-            // Mitra and kasir can only see invoices in their group
             $query->where('group_id', $user->group_id);
         } else {
-            // Default to group scoping for other roles as a safe fallback
             $query->where('group_id', $user->group_id);
         }
 
-        // Apply filters from request
+        // Apply filters
         if ($status) {
             $query->where('status', $status);
         }
@@ -271,20 +286,36 @@ class InvoiceController extends Controller
             });
         }
 
-        // return dd($query);
-
         return DataTables::of($query)
             ->addIndexColumn()
-            ->addColumn('name', fn($invoice) => $invoice->member->fullname)
-            ->addColumn('area', function ($invoice) {
-                return $invoice->member->connection->area->name ?? '-';
+            ->addColumn('name', function ($invoice) {
+                return $invoice->member ? $invoice->member->fullname : '-';
             })
-            ->addColumn('inv_number', fn($invoice) => $invoice->inv_number)
-            ->addColumn('invoice_date', fn($invoice) => $invoice->start_date)
-            ->addColumn('payer', fn($invoice) => $invoice->payer->name ?? 'System')
-            ->addColumn('due_date', fn($invoice) => $invoice->due_date)
-            ->addColumn('paid_at', fn($invoice) => $invoice->paid_at)
+            ->addColumn('area', function ($invoice) {
+                return $invoice->member &&
+                    $invoice->member->connection &&
+                    $invoice->member->connection->area
+                    ? $invoice->member->connection->area->name
+                    : '-';
+            })
+            ->addColumn('inv_number', function ($invoice) {
+                return $invoice->inv_number ?? '-';
+            })
+            ->addColumn('invoice_date', function ($invoice) {
+                return $invoice->start_date ?? '-';
+            })
+            ->addColumn('payer', function ($invoice) {
+                return $invoice->payer ? $invoice->payer->name : 'System';
+            })
+            ->addColumn('due_date', function ($invoice) {
+                return $invoice->due_date ?? '-';
+            })
+            ->addColumn('paid_at', function ($invoice) {
+                return $invoice->paid_at ?? '-';
+            })
             ->addColumn('payment_method', function ($invoice) {
+                if (!$invoice->payment_method) return '-';
+
                 return match ($invoice->payment_method) {
                     'payment_gateway' => 'Payment Gateway',
                     'cash' => 'Cash',
@@ -292,16 +323,25 @@ class InvoiceController extends Controller
                     default => ucwords(str_replace('_', ' ', $invoice->payment_method))
                 };
             })
-            ->addColumn('total', fn($invoice) => 'Rp ' . number_format($invoice->amount, 0, ',', '.'))
+            ->addColumn('total', function ($invoice) {
+                return 'Rp ' . number_format($invoice->amount ?? 0, 0, ',', '.');
+            })
             ->addColumn('status', function ($invoice) {
                 $badgeColor = $invoice->status === 'paid' ? 'text-success' : 'text-danger';
                 $statusText = $invoice->status === 'paid' ? 'Paid' : 'Unpaid';
                 return '<span class="' . $badgeColor . '">' . $statusText . '</span>';
             })
-            ->addColumn('type', fn($invoice) => ucwords($invoice->member->paymentDetail->payment_type) ?? '-')
-            ->addColumn('action', function ($invoice) use ($template) {
-                // Ganti placeholder dengan data sebenarnya
-                $message = str_replace(
+            ->addColumn('type', function ($invoice) {
+                if (!$invoice->member || !$invoice->member->paymentDetail) {
+                    return '-';
+                }
+                return ucwords($invoice->member->paymentDetail->payment_type);
+            })
+            ->addColumn('action', function ($invoice) use ($template, $user) {
+                if (!$invoice->member) return '';
+
+                // Generate WhatsApp message
+                $message = $template ? str_replace(
                     [
                         '[full_name]',
                         '[uid]',
@@ -321,7 +361,7 @@ class InvoiceController extends Controller
                         $invoice->member->fullname ?? '-',
                         $invoice->connection->internet_number ?? '-',
                         $invoice->inv_number ?? '-',
-                        number_format($invoice->amount, 0, ',', '.'),
+                        number_format($invoice->amount ?? 0, 0, ',', '.'),
                         number_format($invoice->ppn ?? 0, 0, ',', '.'),
                         number_format($invoice->discount ?? 0, 0, ',', '.'),
                         number_format($invoice->total ?? $invoice->amount, 0, ',', '.'),
@@ -330,63 +370,62 @@ class InvoiceController extends Controller
                         $invoice->due_date ?? '-',
                         $invoice->subscription_period ?? '-',
                         $invoice->payment_url ?? '-',
-                        'PT. Anugerah Media Data Nusantara' // footer default
+                        'PT. Anugerah Media Data Nusantara'
                     ],
                     $template->content
-                );
+                ) : '';
 
-                // Encode untuk URL WhatsApp
                 $waMessage = urlencode($message);
                 $waUrl = 'https://wa.me/' . $invoice->member->phone_number . '?text=' . $waMessage;
 
                 if ($invoice->status === 'unpaid') {
                     return '<div class="btn-group gap-1">
-                <button id="btn-pay" class="btn btn-outline-primary btn-sm"
-                    data-inv="' . $invoice->inv_number . '"
-                    data-name="' . $invoice->member->name . '"
-                    data-id="' . $invoice->id . '">
-                   PAY
-                </button>
-                <a href="' . $waUrl . '" target="_blank" class="btn btn-outline-success btn-sm" id="btn-send-notif">
-                    <i class="fa-brands fa-whatsapp"></i>
-                </a>
-                <a href="' . $invoice->payment_url . '" target="_blank" class="btn btn-outline-info btn-sm">
-                    <i class="fa-solid fa-file-invoice-dollar"></i>
-                </a>
-                <button data-inv="' . $invoice->inv_number . '" id="btn-delete"
-                    data-name="' . $invoice->member->name . '"
-                    data-id="' . $invoice->id . '"
-                    class="btn btn-outline-danger btn-sm">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
-            </div>';
+                    <button id="btn-pay" class="btn btn-outline-primary btn-sm"
+                        data-inv="' . $invoice->inv_number . '"
+                        data-name="' . $invoice->member->name . '"
+                        data-id="' . $invoice->id . '">
+                       PAY
+                    </button>
+                    <a href="' . $waUrl . '" target="_blank" class="btn btn-outline-success btn-sm" id="btn-send-notif">
+                        <i class="fa-brands fa-whatsapp"></i>
+                    </a>
+                    <a href="' . $invoice->payment_url . '" target="_blank" class="btn btn-outline-info btn-sm">
+                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                    </a>
+                    <button data-inv="' . $invoice->inv_number . '" id="btn-delete"
+                        data-name="' . $invoice->member->name . '"
+                        data-id="' . $invoice->id . '"
+                        class="btn btn-outline-danger btn-sm">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>';
                 } else {
-                    if ($invoice->payment_method !== 'payment_gateway' && Auth::user()->role === 'mitra') {
+                    if ($invoice->payment_method !== 'payment_gateway' && $user->role === 'mitra') {
                         $buttons = '<div class="btn-group gap-1">';
 
                         $buttons .= '
-                <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
-                    data-name="' . $invoice->member->name . '"
-                    data-id="' . $invoice->id . '"
-                    class="btn btn-outline-warning btn-sm">
-                    <i class="fa-solid fa-rotate-right"></i>
-                </button>';
-
+                        <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
+                            data-name="' . $invoice->member->name . '"
+                            data-id="' . $invoice->id . '"
+                            class="btn btn-outline-warning btn-sm">
+                            <i class="fa-solid fa-rotate-right"></i>
+                        </button>';
 
                         $buttons .= '
-            <button data-inv="' . $invoice->inv_number . '"
-                id="btn-delete"
-                data-name="' . $invoice->member->name . '"
-                data-id="' . $invoice->id . '"
-                class="btn btn-outline-danger btn-sm">
-                <i class="fa-solid fa-trash"></i>
-            </button>';
+                        <button data-inv="' . $invoice->inv_number . '"
+                            id="btn-delete"
+                            data-name="' . $invoice->member->name . '"
+                            data-id="' . $invoice->id . '"
+                            class="btn btn-outline-danger btn-sm">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>';
 
                         $buttons .= '</div>';
-
                         return $buttons;
                     }
                 }
+
+                return '';
             })
             ->rawColumns(['action', 'total', 'status'])
             ->make(true);
@@ -401,18 +440,26 @@ class InvoiceController extends Controller
             'payment_method' => 'required|in:cash,bank_transfer',
         ]);
 
-
-        // Cari invoice berdasarkan ID
-        $invoice = InvoiceHomepass::findOrFail($request->id);
-        $data = $invoice->with(['member', 'connection.profile', 'group'])->first();
+        // Cari invoice
+        $invoice = InvoiceHomepass::with(['member.paymentDetail'])->findOrFail($request->id);
 
         // Update status invoice menjadi "paid"
         $invoice->update([
             'status' => 'paid',
             'payer_id' => $user->id,
             'payment_method' => $request->payment_method,
-            'paid_at' => now() // Menyimpan waktu pembayaran
+            'paid_at' => now()
         ]);
+
+        if ($invoice->member && $invoice->member->paymentDetail) {
+            $dueDate = Carbon::parse($invoice->due_date);
+
+            // Update last_invoice ke due_date invoice yang baru dibayar
+            // Ini akan menjadi start date untuk invoice berikutnya
+            PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
+                'last_invoice' => $dueDate->format('Y-m-d'),
+            ]);
+        }
 
         $apiKey = $this->getApiKey($user->group_id);
         $methodMap = [
@@ -479,11 +526,31 @@ class InvoiceController extends Controller
             'id' => 'required|exists:invoice_homepasses,id',
         ]);
 
-        // Cari invoice berdasarkan ID
-        $invoice = InvoiceHomepass::findOrFail($request->id);
-        $data = $invoice->with(['member', 'connection.profile', 'group'])->first();
+        $invoice = InvoiceHomepass::with(['member.paymentDetail'])->findOrFail($request->id);
 
-        // Update status invoice menjadi "paid"
+        if ($invoice->member && $invoice->member->paymentDetail) {
+            // Cari invoice sebelumnya yang sudah paid
+            $previousPaidInvoice = InvoiceHomepass::where('member_id', $invoice->member_id)
+                ->where('status', 'paid')
+                ->where('id', '!=', $invoice->id)
+                ->orderByDesc('due_date')
+                ->first();
+
+            if ($previousPaidInvoice) {
+                // Set last_invoice ke due_date invoice sebelumnya
+                PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
+                    'last_invoice' => $previousPaidInvoice->due_date,
+                ]);
+            } else {
+                // Jika tidak ada invoice sebelumnya, set null (kembali ke active_date)
+                PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
+                    'last_invoice' => null,
+                ]);
+            }
+        }
+        // ===== END ROLLBACK =====
+
+        // Update invoice menjadi unpaid
         $invoice->update([
             'status' => 'unpaid',
             'payer_id' => null,
@@ -525,90 +592,97 @@ class InvoiceController extends Controller
     {
         try {
             $apiInstance = new InvoiceApi();
+
             $request->validate([
-                'member_id'    => 'required|string|max:255',
-                'subsperiode' => 'required',
-                'duedate' => 'required',
-                'periode' => 'required',
-                'item' => 'required',
-                'amount' => 'required',
+                'member_id'   => 'required|string|max:255',
+                'subsperiode' => 'required|integer|min:1', // jumlah bulan
+                'duedate'     => 'required',               // tetap pakai untuk tampilan
+                'periode'     => 'required',
+                'item'        => 'required',
+                'amount'      => 'required',
             ]);
 
-            if (isset($request->member_id)) {
-                $member = Member::where('id', $request->member_id)
-                    ->with(['paymentDetail', 'connection.profile'])
-                    ->where('billing', 1)
-                    ->first();
+            $member = Member::with(['paymentDetail', 'connection.profile'])
+                ->where('id', $request->member_id)
+                ->where('billing', 1)
+                ->firstOrFail();
 
-                $price = (int) $member->paymentDetail->amount;
-                $vat = (int) $member->paymentDetail->ppn;
-                $discount = (int) $member->paymentDetail->discount;
-                $invoiceDate = Carbon::now(); // Tanggal generate invoice (hari ini)
-                $periode = (int) $request->subsperiode;
-                $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
+            $pd = $member->paymentDetail;
 
+            $price    = (float) $pd->amount;
+            $vat      = (float) $pd->ppn;
+            $discount = (float) $pd->discount;
+            $periode  = (int) $request->subsperiode; // jumlah bulan dibayar
 
-                // Next INV Date
-                $lastInvoice = $member->paymentDetail->last_invoice;
+            // Hitung total
+            $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
 
+            // Tentukan anchor tanggal invoice
+            $invoiceDate = $pd->last_invoice
+                ? Carbon::parse($pd->last_invoice)
+                : Carbon::parse($pd->active_date);
 
-                if ($lastInvoice) {
-                    $invoiceDate = \Carbon\Carbon::parse($lastInvoice);
-                } else {
-                    $invoiceDate = now();
-                }
+            // Pastikan pakai startOfDay biar tidak loncat ke awal bulan
+            $invoiceDate->startOfDay();
 
+            // Hitung due date berdasarkan billing_period (subsperiode)
+            $dueDate = $invoiceDate->copy()->addMonths($periode)->startOfDay();
 
-                $last_invoice = $invoiceDate->copy()->addMonths($periode - 1)->endOfMonth();
+            // Next invoice date = dueDate (start of next period)
+            $nextInvoiceDate = $dueDate->copy();
 
-                return dd($last_invoice);
+            // Generate invoice number
+            $invNumber = InvoiceHelper::generateInvoiceNumber(
+                $member->connection->area_id ? $member->connection->area_id : 1,
+                'H'
+            );
 
+            $duration = InvoiceHelper::invoiceDurationThisMonth();
 
-                // samakan tanggal dengan active_date
-                $invNumber = InvoiceHelper::generateInvoiceNumber($member->connection->area_id ? $member->connection->area_id : 1, 'H');
-                $duration = InvoiceHelper::invoiceDurationThisMonth();
+            // === Xendit invoice ===
+            $create_invoice_request = new CreateInvoiceRequest([
+                'external_id'      => $invNumber,
+                'description'      => 'Tagihan nomor internet ' . $member->connection->internet_number .
+                    ' Periode: ' . $request->periode,
+                'amount'           => intval($total_amount),
+                'invoice_duration' => $duration,
+                'currency'         => 'IDR',
+                'payer_email'      => $member->email ?: 'customer@amanisp.net.id',
+                'reminder_time'    => 1
+            ]);
 
+            $generateInvoice = $apiInstance->createInvoice($create_invoice_request);
 
-                $create_invoice_request =  new CreateInvoiceRequest([
-                    'external_id' => $invNumber,
-                    'description' => 'Tagihan nomor internet ' .  $member->connection->internet_number . ' Periode: ' . $request->periode,
-                    'amount' => intval($total_amount),
-                    'invoice_duration' => $duration,
-                    'currency' => 'IDR',
-                    'payer_email' => $member->email ? $member->email : 'customer@amanisp.net.id',
-                    'reminder_time' => 1
-                ]);
+            // === Simpan ke database ===
+            $data = [
+                'connection_id'        => $member->connection->id,
+                'member_id'            => $member->id,
+                'invoice_type'         => 'H',
+                'start_date'           => $invoiceDate->format('Y-m-d'),
+                'due_date'             => $dueDate->format('Y-m-d'),
+                'subscription_period'  => $request->periode,
+                'inv_number'           => $invNumber,
+                'amount'               => $total_amount,
+                'status'               => 'unpaid',
+                'group_id'             => $member->group_id,
+                'payment_url'          => $generateInvoice['invoice_url'],
+            ];
 
+            InvoiceHomepass::create($data);
 
-                $generateInvoice = $apiInstance->createInvoice($create_invoice_request);
+            // === Update Payment Detail ===
+            $pd->update([
+                'last_invoice' => $nextInvoiceDate->format('Y-m-d'),
+            ]);
 
-
-                $data = [
-                    'connection_id' => $member->connection->id,
-                    'member_id' => $member->id,
-                    'invoice_type' => 'H',
-                    'start_date' => $invoiceDate,
-                    'due_date' => $request->duedate,
-                    'subscription_period' => $request->periode,
-                    'inv_number' => $invNumber,
-                    'amount' => $total_amount,
-                    'status' => 'unpaid',
-                    'group_id' => $member->group_id,
-                    'payment_url' => $generateInvoice['invoice_url'],
-                ];
-
-                PaymentDetail::findOrFail($member->payment_detail_id)->update([
-                    'last_invoice' => $last_invoice,
-                ]);
-
-                InvoiceHomepass::create($data);
-            }
-
-            return redirect()->route('billing.invoice')->with('success', 'Invoice berhasil dibuat!');
+            return redirect()->route('billing.invoice')
+                ->with('success', 'Invoice berhasil dibuat untuk ' . $periode . ' bulan!');
         } catch (\Throwable $th) {
-            return redirect()->route('billing.invoice')->with('error', $th->getMessage());
+            return redirect()->route('billing.invoice')
+                ->with('error', $th->getMessage());
         }
     }
+
 
     public function destroy($id)
     {
