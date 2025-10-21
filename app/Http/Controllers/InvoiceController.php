@@ -212,237 +212,251 @@ class InvoiceController extends Controller
     }
 
 
-    public function getData(Request $request)
-    {
-        $user = Auth::user();
-        $status = $request->query('status');
-        $type = $request->query('type');
-        $payer = $request->query('payer');
-        $area = $request->query('area');
+  public function getData(Request $request)
+{
+    $user = Auth::user();
+    $status = $request->query('status');
+    $type = $request->query('type');
+    $payer = $request->query('payer');
+    $area = $request->query('area');
+    $month = $request->query('month'); // Format: YYYY-MM
+    $year = $request->query('year');
 
-        $template = WhatsappTemplate::where('template_type', 'invoice_terbit')
-            ->where('group_id', $user->group_id)
-            ->first();
+    $template = WhatsappTemplate::where('template_type', 'invoice_terbit')
+        ->where('group_id', $user->group_id)
+        ->first();
 
-        // Base query with all necessary relations
-        $query = InvoiceHomepass::with([
-            'member.paymentDetail',
-            'member.connection.profile',
-            'member.connection.area',
-            'payer'
-        ])->latest();
+    // Base query with all necessary relations
+    $query = InvoiceHomepass::with([
+        'member.paymentDetail',
+        'member.connection.profile',
+        'member.connection.area',
+        'payer'
+    ])->latest();
 
-        // Role-based filtering
-        /** @var \App\Models\User $user */
-        if ($user->role === 'teknisi') {
-            if (method_exists($user, 'assignedAreas')) {
-                $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
-            } else {
-                $assignedAreaIds = DB::table('technician_areas')
-                    ->where('user_id', $user->id)
-                    ->pluck('area_id')
-                    ->toArray();
-            }
-
-            if (empty($assignedAreaIds)) {
-                $query->whereRaw('1 = 0');
-            } else {
-                $query->whereHas('member.connection', function ($q) use ($assignedAreaIds) {
-                    $q->whereIn('area_id', $assignedAreaIds);
-                });
-            }
-        } elseif (in_array($user->role, ['mitra', 'kasir'])) {
-            $query->where('group_id', $user->group_id);
+    // Role-based filtering
+    /** @var \App\Models\User $user */
+    if ($user->role === 'teknisi') {
+        if (method_exists($user, 'assignedAreas')) {
+            $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
         } else {
-            $query->where('group_id', $user->group_id);
+            $assignedAreaIds = DB::table('technician_areas')
+                ->where('user_id', $user->id)
+                ->pluck('area_id')
+                ->toArray();
         }
 
-        // Apply filters
-        if ($status) {
-            $query->where('status', $status);
+        if (empty($assignedAreaIds)) {
+            $query->whereRaw('1 = 0');
+        } else {
+            $query->whereHas('member.connection', function ($q) use ($assignedAreaIds) {
+                $q->whereIn('area_id', $assignedAreaIds);
+            });
         }
+    } elseif (in_array($user->role, ['mitra', 'kasir'])) {
+        $query->where('group_id', $user->group_id);
+    } else {
+        $query->where('group_id', $user->group_id);
+    }
 
-        if ($payer) {
-            if ($payer === 'kasir') {
-                $query->whereHas('payer', function ($q2) {
-                    $q2->where('role', 'kasir');
-                });
-            } elseif ($payer === 'admin') {
-                $query->whereHas('payer', function ($q2) {
-                    $q2->where('role', 'mitra');
-                });
-            } elseif ($payer === 'teknisi') {
-                $query->whereHas('payer', function ($q2) {
-                    $q2->where('role', 'teknisi');
-                });
+    // Apply filters
+    if ($status) {
+        $query->where('status', $status);
+    }
+
+    if ($payer) {
+        if ($payer === 'kasir') {
+            $query->whereHas('payer', function ($q2) {
+                $q2->where('role', 'kasir');
+            });
+        } elseif ($payer === 'admin') {
+            $query->whereHas('payer', function ($q2) {
+                $q2->where('role', 'mitra');
+            });
+        } elseif ($payer === 'teknisi') {
+            $query->whereHas('payer', function ($q2) {
+                $q2->where('role', 'teknisi');
+            });
+        }
+    }
+
+    if ($type) {
+        $query->whereHas('member.paymentDetail', function ($q2) use ($type) {
+            $q2->where('payment_type', strtolower($type));
+        });
+    }
+
+    if ($area) {
+        $query->whereHas('member.connection', function ($q2) use ($area) {
+            $q2->where('area_id', $area);
+        });
+    }
+
+    // Dynamic Month & Year Filter
+    if ($month && $year) {
+        // Format: YYYY-MM
+        $query->whereYear('created_at', $year)
+              ->whereMonth('created_at', $month);
+    } elseif ($year) {
+        // Filter by year only
+        $query->whereYear('created_at', $year);
+    } elseif ($month) {
+        // Filter by month only (current year)
+        $currentYear = Carbon::now()->year;
+        $query->whereYear('created_at', $currentYear)
+              ->whereMonth('created_at', $month);
+    }
+
+    return DataTables::of($query)
+        ->addIndexColumn()
+        ->addColumn('name', function ($invoice) {
+            return $invoice->member ? $invoice->member->fullname : '-';
+        })
+        ->addColumn('area', function ($invoice) {
+            return $invoice->member &&
+                $invoice->member->connection &&
+                $invoice->member->connection->area
+                ? $invoice->member->connection->area->name
+                : '-';
+        })
+        ->addColumn('inv_number', function ($invoice) {
+            return $invoice->inv_number ?? '-';
+        })
+        ->addColumn('invoice_date', function ($invoice) {
+            return $invoice->start_date
+                ? Carbon::parse($invoice->start_date)->format('Y-m-d')
+                : '-';
+        })
+        ->addColumn('payer', function ($invoice) {
+            return $invoice->payer ? $invoice->payer->name : 'System';
+        })
+        ->addColumn('due_date', function ($invoice) {
+            return $invoice->due_date
+                ? Carbon::parse($invoice->due_date)->format('Y-m-d')
+                : '-';
+        })
+        ->addColumn('paid_at', function ($invoice) {
+            return $invoice->paid_at
+                ? Carbon::parse($invoice->paid_at)->format('Y-m-d H:i')
+                : '-';
+        })
+        ->addColumn('payment_method', function ($invoice) {
+            if (!$invoice->payment_method) return '-';
+
+            return match ($invoice->payment_method) {
+                'payment_gateway' => 'Payment Gateway',
+                'cash' => 'Cash',
+                'bank_transfer' => 'Bank Transfer',
+                default => ucwords(str_replace('_', ' ', $invoice->payment_method))
+            };
+        })
+        ->addColumn('total', function ($invoice) {
+            return 'Rp ' . number_format($invoice->amount ?? 0, 0, ',', '.');
+        })
+        ->addColumn('status', function ($invoice) {
+            $badgeColor = $invoice->status === 'paid' ? 'text-success' : 'text-danger';
+            $statusText = $invoice->status === 'paid' ? 'Paid' : 'Unpaid';
+            return '<span class="' . $badgeColor . '">' . $statusText . '</span>';
+        })
+        ->addColumn('type', function ($invoice) {
+            if (!$invoice->member || !$invoice->member->paymentDetail) {
+                return '-';
             }
-        }
+            return ucwords($invoice->member->paymentDetail->payment_type);
+        })
+        ->addColumn('action', function ($invoice) use ($template, $user) {
+            if (!$invoice->member) return '';
 
-        if ($type) {
-            $query->whereHas('member.paymentDetail', function ($q2) use ($type) {
-                $q2->where('payment_type', strtolower($type));
-            });
-        }
+            // Generate WhatsApp message
+            $message = $template ? str_replace(
+                [
+                    '[full_name]',
+                    '[uid]',
+                    '[no_invoice]',
+                    '[amount]',
+                    '[ppn]',
+                    '[discount]',
+                    '[total]',
+                    '[pppoe_user]',
+                    '[pppoe_profile]',
+                    '[due_date]',
+                    '[period]',
+                    '[payment_url]',
+                    '[footer]'
+                ],
+                [
+                    $invoice->member->fullname ?? '-',
+                    $invoice->connection->internet_number ?? '-',
+                    $invoice->inv_number ?? '-',
+                    number_format($invoice->amount ?? 0, 0, ',', '.'),
+                    number_format($invoice->ppn ?? 0, 0, ',', '.'),
+                    number_format($invoice->discount ?? 0, 0, ',', '.'),
+                    number_format($invoice->total ?? $invoice->amount, 0, ',', '.'),
+                    $invoice->connection->username ?? '-',
+                    $invoice->connection->profile->name ?? '-',
+                    $invoice->due_date ?? '-',
+                    $invoice->subscription_period ?? '-',
+                    $invoice->payment_url ?? '-',
+                    'PT. Anugerah Media Data Nusantara'
+                ],
+                $template->content
+            ) : '';
 
-        if ($area) {
-            $query->whereHas('member.connection', function ($q2) use ($area) {
-                $q2->where('area_id', $area);
-            });
-        }
+            $waMessage = urlencode($message);
+            $waUrl = 'https://wa.me/' . $invoice->member->phone_number . '?text=' . $waMessage;
 
-        return DataTables::of($query)
-            ->addIndexColumn()
-            ->addColumn('name', function ($invoice) {
-                return $invoice->member ? $invoice->member->fullname : '-';
-            })
-            ->addColumn('area', function ($invoice) {
-                return $invoice->member &&
-                    $invoice->member->connection &&
-                    $invoice->member->connection->area
-                    ? $invoice->member->connection->area->name
-                    : '-';
-            })
-            ->addColumn('inv_number', function ($invoice) {
-                return $invoice->inv_number ?? '-';
-            })
-            ->addColumn('invoice_date', function ($invoice) {
-                // Format tanggal tanpa jam
-                return $invoice->start_date
-                    ? Carbon::parse($invoice->start_date)->format('Y-m-d')
-                    : '-';
-            })
-            ->addColumn('payer', function ($invoice) {
-                return $invoice->payer ? $invoice->payer->name : 'System';
-            })
-            ->addColumn('due_date', function ($invoice) {
-                // Format tanggal tanpa jam
-                return $invoice->due_date
-                    ? Carbon::parse($invoice->due_date)->format('Y-m-d')
-                    : '-';
-            })
-            ->addColumn('paid_at', function ($invoice) {
-                // Format tanggal dengan jam untuk paid_at
-                return $invoice->paid_at
-                    ? Carbon::parse($invoice->paid_at)->format('Y-m-d H:i')
-                    : '-';
-            })
-            ->addColumn('payment_method', function ($invoice) {
-                if (!$invoice->payment_method) return '-';
+            if ($invoice->status === 'unpaid') {
+                return '<div class="btn-group gap-1">
+        <button id="btn-pay" class="btn btn-outline-primary btn-sm"
+            data-inv="' . $invoice->inv_number . '"
+            data-name="' . $invoice->member->name . '"
+            data-id="' . $invoice->id . '">
+           PAY
+        </button>
+        <a href="' . $waUrl . '" target="_blank" class="btn btn-outline-success btn-sm" id="btn-send-notif">
+            <i class="fa-brands fa-whatsapp"></i>
+        </a>
+        <a href="' . $invoice->payment_url . '" target="_blank" class="btn btn-outline-info btn-sm">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+        </a>
+        <button data-inv="' . $invoice->inv_number . '" id="btn-delete"
+            data-name="' . $invoice->member->name . '"
+            data-id="' . $invoice->id . '"
+            class="btn btn-outline-danger btn-sm">
+            <i class="fa-solid fa-trash"></i>
+        </button>
+    </div>';
+            } else {
+                if ($invoice->payment_method !== 'payment_gateway' && $user->role === 'mitra') {
+                    $buttons = '<div class="btn-group gap-1">';
 
-                return match ($invoice->payment_method) {
-                    'payment_gateway' => 'Payment Gateway',
-                    'cash' => 'Cash',
-                    'bank_transfer' => 'Bank Transfer',
-                    default => ucwords(str_replace('_', ' ', $invoice->payment_method))
-                };
-            })
-            ->addColumn('total', function ($invoice) {
-                return 'Rp ' . number_format($invoice->amount ?? 0, 0, ',', '.');
-            })
-            ->addColumn('status', function ($invoice) {
-                $badgeColor = $invoice->status === 'paid' ? 'text-success' : 'text-danger';
-                $statusText = $invoice->status === 'paid' ? 'Paid' : 'Unpaid';
-                return '<span class="' . $badgeColor . '">' . $statusText . '</span>';
-            })
-            ->addColumn('type', function ($invoice) {
-                if (!$invoice->member || !$invoice->member->paymentDetail) {
-                    return '-';
-                }
-                return ucwords($invoice->member->paymentDetail->payment_type);
-            })
-            ->addColumn('action', function ($invoice) use ($template, $user) {
-                if (!$invoice->member) return '';
-
-                // Generate WhatsApp message
-                $message = $template ? str_replace(
-                    [
-                        '[full_name]',
-                        '[uid]',
-                        '[no_invoice]',
-                        '[amount]',
-                        '[ppn]',
-                        '[discount]',
-                        '[total]',
-                        '[pppoe_user]',
-                        '[pppoe_profile]',
-                        '[due_date]',
-                        '[period]',
-                        '[payment_url]',
-                        '[footer]'
-                    ],
-                    [
-                        $invoice->member->fullname ?? '-',
-                        $invoice->connection->internet_number ?? '-',
-                        $invoice->inv_number ?? '-',
-                        number_format($invoice->amount ?? 0, 0, ',', '.'),
-                        number_format($invoice->ppn ?? 0, 0, ',', '.'),
-                        number_format($invoice->discount ?? 0, 0, ',', '.'),
-                        number_format($invoice->total ?? $invoice->amount, 0, ',', '.'),
-                        $invoice->connection->username ?? '-',
-                        $invoice->connection->profile->name ?? '-',
-                        $invoice->due_date ?? '-',
-                        $invoice->subscription_period ?? '-',
-                        $invoice->payment_url ?? '-',
-                        'PT. Anugerah Media Data Nusantara'
-                    ],
-                    $template->content
-                ) : '';
-
-                $waMessage = urlencode($message);
-                $waUrl = 'https://wa.me/' . $invoice->member->phone_number . '?text=' . $waMessage;
-
-                if ($invoice->status === 'unpaid') {
-                    return '<div class="btn-group gap-1">
-            <button id="btn-pay" class="btn btn-outline-primary btn-sm"
-                data-inv="' . $invoice->inv_number . '"
+                    $buttons .= '
+            <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
                 data-name="' . $invoice->member->name . '"
-                data-id="' . $invoice->id . '">
-               PAY
-            </button>
-            <a href="' . $waUrl . '" target="_blank" class="btn btn-outline-success btn-sm" id="btn-send-notif">
-                <i class="fa-brands fa-whatsapp"></i>
-            </a>
-            <a href="' . $invoice->payment_url . '" target="_blank" class="btn btn-outline-info btn-sm">
-                <i class="fa-solid fa-file-invoice-dollar"></i>
-            </a>
-            <button data-inv="' . $invoice->inv_number . '" id="btn-delete"
+                data-id="' . $invoice->id . '"
+                class="btn btn-outline-warning btn-sm">
+                <i class="fa-solid fa-rotate-right"></i>
+            </button>';
+
+                    $buttons .= '
+            <button data-inv="' . $invoice->inv_number . '"
+                id="btn-delete"
                 data-name="' . $invoice->member->name . '"
                 data-id="' . $invoice->id . '"
                 class="btn btn-outline-danger btn-sm">
                 <i class="fa-solid fa-trash"></i>
-            </button>
-        </div>';
-                } else {
-                    if ($invoice->payment_method !== 'payment_gateway' && $user->role === 'mitra') {
-                        $buttons = '<div class="btn-group gap-1">';
+            </button>';
 
-                        $buttons .= '
-                <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
-                    data-name="' . $invoice->member->name . '"
-                    data-id="' . $invoice->id . '"
-                    class="btn btn-outline-warning btn-sm">
-                    <i class="fa-solid fa-rotate-right"></i>
-                </button>';
-
-                        $buttons .= '
-                <button data-inv="' . $invoice->inv_number . '"
-                    id="btn-delete"
-                    data-name="' . $invoice->member->name . '"
-                    data-id="' . $invoice->id . '"
-                    class="btn btn-outline-danger btn-sm">
-                    <i class="fa-solid fa-trash"></i>
-                </button>';
-
-                        $buttons .= '</div>';
-                        return $buttons;
-                    }
+                    $buttons .= '</div>';
+                    return $buttons;
                 }
+            }
 
-                return '';
-            })
-            ->rawColumns(['action', 'total', 'status'])
-            ->make(true);
-    }
+            return '';
+        })
+        ->rawColumns(['action', 'total', 'status'])
+        ->make(true);
+}
 
     public function payManual(Request $request)
     {
