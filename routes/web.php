@@ -174,6 +174,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Check Invoice
         Route::post('/check', [InvoiceController::class, 'checkInvoice']);
+        Route::get('/filter/years', [InvoiceController::class, 'getAvailableYears'])->name('billing.years');
+        Route::get('/filter/months/{year}', [InvoiceController::class, 'getAvailableMonths'])->name('billing.months');
+        Route::get('/stats/monthly', [InvoiceController::class, 'getMonthlyStats'])->name('billing.monthlyStats');
 
 
         Route::get('/setting', [TransactionController::class, 'settings'])->name('billing.setting');
