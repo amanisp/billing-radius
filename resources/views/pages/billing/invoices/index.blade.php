@@ -387,13 +387,11 @@
                         if (dueDateVal) {
                             let dueDate = new Date(dueDateVal);
 
-                            // Start date adalah due date
-                            let start = new Date(dueDate);
+                            let start = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1);
 
-                            // End date adalah start + periode - 1 hari
                             let end = new Date(dueDate);
                             end.setMonth(end.getMonth() + subsperiode);
-                            end.setDate(end.getDate() - 1);
+                            end.setDate(0);
 
                             const startStr = start.toLocaleDateString('id-ID');
                             const endStr = end.toLocaleDateString('id-ID');
@@ -406,8 +404,10 @@
                         const disc = parseFloat($('#disc').val() || 0);
 
                         let subtotal = basePrice * subsperiode;
+
                         let vatAmount = (subtotal * vat) / 100;
                         let discAmount = (subtotal * disc) / 100;
+
                         let total = subtotal + vatAmount - discAmount;
 
                         $('#amount').val(total.toLocaleString('id-ID'));
@@ -436,6 +436,7 @@
 
                         if (activeDate) {
                             const today = new Date();
+                            let parsed = new Date(activeDate);
 
                             $.ajax({
                                 url: '/billing/check',
@@ -449,17 +450,15 @@
                                 success: function(res) {
                                     let dueDate;
 
-                                    if (res.next_inv_date) {
-                                        // Gunakan next_inv_date (dari last_invoice atau active_date)
-                                        dueDate = new Date(res.next_inv_date);
-
-                                        // Jika sudah ada invoice bulan ini, skip ke bulan berikutnya
-                                        if (res.exists) {
+                                    if (res.exists) {
+                                        if (res.next_inv_date) {
+                                            dueDate = new Date(res.next_inv_date);
+                                        } else {
+                                            dueDate = new Date(parsed);
                                             dueDate.setMonth(dueDate.getMonth() + 1);
                                         }
                                     } else {
-                                        // Fallback ke active_date jika tidak ada data
-                                        dueDate = new Date(activeDate);
+                                        dueDate = new Date(parsed);
                                     }
 
                                     const formatted =
@@ -469,24 +468,6 @@
 
                                     $('#duedate').val(formatted);
 
-                                    updatePeriodeAndAmount();
-
-                                    // Tampilkan info last invoice (optional)
-                                    if (res.last_invoice) {
-                                        const lastInvDate = new Date(res.last_invoice);
-                                        console.log('Last Invoice:', lastInvDate.toLocaleDateString(
-                                            'id-ID'));
-                                    }
-                                },
-                                error: function(xhr) {
-                                    console.error('Error checking invoice:', xhr);
-                                    // Fallback ke active_date
-                                    let dueDate = new Date(activeDate);
-                                    const formatted =
-                                        dueDate.getFullYear() + '-' +
-                                        String(dueDate.getMonth() + 1).padStart(2, '0') + '-' +
-                                        String(dueDate.getDate()).padStart(2, '0');
-                                    $('#duedate').val(formatted);
                                     updatePeriodeAndAmount();
                                 }
                             });

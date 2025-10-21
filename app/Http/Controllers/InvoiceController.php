@@ -302,16 +302,25 @@ class InvoiceController extends Controller
                 return $invoice->inv_number ?? '-';
             })
             ->addColumn('invoice_date', function ($invoice) {
-                return $invoice->start_date ?? '-';
+                // Format tanggal tanpa jam
+                return $invoice->start_date
+                    ? Carbon::parse($invoice->start_date)->format('Y-m-d')
+                    : '-';
             })
             ->addColumn('payer', function ($invoice) {
                 return $invoice->payer ? $invoice->payer->name : 'System';
             })
             ->addColumn('due_date', function ($invoice) {
-                return $invoice->due_date ?? '-';
+                // Format tanggal tanpa jam
+                return $invoice->due_date
+                    ? Carbon::parse($invoice->due_date)->format('Y-m-d')
+                    : '-';
             })
             ->addColumn('paid_at', function ($invoice) {
-                return $invoice->paid_at ?? '-';
+                // Format tanggal dengan jam untuk paid_at
+                return $invoice->paid_at
+                    ? Carbon::parse($invoice->paid_at)->format('Y-m-d H:i')
+                    : '-';
             })
             ->addColumn('payment_method', function ($invoice) {
                 if (!$invoice->payment_method) return '-';
@@ -380,45 +389,45 @@ class InvoiceController extends Controller
 
                 if ($invoice->status === 'unpaid') {
                     return '<div class="btn-group gap-1">
-                    <button id="btn-pay" class="btn btn-outline-primary btn-sm"
-                        data-inv="' . $invoice->inv_number . '"
-                        data-name="' . $invoice->member->name . '"
-                        data-id="' . $invoice->id . '">
-                       PAY
-                    </button>
-                    <a href="' . $waUrl . '" target="_blank" class="btn btn-outline-success btn-sm" id="btn-send-notif">
-                        <i class="fa-brands fa-whatsapp"></i>
-                    </a>
-                    <a href="' . $invoice->payment_url . '" target="_blank" class="btn btn-outline-info btn-sm">
-                        <i class="fa-solid fa-file-invoice-dollar"></i>
-                    </a>
-                    <button data-inv="' . $invoice->inv_number . '" id="btn-delete"
-                        data-name="' . $invoice->member->name . '"
-                        data-id="' . $invoice->id . '"
-                        class="btn btn-outline-danger btn-sm">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </div>';
+            <button id="btn-pay" class="btn btn-outline-primary btn-sm"
+                data-inv="' . $invoice->inv_number . '"
+                data-name="' . $invoice->member->name . '"
+                data-id="' . $invoice->id . '">
+               PAY
+            </button>
+            <a href="' . $waUrl . '" target="_blank" class="btn btn-outline-success btn-sm" id="btn-send-notif">
+                <i class="fa-brands fa-whatsapp"></i>
+            </a>
+            <a href="' . $invoice->payment_url . '" target="_blank" class="btn btn-outline-info btn-sm">
+                <i class="fa-solid fa-file-invoice-dollar"></i>
+            </a>
+            <button data-inv="' . $invoice->inv_number . '" id="btn-delete"
+                data-name="' . $invoice->member->name . '"
+                data-id="' . $invoice->id . '"
+                class="btn btn-outline-danger btn-sm">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        </div>';
                 } else {
                     if ($invoice->payment_method !== 'payment_gateway' && $user->role === 'mitra') {
                         $buttons = '<div class="btn-group gap-1">';
 
                         $buttons .= '
-                        <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
-                            data-name="' . $invoice->member->name . '"
-                            data-id="' . $invoice->id . '"
-                            class="btn btn-outline-warning btn-sm">
-                            <i class="fa-solid fa-rotate-right"></i>
-                        </button>';
+                <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
+                    data-name="' . $invoice->member->name . '"
+                    data-id="' . $invoice->id . '"
+                    class="btn btn-outline-warning btn-sm">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>';
 
                         $buttons .= '
-                        <button data-inv="' . $invoice->inv_number . '"
-                            id="btn-delete"
-                            data-name="' . $invoice->member->name . '"
-                            data-id="' . $invoice->id . '"
-                            class="btn btn-outline-danger btn-sm">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>';
+                <button data-inv="' . $invoice->inv_number . '"
+                    id="btn-delete"
+                    data-name="' . $invoice->member->name . '"
+                    data-id="' . $invoice->id . '"
+                    class="btn btn-outline-danger btn-sm">
+                    <i class="fa-solid fa-trash"></i>
+                </button>';
 
                         $buttons .= '</div>';
                         return $buttons;
@@ -617,19 +626,25 @@ class InvoiceController extends Controller
             // Hitung total
             $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
 
-            // Tentukan anchor tanggal invoice
-            $invoiceDate = $pd->last_invoice
-                ? Carbon::parse($pd->last_invoice)
-                : Carbon::parse($pd->active_date);
+            // Cari invoice terakhir yang pernah dibuat (paid atau unpaid)
+            $lastCreatedInvoice = InvoiceHomepass::where('member_id', $member->id)
+                ->orderByDesc('due_date')
+                ->first();
 
-            // Pastikan pakai startOfDay biar tidak loncat ke awal bulan
-            $invoiceDate->startOfDay();
+            // Tentukan anchor tanggal invoice
+            if ($lastCreatedInvoice) {
+                // Jika ada invoice sebelumnya, mulai dari due_date invoice terakhir
+                $invoiceDate = Carbon::parse($lastCreatedInvoice->due_date)->startOfDay();
+            } elseif ($pd->last_invoice) {
+                // Jika belum ada invoice tapi ada last_invoice (dari pembayaran sebelumnya)
+                $invoiceDate = Carbon::parse($pd->last_invoice)->startOfDay();
+            } else {
+                // Jika benar-benar invoice pertama kali, pakai active_date
+                $invoiceDate = Carbon::parse($pd->active_date)->startOfDay();
+            }
 
             // Hitung due date berdasarkan billing_period (subsperiode)
             $dueDate = $invoiceDate->copy()->addMonths($periode)->startOfDay();
-
-            // Next invoice date = dueDate (start of next period)
-            $nextInvoiceDate = $dueDate->copy();
 
             // Generate invoice number
             $invNumber = InvoiceHelper::generateInvoiceNumber(
@@ -658,8 +673,8 @@ class InvoiceController extends Controller
                 'connection_id'        => $member->connection->id,
                 'member_id'            => $member->id,
                 'invoice_type'         => 'H',
-                'start_date'           => $invoiceDate->format('Y-m-d'),
-                'due_date'             => $dueDate->format('Y-m-d'),
+                'start_date'           => $invoiceDate->toDateString(), // Hanya tanggal, tanpa jam
+                'due_date'             => $dueDate->toDateString(),     // Hanya tanggal, tanpa jam
                 'subscription_period'  => $request->periode,
                 'inv_number'           => $invNumber,
                 'amount'               => $total_amount,
@@ -669,11 +684,6 @@ class InvoiceController extends Controller
             ];
 
             InvoiceHomepass::create($data);
-
-            // === Update Payment Detail ===
-            $pd->update([
-                'last_invoice' => $nextInvoiceDate->format('Y-m-d'),
-            ]);
 
             return redirect()->route('billing.invoice')
                 ->with('success', 'Invoice berhasil dibuat untuk ' . $periode . ' bulan!');
