@@ -50,17 +50,22 @@ class InvoiceController extends Controller
         // Ambil member dengan payment detail
         $member = Member::with('paymentDetail')->find($request->member_id);
 
-        $lastInvoiceDate = null;
         $nextInvoiceDate = null;
 
         if ($member && $member->paymentDetail) {
-            $lastInvoiceDate = $member->paymentDetail->last_invoice;
+            // PERBAIKAN: Ambil invoice terakhir yang pernah dibuat (tidak peduli paid/unpaid)
+            $lastCreatedInvoice = InvoiceHomepass::where('member_id', $member->id)
+                ->orderByDesc('due_date')
+                ->first();
 
-            if ($lastInvoiceDate) {
-                // Next invoice date adalah last_invoice (karena sudah di-update setelah pembayaran)
-                $nextInvoiceDate = $lastInvoiceDate;
+            if ($lastCreatedInvoice) {
+                // Gunakan due_date dari invoice terakhir yang dibuat
+                $nextInvoiceDate = $lastCreatedInvoice->due_date;
+            } elseif ($member->paymentDetail->last_invoice) {
+                // Jika belum ada invoice tapi ada last_invoice (dari pembayaran sebelumnya)
+                $nextInvoiceDate = $member->paymentDetail->last_invoice;
             } else {
-                // Jika belum pernah ada invoice, gunakan active_date
+                // Jika benar-benar invoice pertama kali, gunakan active_date
                 $nextInvoiceDate = $member->paymentDetail->active_date;
             }
         }
@@ -71,7 +76,6 @@ class InvoiceController extends Controller
             'id' => $request->member_id,
             'exists' => $exists,
             'next_inv_date' => $nextInvoiceDate,
-            'last_invoice' => $lastInvoiceDate,
         ]);
     }
 
