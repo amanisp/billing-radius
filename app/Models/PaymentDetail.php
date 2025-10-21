@@ -15,8 +15,7 @@ class PaymentDetail extends Model
         'amount',
         'discount',
         'ppn',
-        'next_invoice',
-
+        'last_invoice',
     ];
 
     public function group()

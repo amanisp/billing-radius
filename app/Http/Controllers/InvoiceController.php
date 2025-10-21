@@ -525,13 +525,13 @@ class InvoiceController extends Controller
     {
         try {
             $apiInstance = new InvoiceApi();
-            // dd($request->all());
             $request->validate([
                 'member_id'    => 'required|string|max:255',
                 'subsperiode' => 'required',
                 'duedate' => 'required',
                 'periode' => 'required',
-                'item' => 'required'
+                'item' => 'required',
+                'amount' => 'required',
             ]);
 
             if (isset($request->member_id)) {
@@ -540,26 +540,29 @@ class InvoiceController extends Controller
                     ->where('billing', 1)
                     ->first();
 
-                $price = (int) $member->connection->profile->price;
+                $price = (int) $member->paymentDetail->amount;
+                $vat = (int) $member->paymentDetail->ppn;
+                $discount = (int) $member->paymentDetail->discount;
                 $invoiceDate = Carbon::now(); // Tanggal generate invoice (hari ini)
                 $periode = (int) $request->subsperiode;
-                $total_amount = $price * $periode;
+                $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
+
 
                 // Next INV Date
-                $lastInvoice = InvoiceHomepass::where('member_id', $member->id)
-                    ->orderByDesc('due_date')
-                    ->first();
+                $lastInvoice = $member->paymentDetail->last_invoice;
+
 
                 if ($lastInvoice) {
-                    $invoiceDate = \Carbon\Carbon::parse($lastInvoice->next_inv_date);
+                    $invoiceDate = \Carbon\Carbon::parse($lastInvoice);
                 } else {
                     $invoiceDate = now();
                 }
 
-                $next_inv_date = $invoiceDate->copy()->addMonths($periode);
-                $activeDay = \Carbon\Carbon::parse($member->paymentDetail->active_date)->day;
-                $daysInMonth = $next_inv_date->daysInMonth;
-                $next_inv_date->day(min($activeDay, $daysInMonth));
+
+                $last_invoice = $invoiceDate->copy()->addMonths($periode - 1)->endOfMonth();
+
+                return dd($last_invoice);
+
 
                 // samakan tanggal dengan active_date
                 $invNumber = InvoiceHelper::generateInvoiceNumber($member->connection->area_id ? $member->connection->area_id : 1, 'H');
@@ -579,6 +582,7 @@ class InvoiceController extends Controller
 
                 $generateInvoice = $apiInstance->createInvoice($create_invoice_request);
 
+
                 $data = [
                     'connection_id' => $member->connection->id,
                     'member_id' => $member->id,
@@ -590,12 +594,11 @@ class InvoiceController extends Controller
                     'amount' => $total_amount,
                     'status' => 'unpaid',
                     'group_id' => $member->group_id,
-                    'next_inv_date' => $next_inv_date,
                     'payment_url' => $generateInvoice['invoice_url'],
                 ];
 
                 PaymentDetail::findOrFail($member->payment_detail_id)->update([
-                    'next_invoice' => $next_inv_date,
+                    'last_invoice' => $last_invoice,
                 ]);
 
                 InvoiceHomepass::create($data);
