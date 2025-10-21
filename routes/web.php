@@ -95,6 +95,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/members', [MemberController::class, 'index'])->name('members.index');
         Route::get('/members/read', [MemberController::class, 'getData'])->name('members.getData');
         Route::put('/members/update/{id}', [MemberController::class, 'update']);
+        Route::post('members/{id}/payment-detail', [MemberController::class, 'updatePaymentDetail'])->name('members.updatePaymentDetail');
 
         // Route PPPoE - Now using ConnectionController
         Route::get('/pppoe', [ConnectionController::class, 'index'])->name('pppoe.index');
