@@ -13,7 +13,6 @@
                 {{ session('error') }}</div>
         @endif
 
-        {{-- Only show create modal for Mitra and Kasir --}}
         {{-- @if (in_array(Auth::user()->role, ['mitra', 'kasir'])) --}}
         @include('pages.billing.invoices.create')
         @include('pages.billing.invoices.detail')
