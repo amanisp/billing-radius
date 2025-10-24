@@ -148,20 +148,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/save-api-key', [WhatsappController::class, 'saveApiKey'])->name('whatsapp.saveapi');
 
         // Status and connection
-        Route::get('/status', [WhatsappController::class, 'checkStatus'])->name('whatsapp.status');
+        Route::get('/status', [WhatsappController::class, 'getStatus'])->name('whatsapp.status');
         Route::post('/test', [WhatsappController::class, 'testConnection'])->name('whatsapp.test');
 
         // Templates management
         Route::post('/templates/get', [WhatsappController::class, 'getTemplates'])->name('whatsapp.templates.get');
-        Route::post('templates/save', [WhatsappController::class, 'saveTemplate'])->name('whatsapp.templates.save');
-        Route::post('templates/reset', [WhatsappController::class, 'resetTemplate'])->name('whatsapp.templates.reset');
-        // Broadcasting
+        Route::post('/templates/save', [WhatsappController::class, 'saveTemplate'])->name('whatsapp.templates.save');
+        Route::post('/templates/reset', [WhatsappController::class, 'resetTemplate'])->name('whatsapp.templates.reset');
+
+        // Broadcasting - TAMBAHKAN INI
+        Route::post('/broadcast/count', [WhatsappController::class, 'getBroadcastCount'])->name('whatsapp.broadcast.count');
         Route::post('/broadcast', [WhatsappController::class, 'sendBroadcast'])->name('whatsapp.broadcast');
 
         // Message logs
         Route::get('/logs', [WhatsappController::class, 'getMessageLogs'])->name('whatsapp.logs');
     });
-
 
     Route::prefix('settings')->group(function () {
         Route::put('/profile', [AksesController::class, 'updateProfile'])->name('admin.updateProfile');
@@ -169,12 +170,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Route::resource('/area', AreaController::class);
     });
 
+    // Tambahkan route ini di web.php dalam Route::prefix('billing')->group(function () {
+
     Route::prefix('billing')->group(function () {
         Route::delete('/{id}', [InvoiceController::class, 'destroy']);
 
         // Check Invoice
         Route::post('/check', [InvoiceController::class, 'checkInvoice']);
 
+        // Date Range Statistics (NEW)
         Route::get('/stats/daterange', [InvoiceController::class, 'getDateRangeStats'])->name('billing.daterangeStats');
 
         // Keep existing routes

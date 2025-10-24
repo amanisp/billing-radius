@@ -169,6 +169,7 @@
         </section>
 
         <!-- Broadcast Modal -->
+        <!-- Broadcast Modal -->
         <div class="modal fade" id="broadcastModal" tabindex="-1">
             <div class="modal-dialog modal-lg">
                 <div class="modal-content">
@@ -176,41 +177,85 @@
                         <h5 class="modal-title">Broadcast Message</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <form action="{{ route('whatsapp.broadcast') }}" method="post">
+                    <form action="{{ route('whatsapp.broadcast') }}" method="post" id="broadcastForm">
                         @csrf
                         <div class="modal-body">
+                            <!-- Area Selection -->
                             <div class="mb-3">
-                                <div class="row">
-                                    <div class="col">
+                                <label class="form-label"><strong>Select Area</strong></label>
+                                <select name="area_id" id="areaSelect" class="form-select"
+                                    onchange="updateMemberCount()">
+                                    <option value="all">All Areas</option>
+                                    @foreach ($data ?? [] as $area)
+                                        <option value="{{ $area->id }}">{{ $area->name }}</option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">
+                                    <i class="fa-solid fa-info-circle"></i>
+                                    Pilih "All Areas" untuk mengirim ke semua area
+                                </small>
+                            </div>
+
+                            <!-- Member Status Selection -->
+                            <div class="mb-3">
+                                <label class="form-label"><strong>Member Status</strong></label>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="radio" name="recipients"
-                                                value="all" id="recipientAll" checked>
-                                            <label class="form-check-label" for="recipientAll">All Members</label>
+                                                value="all" id="recipientAll" checked onchange="updateMemberCount()">
+                                            <label class="form-check-label" for="recipientAll">
+                                                <i class="fa-solid fa-users"></i> All Members
+                                            </label>
                                         </div>
                                     </div>
-                                    <div class="col">
+                                    <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="radio" name="recipients"
-                                                value="active" id="recipientActive">
-                                            <label class="form-check-label" for="recipientActive">Active Members</label>
+                                                value="active" id="recipientActive" onchange="updateMemberCount()">
+                                            <label class="form-check-label" for="recipientActive">
+                                                <i class="fa-solid fa-check-circle text-success"></i> Active Only
+                                            </label>
                                         </div>
                                     </div>
-                                    <div class="col">
+                                    <div class="col-md-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="radio" name="recipients"
-                                                value="suspended" id="recipientSuspended">
-                                            <label class="form-check-label" for="recipientSuspended">Suspended
-                                                Members</label>
+                                                value="suspended" id="recipientSuspended" onchange="updateMemberCount()">
+                                            <label class="form-check-label" for="recipientSuspended">
+                                                <i class="fa-solid fa-ban text-danger"></i> Suspended Only
+                                            </label>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
+                            <!-- Member Count Info Card -->
+                            <div class="alert alert-info mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="fa-solid fa-users"></i>
+                                        <strong>Total Recipients:</strong>
+                                    </div>
+                                    <div>
+                                        <span id="memberCountDisplay" class="badge bg-primary fs-6">
+                                            <i class="fa-solid fa-spinner fa-spin"></i> Loading...
+                                        </span>
+                                    </div>
+                                </div>
+                                <small id="areaInfoDisplay" class="text-muted d-block mt-2"></small>
+                            </div>
+
+                            <hr>
+
+                            <!-- Subject -->
                             <div class="mb-3">
-                                <label for="broadcastSubject" class="form-label">Subject</label>
+                                <label for="broadcastSubject" class="form-label">
+                                    <strong>Subject</strong>
+                                </label>
                                 <input required name="subject" type="text"
                                     class="form-control @error('subject')is-invalid @enderror" id="broadcastSubject"
-                                    placeholder="Message subject">
+                                    placeholder="e.g., Pengumuman Penting, Maintenance Notice">
                                 @error('subject')
                                     <div class="invalid-feedback">
                                         {{ $message }}
@@ -218,20 +263,32 @@
                                 @enderror
                             </div>
 
+                            <!-- Message -->
                             <div class="mb-3">
-                                <label for="broadcastMessage" class="form-label">Message</label>
+                                <label for="broadcastMessage" class="form-label">
+                                    <strong>Message</strong>
+                                </label>
                                 <textarea required name="message" class="form-control @error('message')is-invalid @enderror" id="broadcastMessage"
-                                    placeholder="Text Message"></textarea>
+                                    rows="6"
+                                    placeholder="Enter your broadcast message here...&#10;&#10;Tips:&#10;• Use *text* for bold&#10;• Use _text_ for italic&#10;• Keep message clear and concise"></textarea>
                                 @error('message')
                                     <div class="invalid-feedback">
                                         {{ $message }}
                                     </div>
                                 @enderror
+                                <div class="form-text">
+                                    <i class="fa-solid fa-lightbulb"></i>
+                                    <strong>Formatting tips:</strong> Use *bold* untuk teks tebal, _italic_ untuk teks
+                                    miring
+                                </div>
                             </div>
                         </div>
+
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-outline-danger" data-bs-dismiss="modal">Close</button>
-                            <button type="submit" class="btn btn-outline-primary">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                                <i class="fa-solid fa-times"></i> Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary" id="sendBroadcastBtn" disabled>
                                 <i class="fa-solid fa-paper-plane"></i> Send Broadcast
                             </button>
                         </div>
@@ -240,7 +297,6 @@
             </div>
         </div>
 
-        <!-- Template Modal -->
         <!-- Template Modal -->
         <div class="modal fade template-modal" id="templateModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-xl">
