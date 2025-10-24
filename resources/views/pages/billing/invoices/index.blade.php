@@ -104,30 +104,29 @@
                     </div>
                     <hr>
                     {{-- @endif --}}
-                    <div class="filters d-flex gap-2 flex-wrap">
-                        <select id="statusFilter" class="form-select px-5 py-2" style="max-width: 200px;">
+                    <div class="filters d-flex gap-2 flex-wrap align-items-center">
+                        <select id="statusFilter" class="form-select" style="max-width: 180px;">
                             <option value="">All Status</option>
                             <option value="paid">Paid</option>
                             <option value="unpaid">Unpaid</option>
                         </select>
-                        <select id="typeFilter" class="form-select px-5 py-2" style="max-width: 200px;">
+                        <select id="typeFilter" class="form-select" style="max-width: 180px;">
                             <option value="">All Type</option>
                             <option value="prabayar">Prabayar</option>
                             <option value="pascabayar">Pascabayar</option>
                         </select>
-                        <select id="areaFilter" class="form-select px-5 py-2" style="max-width: 200px;">
+                        <select id="areaFilter" class="form-select" style="max-width: 180px;">
                             <option value="">All Area</option>
-                            <!-- Area options will be populated dynamically -->
                         </select>
                         <div class="d-flex gap-2 align-items-center">
-                            <label class="text-nowrap mb-0">Tanggal Dari:</label>
-                            <input type="date" id="dateFrom" class="form-control px-3 py-2" style="max-width: 180px;">
+                            <label class="text-nowrap mb-0 fw-semibold">Tanggal Dari:</label>
+                            <input type="date" id="dateFrom" class="form-control" style="max-width: 160px;">
                         </div>
                         <div class="d-flex gap-2 align-items-center">
-                            <label class="text-nowrap mb-0">Sampai:</label>
-                            <input type="date" id="dateTo" class="form-control px-3 py-2" style="max-width: 180px;">
+                            <label class="text-nowrap mb-0 fw-semibold">Sampai:</label>
+                            <input type="date" id="dateTo" class="form-control" style="max-width: 160px;">
                         </div>
-                        <button id="resetFilters" class="btn btn-outline-secondary btn-sm px-4 py-2">
+                        <button id="resetFilters" class="btn btn-outline-secondary btn-sm">
                             <i class="fa-solid fa-rotate-right"></i> Reset
                         </button>
                     </div>
@@ -161,27 +160,22 @@
                 $(document).ready(function() {
                     const userRole = "{{ Auth::user()->role }}";
 
-                    // Initialize filter state with current date
+                    // Set default date range to current month
                     const today = new Date();
-                    const filterState = {
-                        status: '',
-                        type: '',
-                        area: '',
-                        dateFrom: '',
-                        dateTo: ''
-                    };
-
-                    // Set default date range (current month)
                     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
                     const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
-                    $('#dateFrom').val(firstDay.toISOString().split('T')[0]);
-                    $('#dateTo').val(lastDay.toISOString().split('T')[0]);
+                    const formatDate = (date) => {
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        return `${year}-${month}-${day}`;
+                    };
 
-                    filterState.dateFrom = firstDay.toISOString().split('T')[0];
-                    filterState.dateTo = lastDay.toISOString().split('T')[0];
+                    $('#dateFrom').val(formatDate(firstDay));
+                    $('#dateTo').val(formatDate(lastDay));
 
-                    // Update statistics based on filters
+                    // Update statistics based on date range
                     function updateStatistics() {
                         $.ajax({
                             url: '/billing/stats/daterange',
@@ -191,34 +185,32 @@
                                 date_to: $('#dateTo').val()
                             },
                             success: function(stats) {
-                                updateDashboardCard('invoice', stats.total_invoices, stats.total_amount);
-                                updateDashboardCard('paid', stats.paid_count, stats.paid_amount);
-                                updateDashboardCard('unpaid', stats.unpaid_count, stats.unpaid_amount);
-                                updateDashboardCard('overdue', stats.overdue_count, stats.overdue_amount);
+                                // Update Monthly Invoice card
+                                $('.status-card.total .fs-4').text(stats.total_invoices || 0);
+                                $('.status-card.total .text-muted').text('Rp ' + formatNumber(stats.total_amount || 0));
+
+                                // Update Overdue card
+                                $('.status-card.active .fs-4').text(stats.overdue_count || 0);
+                                $('.status-card.active .text-muted').text('Rp ' + formatNumber(stats.overdue_amount || 0));
+
+                                // Update Unpaid card
+                                $('.status-card.suspend:has(.bg-warning) .fs-4').text(stats.unpaid_count || 0);
+                                $('.status-card.suspend:has(.bg-warning) .text-muted').text('Rp ' + formatNumber(stats.unpaid_amount || 0));
+
+                                // Update Paid card
+                                $('.status-card.suspend:has(.bg-primary) .fs-4').text(stats.paid_count || 0);
+                                $('.status-card.suspend:has(.bg-primary) .text-muted').text('Rp ' + formatNumber(stats.paid_amount || 0));
+                            },
+                            error: function() {
+                                console.log('Failed to load statistics');
                             }
                         });
-                    }
-
-                    function updateDashboardCard(type, count, amount) {
-                        const cardMap = {
-                            'invoice': '.status-card.total',
-                            'paid': '.status-card.suspend:has(.bg-primary)',
-                            'unpaid': '.status-card.suspend:has(.bg-warning)',
-                            'overdue': '.status-card.active'
-                        };
-
-                        const card = $(cardMap[type]);
-                        if (card.length) {
-                            card.find('.fs-4').text(count);
-                            card.find('.text-muted').text('Rp ' + formatNumber(amount));
-                        }
                     }
 
                     function formatNumber(num) {
                         return new Intl.NumberFormat('id-ID').format(num);
                     }
 
-                    // Initialize
                     // Populate area filter options
                     $.ajax({
                         url: '/areas/list',
@@ -231,7 +223,7 @@
                         }
                     });
 
-                    // Read Data
+                    // Initialize DataTable
                     let table = $('#dataTables').DataTable({
                         processing: true,
                         serverSide: false,
@@ -287,7 +279,7 @@
                         ]
                     });
 
-                    // Filter Event
+                    // Filter change events
                     $('#statusFilter, #typeFilter, #areaFilter, #dateFrom, #dateTo').on('change', function() {
                         table.ajax.reload();
                         updateStatistics();
@@ -298,57 +290,10 @@
                         $('#statusFilter').val('');
                         $('#typeFilter').val('');
                         $('#areaFilter').val('');
-
-                        // Reset to current month
-                        const today = new Date();
-                        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-                        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-                        $('#dateFrom').val(firstDay.toISOString().split('T')[0]);
-                        $('#dateTo').val(lastDay.toISOString().split('T')[0]);
-
+                        $('#dateFrom').val(formatDate(firstDay));
+                        $('#dateTo').val(formatDate(lastDay));
                         table.ajax.reload();
                         updateStatistics();
-                    });
-
-                    // Show filter summary
-                    function showFilterSummary() {
-                        const filters = [];
-
-                        if ($('#statusFilter').val()) {
-                            filters.push(`Status: ${$('#statusFilter option:selected').text()}`);
-                        }
-                        if ($('#typeFilter').val()) {
-                            filters.push(`Type: ${$('#typeFilter option:selected').text()}`);
-                        }
-                        if ($('#areaFilter').val()) {
-                            filters.push(`Area: ${$('#areaFilter option:selected').text()}`);
-                        }
-                        if ($('#dateFrom').val()) {
-                            filters.push(`From: ${$('#dateFrom').val()}`);
-                        }
-                        if ($('#dateTo').val()) {
-                            filters.push(`To: ${$('#dateTo').val()}`);
-                        }
-
-                        if (filters.length > 0) {
-                            const summary = `<div class="alert alert-info alert-dismissible fade show mt-2" role="alert">
-                <strong>Active Filters:</strong> ${filters.join(' | ')}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>`;
-
-                            if ($('.filter-summary').length === 0) {
-                                $('.filters').after('<div class="filter-summary"></div>');
-                            }
-                            $('.filter-summary').html(summary);
-                        } else {
-                            $('.filter-summary').remove();
-                        }
-                    }
-
-                    // Update filter summary on change
-                    $('.filters select, .filters input').on('change', function() {
-                        showFilterSummary();
                     });
 
                     // Initial statistics load
