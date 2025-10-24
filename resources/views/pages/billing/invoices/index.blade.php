@@ -13,8 +13,11 @@
                 {{ session('error') }}</div>
         @endif
 
+        {{-- Only show create modal for Mitra and Kasir --}}
+        {{-- @if (in_array(Auth::user()->role, ['mitra', 'kasir'])) --}}
         @include('pages.billing.invoices.create')
         @include('pages.billing.invoices.detail')
+        {{-- @endif --}}
 
         <div class="row">
             <div class="col-md">
@@ -87,6 +90,8 @@
         <section class="row">
             <div class="card">
                 <div class="card-header">
+                    {{-- Only show create button for Mitra and Kasir --}}
+                    {{-- @if (in_array(Auth::user()->role, ['mitra', 'kasir'])) --}}
                     <div class="btn-group gap-1">
                         <button class="btn btn-outline-primary btn-sm px-5 py-2" data-bs-toggle="modal"
                             data-bs-target="#formCreateModal"><i class="fa-solid fa-file-invoice-dollar"></i>
@@ -98,6 +103,7 @@
                         </button>
                     </div>
                     <hr>
+                    {{-- @endif --}}
                     <div class="filters d-flex gap-2 flex-wrap">
                         <select id="statusFilter" class="form-select px-5 py-2" style="max-width: 200px;">
                             <option value="">All Status</option>
@@ -111,25 +117,16 @@
                         </select>
                         <select id="areaFilter" class="form-select px-5 py-2" style="max-width: 200px;">
                             <option value="">All Area</option>
+                            <!-- Area options will be populated dynamically -->
                         </select>
-                        <select id="monthFilter" class="form-select px-5 py-2" style="max-width: 200px;">
-                            <option value="">All Month</option>
-                            <option value="01">January</option>
-                            <option value="02">February</option>
-                            <option value="03">March</option>
-                            <option value="04">April</option>
-                            <option value="05">May</option>
-                            <option value="06">June</option>
-                            <option value="07">July</option>
-                            <option value="08">August</option>
-                            <option value="09">September</option>
-                            <option value="10">October</option>
-                            <option value="11">November</option>
-                            <option value="12">December</option>
-                        </select>
-                        <select id="yearFilter" class="form-select px-5 py-2" style="max-width: 150px;">
-                            <option value="">All Year</option>
-                        </select>
+                        <div class="d-flex gap-2 align-items-center">
+                            <label class="text-nowrap mb-0">Tanggal Dari:</label>
+                            <input type="date" id="dateFrom" class="form-control px-3 py-2" style="max-width: 180px;">
+                        </div>
+                        <div class="d-flex gap-2 align-items-center">
+                            <label class="text-nowrap mb-0">Sampai:</label>
+                            <input type="date" id="dateTo" class="form-control px-3 py-2" style="max-width: 180px;">
+                        </div>
                         <button id="resetFilters" class="btn btn-outline-secondary btn-sm px-4 py-2">
                             <i class="fa-solid fa-rotate-right"></i> Reset
                         </button>
@@ -161,81 +158,39 @@
 
         @push('script-page')
             <script>
-                // Enhanced Invoice Filter System with Real-time Statistics
                 $(document).ready(function() {
                     const userRole = "{{ Auth::user()->role }}";
 
-                    // Initialize filter state
+                    // Initialize filter state with current date
+                    const today = new Date();
                     const filterState = {
                         status: '',
                         type: '',
                         area: '',
-                        month: String(new Date().getMonth() + 1).padStart(2, '0'),
-                        year: new Date().getFullYear()
+                        dateFrom: '',
+                        dateTo: ''
                     };
 
-                    // Load available years from database
-                    function loadAvailableYears() {
-                        $.ajax({
-                            url: '/billing/filter/years',
-                            type: 'GET',
-                            success: function(years) {
-                                $('#yearFilter').empty().append('<option value="">All Year</option>');
-                                years.forEach(function(year) {
-                                    $('#yearFilter').append(`<option value="${year}">${year}</option>`);
-                                });
-                                $('#yearFilter').val(filterState.year);
-                            }
-                        });
-                    }
+                    // Set default date range (current month)
+                    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
-                    // Load available months for selected year
-                    function loadAvailableMonths(year) {
-                        if (!year) {
-                            resetMonthFilter();
-                            return;
-                        }
+                    $('#dateFrom').val(firstDay.toISOString().split('T')[0]);
+                    $('#dateTo').val(lastDay.toISOString().split('T')[0]);
 
-                        $.ajax({
-                            url: `/billing/filter/months/${year}`,
-                            type: 'GET',
-                            success: function(months) {
-                                $('#monthFilter').empty().append('<option value="">All Month</option>');
-                                months.forEach(function(month) {
-                                    $('#monthFilter').append(
-                                        `<option value="${month.value}">${month.label}</option>`
-                                    );
-                                });
-                                if (months.some(m => m.value === filterState.month)) {
-                                    $('#monthFilter').val(filterState.month);
-                                }
-                            }
-                        });
-                    }
-
-                    function resetMonthFilter() {
-                        $('#monthFilter').empty().append('<option value="">All Month</option>');
-                        const monthNames = [
-                            'January', 'February', 'March', 'April', 'May', 'June',
-                            'July', 'August', 'September', 'October', 'November', 'December'
-                        ];
-                        monthNames.forEach(function(name, index) {
-                            const value = String(index + 1).padStart(2, '0');
-                            $('#monthFilter').append(`<option value="${value}">${name}</option>`);
-                        });
-                    }
+                    filterState.dateFrom = firstDay.toISOString().split('T')[0];
+                    filterState.dateTo = lastDay.toISOString().split('T')[0];
 
                     // Update statistics based on filters
                     function updateStatistics() {
                         $.ajax({
-                            url: '/billing/stats/monthly',
+                            url: '/billing/stats/daterange',
                             type: 'GET',
                             data: {
-                                month: $('#monthFilter').val(),
-                                year: $('#yearFilter').val()
+                                date_from: $('#dateFrom').val(),
+                                date_to: $('#dateTo').val()
                             },
                             success: function(stats) {
-                                // Update dashboard cards if they exist
                                 updateDashboardCard('invoice', stats.total_invoices, stats.total_amount);
                                 updateDashboardCard('paid', stats.paid_count, stats.paid_amount);
                                 updateDashboardCard('unpaid', stats.unpaid_count, stats.unpaid_amount);
@@ -264,23 +219,19 @@
                     }
 
                     // Initialize
-                    loadAvailableYears();
-                    resetMonthFilter();
-
-                    // Populate area filter
+                    // Populate area filter options
                     $.ajax({
                         url: '/areas/list',
                         type: 'GET',
                         success: function(areas) {
                             areas.forEach(function(area) {
                                 $('#areaFilter').append(
-                                    `<option value="${area.id}">${area.name}</option>`
-                                );
+                                    `<option value="${area.id}">${area.name}</option>`);
                             });
                         }
                     });
 
-                    // Initialize DataTable
+                    // Read Data
                     let table = $('#dataTables').DataTable({
                         processing: true,
                         serverSide: false,
@@ -300,59 +251,44 @@
                                 d.status = $('#statusFilter').val();
                                 d.type = $('#typeFilter').val();
                                 d.area = $('#areaFilter').val();
-                                d.month = $('#monthFilter').val();
-                                d.year = $('#yearFilter').val();
+                                d.date_from = $('#dateFrom').val();
+                                d.date_to = $('#dateTo').val();
                             }
                         },
                         columns: [{
                                 data: 'DT_RowIndex',
                                 orderable: false,
                                 searchable: false
+                            }, {
+                                data: 'name',
+                            }, {
+                                data: 'area',
+                            }, {
+                                data: 'inv_number',
                             },
                             {
-                                data: 'name'
+                                data: 'invoice_date',
                             },
                             {
-                                data: 'area'
+                                data: 'due_date',
                             },
                             {
-                                data: 'inv_number'
+                                data: 'total',
                             },
                             {
-                                data: 'invoice_date'
+                                data: 'status',
                             },
                             {
-                                data: 'due_date'
+                                data: 'type',
                             },
                             {
-                                data: 'total'
+                                data: 'action',
                             },
-                            {
-                                data: 'status'
-                            },
-                            {
-                                data: 'type'
-                            },
-                            {
-                                data: 'action'
-                            }
                         ]
                     });
 
-                    // Filter change events
-                    $('#statusFilter, #typeFilter, #areaFilter, #monthFilter').on('change', function() {
-                        table.ajax.reload();
-                        updateStatistics();
-                    });
-
-                    // Year filter with month reload
-                    $('#yearFilter').on('change', function() {
-                        const selectedYear = $(this).val();
-                        if (selectedYear) {
-                            loadAvailableMonths(selectedYear);
-                        } else {
-                            resetMonthFilter();
-                        }
+                    // Filter Event
+                    $('#statusFilter, #typeFilter, #areaFilter, #dateFrom, #dateTo').on('change', function() {
                         table.ajax.reload();
                         updateStatistics();
                     });
@@ -362,8 +298,15 @@
                         $('#statusFilter').val('');
                         $('#typeFilter').val('');
                         $('#areaFilter').val('');
-                        $('#monthFilter').val(filterState.month);
-                        $('#yearFilter').val(filterState.year);
+
+                        // Reset to current month
+                        const today = new Date();
+                        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+                        $('#dateFrom').val(firstDay.toISOString().split('T')[0]);
+                        $('#dateTo').val(lastDay.toISOString().split('T')[0]);
+
                         table.ajax.reload();
                         updateStatistics();
                     });
@@ -381,11 +324,11 @@
                         if ($('#areaFilter').val()) {
                             filters.push(`Area: ${$('#areaFilter option:selected').text()}`);
                         }
-                        if ($('#monthFilter').val()) {
-                            filters.push(`Month: ${$('#monthFilter option:selected').text()}`);
+                        if ($('#dateFrom').val()) {
+                            filters.push(`From: ${$('#dateFrom').val()}`);
                         }
-                        if ($('#yearFilter').val()) {
-                            filters.push(`Year: ${$('#yearFilter option:selected').text()}`);
+                        if ($('#dateTo').val()) {
+                            filters.push(`To: ${$('#dateTo').val()}`);
                         }
 
                         if (filters.length > 0) {
@@ -404,7 +347,7 @@
                     }
 
                     // Update filter summary on change
-                    $('.filters select').on('change', function() {
+                    $('.filters select, .filters input').on('change', function() {
                         showFilterSummary();
                     });
 
@@ -431,7 +374,8 @@
                                     url: "/billing/paid/cancel",
                                     type: "POST",
                                     headers: {
-                                        "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr('content')
+                                        "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr(
+                                            "content")
                                     },
                                     data: {
                                         id: id
@@ -445,6 +389,7 @@
                                         updateStatistics();
                                     },
                                     error: function(error) {
+                                        console.log(error)
                                         Toastify({
                                             text: "Terjadi kesalahan saat pembayaran!",
                                             className: "error",
@@ -464,14 +409,14 @@
                         Swal.fire({
                             title: "Konfirmasi Pembayaran",
                             html: `
-                <small>Invoice <strong>${inv}</strong> - a.n <strong>${name}</strong></small>
-                <select id="payment-method" class="swal2-select">
-                    <option selected disabled value="">Pilih Metode Pembayaran</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="cash">Cash</option>
-                </select>
-                <div id="error-message" style="color: red; font-size: 12px; margin-top: 5px;"></div>
-            `,
+                    <small>Invoice <strong>${inv}</strong> - a.n <strong>${name}</strong></small>
+                    <select id="payment-method" class="swal2-select">
+                        <option selected disabled value="">Pilih Metode Pembayaran</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="cash">Cash</option>
+                    </select>
+                    <div id="error-message" style="color: red; font-size: 12px; margin-top: 5px;"></div>
+                `,
                             icon: "warning",
                             showCancelButton: true,
                             confirmButtonColor: "#3085d6",
@@ -479,25 +424,30 @@
                             confirmButtonText: "Yes, Paid",
                             preConfirm: () => {
                                 let paymentMethod = document.getElementById('payment-method').value;
+
                                 if (!paymentMethod) {
                                     document.getElementById('error-message').innerText =
                                         "Silakan pilih metode pembayaran!";
                                     return false;
                                 }
+
                                 return {
                                     paymentMethod: paymentMethod
                                 };
                             }
                         }).then((result) => {
                             if (result.isConfirmed) {
+                                let paymentMethod = result.value.paymentMethod;
+
                                 $.ajax({
                                     url: "/billing/unpaid/pay",
                                     type: "POST",
                                     headers: {
-                                        "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr('content')
+                                        "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr(
+                                            "content")
                                     },
                                     data: {
-                                        payment_method: result.value.paymentMethod,
+                                        payment_method: paymentMethod,
                                         id: id
                                     },
                                     success: function(response) {
@@ -519,11 +469,173 @@
                         });
                     });
 
-                    // Delete Handler
+                    // Member DataTable for Create Invoice Modal
+                    let tableMember;
+
+                    $(document).on('click', '[data-bs-target="#formCreateModal"]', function() {
+                        if ($.fn.DataTable.isDataTable('#dataMember')) {
+                            tableMember.destroy();
+                        }
+
+                        tableMember = $('#dataMember').DataTable({
+                            processing: true,
+                            serverSide: false,
+                            responsive: true,
+                            autoWidth: false,
+                            columnDefs: [{
+                                targets: '_all',
+                                className: 'text-nowrap'
+                            }],
+                            ajax: {
+                                url: '/ppp/members/read',
+                                type: 'GET',
+                                headers: {
+                                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                                }
+                            },
+                            columns: [{
+                                    data: 'DT_RowIndex',
+                                    orderable: false,
+                                    searchable: false
+                                },
+                                {
+                                    data: 'fullname'
+                                },
+                                {
+                                    data: 'connection.internet_number'
+                                },
+                                {
+                                    data: 'phone_number'
+                                },
+                                {
+                                    data: 'actionCreate'
+                                },
+                            ]
+                        });
+                    });
+
+                    // Detail Invoice Create - Update Periode and Amount
+                    function updatePeriodeAndAmount() {
+                        const subsperiode = parseInt($('#subsperiode').val() || 1);
+                        const dueDateVal = $('#duedate').val();
+
+                        if (dueDateVal) {
+                            let dueDate = new Date(dueDateVal);
+
+                            let start = new Date(dueDate.getFullYear(), dueDate.getMonth(), 1);
+
+                            let end = new Date(dueDate);
+                            end.setMonth(end.getMonth() + subsperiode);
+                            end.setDate(0);
+
+                            const startStr = start.toLocaleDateString('id-ID');
+                            const endStr = end.toLocaleDateString('id-ID');
+
+                            $('#periode').val(`${startStr} - ${endStr}`);
+                        }
+
+                        const basePrice = parseInt($('#amount').data('raw') || 0);
+                        const vat = parseFloat($('#vat').val() || 0);
+                        const disc = parseFloat($('#disc').val() || 0);
+
+                        let subtotal = basePrice * subsperiode;
+
+                        let vatAmount = (subtotal * vat) / 100;
+                        let discAmount = (subtotal * disc) / 100;
+
+                        let total = subtotal + vatAmount - discAmount;
+
+                        $('#amount').val(total.toLocaleString('id-ID'));
+                    }
+
+                    // Create Invoice Button Handler
+                    $(document).on('click', '.btnCreateInvoice', function() {
+                        const memberId = $(this).data('id');
+                        const internet = $(this).data('internet');
+                        const fullname = $(this).data('fullname');
+                        const username = $(this).data('username');
+                        const item = $(this).data('item');
+                        const price = $(this).data('price');
+                        const vat = $(this).data('vats');
+                        const disc = $(this).data('discounts');
+                        const activeDate = $(this).data('active');
+
+                        $('#fullname').val(fullname);
+                        $('#member_id').val(memberId);
+                        $('#items').val(`${item} | ${username}`);
+                        $('#vat').val(vat);
+                        $('#disc').val(disc.toLocaleString('id-ID'));
+
+                        $('#amount')
+                            .val(price.toLocaleString('id-ID'))
+                            .data('raw', price);
+
+                        if (activeDate) {
+                            const today = new Date();
+                            let parsed = new Date(activeDate);
+
+                            $.ajax({
+                                url: '/billing/check',
+                                type: 'POST',
+                                data: {
+                                    member_id: memberId,
+                                    year: today.getFullYear(),
+                                    month: today.getMonth() + 1,
+                                    _token: $('meta[name="csrf-token"]').attr('content')
+                                },
+                                success: function(res) {
+                                    let dueDate;
+
+                                    if (res.exists) {
+                                        if (res.next_inv_date) {
+                                            dueDate = new Date(res.next_inv_date);
+                                        } else {
+                                            dueDate = new Date(parsed);
+                                            dueDate.setMonth(dueDate.getMonth() + 1);
+                                        }
+                                    } else {
+                                        dueDate = new Date(parsed);
+                                    }
+
+                                    const formatted =
+                                        dueDate.getFullYear() + '-' +
+                                        String(dueDate.getMonth() + 1).padStart(2, '0') + '-' +
+                                        String(dueDate.getDate()).padStart(2, '0');
+
+                                    $('#duedate').val(formatted);
+
+                                    updatePeriodeAndAmount();
+                                }
+                            });
+                        }
+
+                        $('#formCreateModal').modal('hide');
+
+                        $('#formCreateModal').one('hidden.bs.modal', function() {
+                            $('#invoiceDetailModal').modal('show');
+                        });
+                    });
+
+                    // Subsperiode Change Event
+                    $(document).on('change', '#subsperiode', function() {
+                        updatePeriodeAndAmount();
+                    });
+
+                    // VAT and Discount Input Event
+                    $(document).on('input', '#vat, #disc', function() {
+                        updatePeriodeAndAmount();
+                    });
+
+                    // Select2 Initialization
+                    $('#customerSelect').select2({
+                        'dropdownParent': '#formCreateModal',
+                        theme: 'bootstrap-5'
+                    });
+
+                    // Delete Invoice Handler
                     $(document).on('click', '#btn-delete', function() {
                         let id = $(this).data('id');
                         let inv = $(this).data('inv');
-
                         Swal.fire({
                             title: "Anda Yakin?",
                             text: `Apakah ingin menghapus invoice ${inv}!`,
@@ -545,13 +657,14 @@
                                             text: "Data Berhasil Dihapus!",
                                             className: "info",
                                         }).showToast();
-                                        table.ajax.reload();
+                                        $('#dataTables').DataTable().ajax.reload();
                                         updateStatistics();
                                     }
                                 });
                             }
                         });
                     });
+
                 });
             </script>
         @endpush
