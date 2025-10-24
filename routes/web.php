@@ -174,14 +174,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Check Invoice
         Route::post('/check', [InvoiceController::class, 'checkInvoice']);
+
+        Route::get('/stats/daterange', [InvoiceController::class, 'getDateRangeStats'])->name('billing.daterangeStats');
+
+        // Keep existing routes
         Route::get('/filter/years', [InvoiceController::class, 'getAvailableYears'])->name('billing.years');
         Route::get('/filter/months/{year}', [InvoiceController::class, 'getAvailableMonths'])->name('billing.months');
         Route::get('/stats/monthly', [InvoiceController::class, 'getMonthlyStats'])->name('billing.monthlyStats');
 
-
         Route::get('/setting', [TransactionController::class, 'settings'])->name('billing.setting');
         Route::post('/payout', [TransactionController::class, 'payout'])->name('billing.payout');
         Route::get('/payout/read', [TransactionController::class, 'getData'])->name('billing.payHistory');
+
         // Paid
         Route::get('/transaction', [InvoiceController::class, 'transaction'])->name('billing.transaction');
         Route::post('/paid/cancel', [InvoiceController::class, 'payCancel'])->name('billing.cancel');
@@ -192,9 +196,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/unpaid/read', [InvoiceController::class, 'getData'])->name('billing.getData');
         Route::post('/create_invoice', [InvoiceController::class, 'createInv'])->name('billing.create');
         Route::post('/unpaid/pay', [InvoiceController::class, 'payManual'])->name('billing.pay');
-
-        // Transaction
-        // Route::get('/transaction', [transactionController::class, 'index'])->name('billing.transaction');
     });
 
     // Activity Log
