@@ -212,201 +212,276 @@ class InvoiceController extends Controller
     }
 
 
-  public function getData(Request $request)
-{
-    $user = Auth::user();
-    $status = $request->query('status');
-    $type = $request->query('type');
-    $payer = $request->query('payer');
-    $area = $request->query('area');
-    $month = $request->query('month'); // Format: YYYY-MM
-    $year = $request->query('year');
+    public function getDateRangeStats(Request $request)
+    {
+        $user = Auth::user();
+        $dateFrom = $request->query('date_from');
+        $dateTo = $request->query('date_to');
 
-    $template = WhatsappTemplate::where('template_type', 'invoice_terbit')
-        ->where('group_id', $user->group_id)
-        ->first();
+        // Build base query with role-based scoping
+        $baseQuery = InvoiceHomepass::query();
 
-    // Base query with all necessary relations
-    $query = InvoiceHomepass::with([
-        'member.paymentDetail',
-        'member.connection.profile',
-        'member.connection.area',
-        'payer'
-    ])->latest();
-
-    // Role-based filtering
-    /** @var \App\Models\User $user */
-    if ($user->role === 'teknisi') {
-        if (method_exists($user, 'assignedAreas')) {
-            $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
-        } else {
-            $assignedAreaIds = DB::table('technician_areas')
-                ->where('user_id', $user->id)
-                ->pluck('area_id')
-                ->toArray();
-        }
-
-        if (empty($assignedAreaIds)) {
-            $query->whereRaw('1 = 0');
-        } else {
-            $query->whereHas('member.connection', function ($q) use ($assignedAreaIds) {
-                $q->whereIn('area_id', $assignedAreaIds);
-            });
-        }
-    } elseif (in_array($user->role, ['mitra', 'kasir'])) {
-        $query->where('group_id', $user->group_id);
-    } else {
-        $query->where('group_id', $user->group_id);
-    }
-
-    // Apply filters
-    if ($status) {
-        $query->where('status', $status);
-    }
-
-    if ($payer) {
-        if ($payer === 'kasir') {
-            $query->whereHas('payer', function ($q2) {
-                $q2->where('role', 'kasir');
-            });
-        } elseif ($payer === 'admin') {
-            $query->whereHas('payer', function ($q2) {
-                $q2->where('role', 'mitra');
-            });
-        } elseif ($payer === 'teknisi') {
-            $query->whereHas('payer', function ($q2) {
-                $q2->where('role', 'teknisi');
-            });
-        }
-    }
-
-    if ($type) {
-        $query->whereHas('member.paymentDetail', function ($q2) use ($type) {
-            $q2->where('payment_type', strtolower($type));
-        });
-    }
-
-    if ($area) {
-        $query->whereHas('member.connection', function ($q2) use ($area) {
-            $q2->where('area_id', $area);
-        });
-    }
-
-    // Dynamic Month & Year Filter
-    if ($month && $year) {
-        // Format: YYYY-MM
-        $query->whereYear('created_at', $year)
-              ->whereMonth('created_at', $month);
-    } elseif ($year) {
-        // Filter by year only
-        $query->whereYear('created_at', $year);
-    } elseif ($month) {
-        // Filter by month only (current year)
-        $currentYear = Carbon::now()->year;
-        $query->whereYear('created_at', $currentYear)
-              ->whereMonth('created_at', $month);
-    }
-
-    return DataTables::of($query)
-        ->addIndexColumn()
-        ->addColumn('name', function ($invoice) {
-            return $invoice->member ? $invoice->member->fullname : '-';
-        })
-        ->addColumn('area', function ($invoice) {
-            return $invoice->member &&
-                $invoice->member->connection &&
-                $invoice->member->connection->area
-                ? $invoice->member->connection->area->name
-                : '-';
-        })
-        ->addColumn('inv_number', function ($invoice) {
-            return $invoice->inv_number ?? '-';
-        })
-        ->addColumn('invoice_date', function ($invoice) {
-            return $invoice->start_date
-                ? Carbon::parse($invoice->start_date)->format('Y-m-d')
-                : '-';
-        })
-        ->addColumn('payer', function ($invoice) {
-            return $invoice->payer ? $invoice->payer->name : 'System';
-        })
-        ->addColumn('due_date', function ($invoice) {
-            return $invoice->due_date
-                ? Carbon::parse($invoice->due_date)->format('Y-m-d')
-                : '-';
-        })
-        ->addColumn('paid_at', function ($invoice) {
-            return $invoice->paid_at
-                ? Carbon::parse($invoice->paid_at)->format('Y-m-d H:i')
-                : '-';
-        })
-        ->addColumn('payment_method', function ($invoice) {
-            if (!$invoice->payment_method) return '-';
-
-            return match ($invoice->payment_method) {
-                'payment_gateway' => 'Payment Gateway',
-                'cash' => 'Cash',
-                'bank_transfer' => 'Bank Transfer',
-                default => ucwords(str_replace('_', ' ', $invoice->payment_method))
-            };
-        })
-        ->addColumn('total', function ($invoice) {
-            return 'Rp ' . number_format($invoice->amount ?? 0, 0, ',', '.');
-        })
-        ->addColumn('status', function ($invoice) {
-            $badgeColor = $invoice->status === 'paid' ? 'text-success' : 'text-danger';
-            $statusText = $invoice->status === 'paid' ? 'Paid' : 'Unpaid';
-            return '<span class="' . $badgeColor . '">' . $statusText . '</span>';
-        })
-        ->addColumn('type', function ($invoice) {
-            if (!$invoice->member || !$invoice->member->paymentDetail) {
-                return '-';
+        /** @var \App\Models\User $user */
+        if ($user->role === 'teknisi') {
+            if (method_exists($user, 'assignedAreas')) {
+                $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
+            } else {
+                $assignedAreaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id')
+                    ->toArray();
             }
-            return ucwords($invoice->member->paymentDetail->payment_type);
-        })
-        ->addColumn('action', function ($invoice) use ($template, $user) {
-            if (!$invoice->member) return '';
 
-            // Generate WhatsApp message
-            $message = $template ? str_replace(
-                [
-                    '[full_name]',
-                    '[uid]',
-                    '[no_invoice]',
-                    '[amount]',
-                    '[ppn]',
-                    '[discount]',
-                    '[total]',
-                    '[pppoe_user]',
-                    '[pppoe_profile]',
-                    '[due_date]',
-                    '[period]',
-                    '[payment_url]',
-                    '[footer]'
-                ],
-                [
-                    $invoice->member->fullname ?? '-',
-                    $invoice->connection->internet_number ?? '-',
-                    $invoice->inv_number ?? '-',
-                    number_format($invoice->amount ?? 0, 0, ',', '.'),
-                    number_format($invoice->ppn ?? 0, 0, ',', '.'),
-                    number_format($invoice->discount ?? 0, 0, ',', '.'),
-                    number_format($invoice->total ?? $invoice->amount, 0, ',', '.'),
-                    $invoice->connection->username ?? '-',
-                    $invoice->connection->profile->name ?? '-',
-                    $invoice->due_date ?? '-',
-                    $invoice->subscription_period ?? '-',
-                    $invoice->payment_url ?? '-',
-                    'PT. Anugerah Media Data Nusantara'
-                ],
-                $template->content
-            ) : '';
+            if (empty($assignedAreaIds)) {
+                $baseQuery->whereRaw('1 = 0');
+            } else {
+                $baseQuery->whereHas('member.connection', function ($q) use ($assignedAreaIds) {
+                    $q->whereIn('area_id', $assignedAreaIds);
+                });
+            }
+        } else {
+            $baseQuery->where('group_id', $user->group_id);
+        }
 
-            $waMessage = urlencode($message);
-            $waUrl = 'https://wa.me/' . $invoice->member->phone_number . '?text=' . $waMessage;
+        // Apply date range filter
+        if ($dateFrom && $dateTo) {
+            $baseQuery->whereBetween('created_at', [
+                Carbon::parse($dateFrom)->startOfDay(),
+                Carbon::parse($dateTo)->endOfDay()
+            ]);
+        }
 
-            if ($invoice->status === 'unpaid') {
-                return '<div class="btn-group gap-1">
+        // Calculate statistics
+        $totalInvoices = (clone $baseQuery)->count();
+        $totalAmount = (clone $baseQuery)->sum('amount');
+
+        $paidCount = (clone $baseQuery)
+            ->where('status', 'paid')
+            ->count();
+        $paidAmount = (clone $baseQuery)
+            ->where('status', 'paid')
+            ->sum('amount');
+
+        $unpaidCount = (clone $baseQuery)
+            ->where('status', 'unpaid')
+            ->count();
+        $unpaidAmount = (clone $baseQuery)
+            ->where('status', 'unpaid')
+            ->sum('amount');
+
+        // Overdue: unpaid invoices with due_date in the past
+        $overdueCount = (clone $baseQuery)
+            ->where('status', 'unpaid')
+            ->where('due_date', '<', Carbon::now())
+            ->count();
+        $overdueAmount = (clone $baseQuery)
+            ->where('status', 'unpaid')
+            ->where('due_date', '<', Carbon::now())
+            ->sum('amount');
+
+        return response()->json([
+            'total_invoices' => $totalInvoices,
+            'total_amount' => $totalAmount,
+            'paid_count' => $paidCount,
+            'paid_amount' => $paidAmount,
+            'unpaid_count' => $unpaidCount,
+            'unpaid_amount' => $unpaidAmount,
+            'overdue_count' => $overdueCount,
+            'overdue_amount' => $overdueAmount,
+        ]);
+    }
+    public function getData(Request $request)
+    {
+        $user = Auth::user();
+        $status = $request->query('status');
+        $type = $request->query('type');
+        $payer = $request->query('payer');
+        $area = $request->query('area');
+        $dateFrom = $request->query('date_from');
+        $dateTo = $request->query('date_to');
+
+        $template = WhatsappTemplate::where('template_type', 'invoice_terbit')
+            ->where('group_id', $user->group_id)
+            ->first();
+
+        // Base query with all necessary relations
+        $query = InvoiceHomepass::with([
+            'member.paymentDetail',
+            'member.connection.profile',
+            'member.connection.area',
+            'payer'
+        ])->latest();
+
+        // Role-based filtering
+        /** @var \App\Models\User $user */
+        if ($user->role === 'teknisi') {
+            if (method_exists($user, 'assignedAreas')) {
+                $assignedAreaIds = $user->assignedAreas()->pluck('areas.id')->toArray();
+            } else {
+                $assignedAreaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id')
+                    ->toArray();
+            }
+
+            if (empty($assignedAreaIds)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereHas('member.connection', function ($q) use ($assignedAreaIds) {
+                    $q->whereIn('area_id', $assignedAreaIds);
+                });
+            }
+        } elseif (in_array($user->role, ['mitra', 'kasir'])) {
+            $query->where('group_id', $user->group_id);
+        } else {
+            $query->where('group_id', $user->group_id);
+        }
+
+        // Apply filters
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        if ($payer) {
+            if ($payer === 'kasir') {
+                $query->whereHas('payer', function ($q2) {
+                    $q2->where('role', 'kasir');
+                });
+            } elseif ($payer === 'admin') {
+                $query->whereHas('payer', function ($q2) {
+                    $q2->where('role', 'mitra');
+                });
+            } elseif ($payer === 'teknisi') {
+                $query->whereHas('payer', function ($q2) {
+                    $q2->where('role', 'teknisi');
+                });
+            }
+        }
+
+        if ($type) {
+            $query->whereHas('member.paymentDetail', function ($q2) use ($type) {
+                $q2->where('payment_type', strtolower($type));
+            });
+        }
+
+        if ($area) {
+            $query->whereHas('member.connection', function ($q2) use ($area) {
+                $q2->where('area_id', $area);
+            });
+        }
+
+        // Date Range Filter (NEW)
+        if ($dateFrom && $dateTo) {
+            $query->whereBetween('created_at', [
+                Carbon::parse($dateFrom)->startOfDay(),
+                Carbon::parse($dateTo)->endOfDay()
+            ]);
+        } elseif ($dateFrom) {
+            $query->where('created_at', '>=', Carbon::parse($dateFrom)->startOfDay());
+        } elseif ($dateTo) {
+            $query->where('created_at', '<=', Carbon::parse($dateTo)->endOfDay());
+        }
+
+        return DataTables::of($query)
+            ->addIndexColumn()
+            ->addColumn('name', function ($invoice) {
+                return $invoice->member ? $invoice->member->fullname : '-';
+            })
+            ->addColumn('area', function ($invoice) {
+                return $invoice->member &&
+                    $invoice->member->connection &&
+                    $invoice->member->connection->area
+                    ? $invoice->member->connection->area->name
+                    : '-';
+            })
+            ->addColumn('inv_number', function ($invoice) {
+                return $invoice->inv_number ?? '-';
+            })
+            ->addColumn('invoice_date', function ($invoice) {
+                return $invoice->start_date
+                    ? Carbon::parse($invoice->start_date)->format('d-M-Y')
+                    : '-';
+            })
+            ->addColumn('payer', function ($invoice) {
+                return $invoice->payer ? $invoice->payer->name : 'System';
+            })
+            ->addColumn('due_date', function ($invoice) {
+                return $invoice->due_date
+                    ? Carbon::parse($invoice->due_date)->format('d-M-Y')
+                    : '-';
+            })
+            ->addColumn('paid_at', function ($invoice) {
+                return $invoice->paid_at
+                    ? Carbon::parse($invoice->paid_at)->format('d-M-Y')
+                    : '-';
+            })
+            ->addColumn('payment_method', function ($invoice) {
+                if (!$invoice->payment_method) return '-';
+
+                return match ($invoice->payment_method) {
+                    'payment_gateway' => 'Payment Gateway',
+                    'cash' => 'Cash',
+                    'bank_transfer' => 'Bank Transfer',
+                    default => ucwords(str_replace('_', ' ', $invoice->payment_method))
+                };
+            })
+            ->addColumn('total', function ($invoice) {
+                return 'Rp ' . number_format($invoice->amount ?? 0, 0, ',', '.');
+            })
+            ->addColumn('status', function ($invoice) {
+                $badgeColor = $invoice->status === 'paid' ? 'text-success' : 'text-danger';
+                $statusText = $invoice->status === 'paid' ? 'Paid' : 'Unpaid';
+                return '<span class="' . $badgeColor . '">' . $statusText . '</span>';
+            })
+            ->addColumn('type', function ($invoice) {
+                if (!$invoice->member || !$invoice->member->paymentDetail) {
+                    return '-';
+                }
+                return ucwords($invoice->member->paymentDetail->payment_type);
+            })
+            ->addColumn('action', function ($invoice) use ($template, $user) {
+                if (!$invoice->member) return '';
+
+                // Generate WhatsApp message
+                $message = $template ? str_replace(
+                    [
+                        '[full_name]',
+                        '[uid]',
+                        '[no_invoice]',
+                        '[amount]',
+                        '[ppn]',
+                        '[discount]',
+                        '[total]',
+                        '[pppoe_user]',
+                        '[pppoe_profile]',
+                        '[due_date]',
+                        '[period]',
+                        '[payment_url]',
+                        '[footer]'
+                    ],
+                    [
+                        $invoice->member->fullname ?? '-',
+                        $invoice->connection->internet_number ?? '-',
+                        $invoice->inv_number ?? '-',
+                        number_format($invoice->amount ?? 0, 0, ',', '.'),
+                        number_format($invoice->ppn ?? 0, 0, ',', '.'),
+                        number_format($invoice->discount ?? 0, 0, ',', '.'),
+                        number_format($invoice->total ?? $invoice->amount, 0, ',', '.'),
+                        $invoice->connection->username ?? '-',
+                        $invoice->connection->profile->name ?? '-',
+                        $invoice->due_date ?? '-',
+                        $invoice->subscription_period ?? '-',
+                        $invoice->payment_url ?? '-',
+                        'PT. Anugerah Media Data Nusantara'
+                    ],
+                    $template->content
+                ) : '';
+
+                $waMessage = urlencode($message);
+                $waUrl = 'https://wa.me/' . $invoice->member->phone_number . '?text=' . $waMessage;
+
+                if ($invoice->status === 'unpaid') {
+                    return '<div class="btn-group gap-1">
         <button id="btn-pay" class="btn btn-outline-primary btn-sm"
             data-inv="' . $invoice->inv_number . '"
             data-name="' . $invoice->member->name . '"
@@ -426,11 +501,11 @@ class InvoiceController extends Controller
             <i class="fa-solid fa-trash"></i>
         </button>
     </div>';
-            } else {
-                if ($invoice->payment_method !== 'payment_gateway' && $user->role === 'mitra') {
-                    $buttons = '<div class="btn-group gap-1">';
+                } else {
+                    if ($invoice->payment_method !== 'payment_gateway' && $user->role === 'mitra') {
+                        $buttons = '<div class="btn-group gap-1">';
 
-                    $buttons .= '
+                        $buttons .= '
             <button id="payment-cancel" data-inv="' . $invoice->inv_number . '"
                 data-name="' . $invoice->member->name . '"
                 data-id="' . $invoice->id . '"
@@ -438,7 +513,7 @@ class InvoiceController extends Controller
                 <i class="fa-solid fa-rotate-right"></i>
             </button>';
 
-                    $buttons .= '
+                        $buttons .= '
             <button data-inv="' . $invoice->inv_number . '"
                 id="btn-delete"
                 data-name="' . $invoice->member->name . '"
@@ -447,16 +522,16 @@ class InvoiceController extends Controller
                 <i class="fa-solid fa-trash"></i>
             </button>';
 
-                    $buttons .= '</div>';
-                    return $buttons;
+                        $buttons .= '</div>';
+                        return $buttons;
+                    }
                 }
-            }
 
-            return '';
-        })
-        ->rawColumns(['action', 'total', 'status'])
-        ->make(true);
-}
+                return '';
+            })
+            ->rawColumns(['action', 'total', 'status'])
+            ->make(true);
+    }
 
     public function payManual(Request $request)
     {
