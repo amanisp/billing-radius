@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helpers\InvoiceHelper;
 use App\Jobs\GenerateAllInvoiceJob;
+use App\Models\AccountingTransaction;
 use App\Models\Connection;
 use App\Models\GlobalSettings;
 use App\Models\InvoiceHomepass;
@@ -15,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Xendit\Configuration;
 use Xendit\Invoice\CreateInvoiceRequest;
 use Xendit\Invoice\InvoiceApi;
@@ -535,63 +537,87 @@ class InvoiceController extends Controller
             'payment_method' => 'required|in:cash,bank_transfer',
         ]);
 
-        // Cari invoice
-        $invoice = InvoiceHomepass::with(['member.paymentDetail'])->findOrFail($request->id);
+        DB::beginTransaction();
+        try {
+            // Cari invoice
+            $invoice = InvoiceHomepass::with(['member.paymentDetail', 'connection.profile'])->findOrFail($request->id);
 
-        // Update status invoice menjadi "paid"
-        $invoice->update([
-            'status' => 'paid',
-            'payer_id' => $user->id,
-            'payment_method' => $request->payment_method,
-            'paid_at' => now()
-        ]);
-
-        if ($invoice->member && $invoice->member->paymentDetail) {
-            $dueDate = Carbon::parse($invoice->due_date);
-
-            // Update last_invoice ke due_date invoice yang baru dibayar
-            // Ini akan menjadi start date untuk invoice berikutnya
-            PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
-                'last_invoice' => $dueDate->format('Y-m-d'),
+            // Update status invoice menjadi "paid"
+            $invoice->update([
+                'status' => 'paid',
+                'payer_id' => $user->id,
+                'payment_method' => $request->payment_method,
+                'paid_at' => now()
             ]);
+
+            AccountingTransaction::create([
+                'group_id' => $invoice->group_id,
+                'transaction_type' => 'income',
+                'category' => 'subscription_payment',
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->inv_number,
+                'member_name' => $invoice->member->fullname,
+                'amount' => $invoice->amount,
+                'payment_method' => $request->payment_method,
+                'received_by' => $user->id,
+                'transaction_date' => now(),
+                'description' => 'Pembayaran invoice ' . $invoice->inv_number,
+                'notes' => 'Pembayaran invoice periode ' . $invoice->subscription_period,
+            ]);
+
+            // Update last_invoice
+            if ($invoice->member && $invoice->member->paymentDetail) {
+                $dueDate = Carbon::parse($invoice->due_date);
+                PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
+                    'last_invoice' => $dueDate->format('Y-m-d'),
+                ]);
+            }
+
+            DB::commit();
+
+            // Send WhatsApp notification
+            $apiKey = $this->getApiKey($user->group_id);
+            $methodMap = [
+                'cash'            => 'Cash',
+                'bank_transfer'   => 'Bank Transfer',
+                'payment_gateway' => 'Payment Gateway',
+            ];
+
+            if (isset($apiKey)) {
+                $footer = GlobalSettings::where('group_id', $user->group_id)->value('footer');
+
+                $this->whatsappService->sendFromTemplate(
+                    $apiKey,
+                    $invoice->member->phone_number,
+                    'payment_paid',
+                    [
+                        'full_name'   => $invoice->member->fullname,
+                        'no_invoice'  => $invoice->inv_number,
+                        'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                        'pppoe_user' => $invoice->connection->username ?? '-',
+                        'pppoe_profile' => $invoice->connection->profile->name ?? '-',
+                        'period'    => $invoice->subscription_period,
+                        'payment_gateway' => $methodMap[$request->payment_method] ?? ucfirst($request->payment_method),
+                        'footer' => $footer
+                    ],
+                    ['group_id' => $invoice->group_id]
+                );
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Pembayaran berhasil!',
+                'invoice' => $invoice
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
         }
-
-        $apiKey = $this->getApiKey($user->group_id);
-        $methodMap = [
-            'cash'            => 'Cash',
-            'bank_transfer'   => 'Bank Transfer',
-            'payment_gateway' => 'Payment Gateway',
-        ];
-
-        if (isset($apiKey)) {
-            $footer = GlobalSettings::where('group_id', $user->group_id)
-                ->value('footer');
-
-            $this->whatsappService->sendFromTemplate(
-                $apiKey,
-                $invoice->member->phone_number,
-                'payment_paid',
-                [
-                    'full_name'   => $invoice->member->fullname,
-                    'no_invoice'  => $invoice->inv_number,
-                    'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
-                    'pppoe_user' => $invoice->connection->username,
-                    'pppoe_profile' => $invoice->connection->profile->name,
-                    'period'    => $invoice->subscription_period,
-                    'payment_gateway' => $methodMap[$request->payment_method] ?? ucfirst($request->payment_method),
-                    'footer' => $footer
-                ],
-                [
-                    'group_id' => $invoice->group_id,
-                ]
-            );
-        }
-
-        return response()->json([
-            'message' => 'Pembayaran berhasil!',
-            'invoice' => $invoice
-        ]);
     }
+
 
     // public function show($id)
     // {
@@ -621,67 +647,173 @@ class InvoiceController extends Controller
             'id' => 'required|exists:invoice_homepasses,id',
         ]);
 
-        $invoice = InvoiceHomepass::with(['member.paymentDetail'])->findOrFail($request->id);
+        DB::beginTransaction();
+        try {
+            $invoice = InvoiceHomepass::with(['member.paymentDetail'])->findOrFail($request->id);
 
-        if ($invoice->member && $invoice->member->paymentDetail) {
-            // Cari invoice sebelumnya yang sudah paid
-            $previousPaidInvoice = InvoiceHomepass::where('member_id', $invoice->member_id)
-                ->where('status', 'paid')
-                ->where('id', '!=', $invoice->id)
-                ->orderByDesc('due_date')
-                ->first();
+            AccountingTransaction::where('invoice_id', $invoice->id)
+                ->where('transaction_type', 'income')
+                ->delete(); // soft delete karena pakai SoftDeletes
 
-            if ($previousPaidInvoice) {
-                // Set last_invoice ke due_date invoice sebelumnya
+            // Rollback last_invoice
+            if ($invoice->member && $invoice->member->paymentDetail) {
+                $previousPaidInvoice = InvoiceHomepass::where('member_id', $invoice->member_id)
+                    ->where('status', 'paid')
+                    ->where('id', '!=', $invoice->id)
+                    ->orderByDesc('due_date')
+                    ->first();
+
+                if ($previousPaidInvoice) {
+                    PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
+                        'last_invoice' => $previousPaidInvoice->due_date,
+                    ]);
+                } else {
+                    PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
+                        'last_invoice' => null,
+                    ]);
+                }
+            }
+
+            // Update invoice menjadi unpaid
+            $invoice->update([
+                'status' => 'unpaid',
+                'payer_id' => null,
+                'payment_method' => null,
+                'paid_at' => null
+            ]);
+
+            DB::commit();
+
+            // Send WhatsApp notification
+            $apiKey = $this->getApiKey($user->group_id);
+            if (isset($apiKey)) {
+                $footer = GlobalSettings::where('group_id', $user->group_id)->value('footer');
+
+                $this->whatsappService->sendFromTemplate(
+                    $apiKey,
+                    $invoice->member->phone_number,
+                    'payment_cancel',
+                    [
+                        'full_name'   => $invoice->member->fullname,
+                        'no_invoice'  => $invoice->inv_number,
+                        'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                        'invoice_date' => $invoice->start_date,
+                        'due_date' => $invoice->due_date,
+                        'period'    => $invoice->subscription_period,
+                    ],
+                    ['group_id' => $invoice->group_id]
+                );
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cancel berhasil!',
+                'invoice' => $invoice
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function xenditCallback(Request $request)
+{
+    $callbackToken = $request->header('X-CALLBACK-TOKEN');
+
+    if ($callbackToken !== env('XENDIT_CALLBACK_TOKEN')) {
+        Log::warning('Invalid Xendit callback token');
+        return response()->json(['message' => 'Invalid callback token'], 401);
+    }
+
+    DB::beginTransaction();
+    try {
+        $externalId = $request->input('external_id'); // invoice number
+        $status = $request->input('status'); // PAID, EXPIRED, etc
+        $paidAmount = $request->input('paid_amount');
+        $paidAt = $request->input('paid_at'); // ISO 8601 datetime
+
+        Log::info('Xendit Callback Received', [
+            'external_id' => $externalId,
+            'status' => $status,
+            'paid_amount' => $paidAmount
+        ]);
+
+        if ($status === 'PAID') {
+            $invoice = InvoiceHomepass::with(['member.paymentDetail', 'connection.profile'])
+                ->where('inv_number', $externalId)
+                ->firstOrFail();
+
+            // Update invoice
+            $invoice->update([
+                'status' => 'paid',
+                'payment_method' => 'payment_gateway',
+                'paid_at' => $paidAt ? Carbon::parse($paidAt) : now()
+            ]);
+
+            AccountingTransaction::create([
+                'group_id' => $invoice->group_id,
+                'transaction_type' => 'income',
+                'category' => 'subscription_payment',
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->inv_number,
+                'member_name' => $invoice->member->fullname,
+                'amount' => $paidAmount,
+                'payment_method' => 'payment_gateway',
+                'received_by' => null, // sistem otomatis
+                'transaction_date' => $paidAt ? Carbon::parse($paidAt) : now(),
+                'description' => 'Pembayaran invoice via Payment Gateway',
+                'notes' => 'Pembayaran otomatis via Xendit - ' . $invoice->subscription_period,
+            ]);
+
+            // Update last_invoice
+            if ($invoice->member && $invoice->member->paymentDetail) {
+                $dueDate = Carbon::parse($invoice->due_date);
                 PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
-                    'last_invoice' => $previousPaidInvoice->due_date,
-                ]);
-            } else {
-                // Jika tidak ada invoice sebelumnya, set null (kembali ke active_date)
-                PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
-                    'last_invoice' => null,
+                    'last_invoice' => $dueDate->format('Y-m-d'),
                 ]);
             }
-        }
-        // ===== END ROLLBACK =====
 
-        // Update invoice menjadi unpaid
-        $invoice->update([
-            'status' => 'unpaid',
-            'payer_id' => null,
-            'payment_method' => null,
-            'paid_at' => null
-        ]);
+            DB::commit();
 
-        $apiKey = $this->getApiKey($user->group_id);
+            // Send notification
+            $apiKey = $this->getApiKey($invoice->group_id);
+            if ($apiKey) {
+                $footer = GlobalSettings::where('group_id', $invoice->group_id)->value('footer');
 
-        if (isset($apiKey)) {
-            $footer = GlobalSettings::where('group_id', $user->group_id)
-                ->value('footer');
+                $this->whatsappService->sendFromTemplate(
+                    $apiKey,
+                    $invoice->member->phone_number,
+                    'payment_paid',
+                    [
+                        'full_name'   => $invoice->member->fullname,
+                        'no_invoice'  => $invoice->inv_number,
+                        'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                        'pppoe_user' => $invoice->connection->username ?? '-',
+                        'pppoe_profile' => $invoice->connection->profile->name ?? '-',
+                        'period'    => $invoice->subscription_period,
+                        'payment_gateway' => 'Payment Gateway',
+                        'footer' => $footer
+                    ],
+                    ['group_id' => $invoice->group_id]
+                );
+            }
 
-            $this->whatsappService->sendFromTemplate(
-                $apiKey,
-                $invoice->member->phone_number,
-                'payment_cancel',
-                [
-                    'full_name'   => $invoice->member->fullname,
-                    'no_invoice'  => $invoice->inv_number,
-                    'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
-                    'invoice_date' => $invoice->start_date,
-                    'due_date' => $invoice->due_date,
-                    'period'    => $invoice->subscription_period,
-                ],
-                [
-                    'group_id' => $invoice->group_id,
-                ]
-            );
+            Log::info('Xendit Callback Processed Successfully', ['invoice' => $externalId]);
         }
 
-        return response()->json([
-            'message' => 'Cancel berhasil!',
-            'invoice' => $invoice
+        return response()->json(['message' => 'Callback processed'], 200);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Xendit callback error: ' . $e->getMessage(), [
+            'trace' => $e->getTraceAsString()
         ]);
+        return response()->json(['message' => 'Error processing callback'], 500);
     }
+}
 
     public function generateAll(Request $request)
     {

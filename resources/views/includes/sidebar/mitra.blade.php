@@ -51,6 +51,12 @@
          <span>Transaction</span>
      </a>
  </li>
+ <li class="sidebar-item {{ Route::is('accounting.index') ? 'active' : '' }}">
+    <a href="{{ route('accounting.index') }}" class='sidebar-link'>
+        <i class="fa-solid fa-book"></i>
+        <span>Pembukuan</span>
+    </a>
+</li>
  <li class="sidebar-item {{ Route::is('billing.setting') ? 'active' : '' }}">
      <a href="{{ route('billing.setting') }}" class='sidebar-link'>
          <i class="fa-solid fa-gear"></i>

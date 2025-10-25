@@ -68,6 +68,11 @@ class InvoiceHomepass extends Model
             ->whereYear('start_date', $year);
     }
 
+    public function accountingTransactions()
+    {
+        return $this->hasMany(AccountingTransaction::class, 'invoice_id');
+    }
+
     // Helper method untuk check apakah invoice overdue
     public function isOverdue()
     {
