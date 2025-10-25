@@ -3,8 +3,9 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Tymon\JWTAuth\Contracts\JWTSubject;
 
-class Member extends Model
+class Member extends Model implements JWTSubject
 {
     protected $fillable = [
         'group_id',
@@ -146,5 +147,22 @@ class Member extends Model
     public function scopeByGroup($query, $groupId)
     {
         return $query->where('group_id', $groupId);
+    }
+
+
+    /**
+     * Mendapatkan identifier untuk JWT
+     */
+    public function getJWTIdentifier()
+    {
+        return $this->getKey(); // biasanya id
+    }
+
+    /**
+     * Mendapatkan custom claim untuk JWT
+     */
+    public function getJWTCustomClaims()
+    {
+        return []; // bisa tambahkan claim khusus jika perlu
     }
 }
