@@ -91,23 +91,23 @@
             <div class="card">
                 <div class="card-header">
                     {{-- Only show create button for Mitra and Kasir --}}
-                    {{-- @if (in_array(Auth::user()->role, ['mitra', 'kasir'])) --}}
-                    <div class="btn-group gap-1">
-                        <button class="btn btn-outline-warning btn-sm px-5 py-2" id="generateAllBtn">
-                            <i class="fa-solid fa-file-invoice-dollar"></i> Generate All Invoice
-                        </button>
+                    @if (in_array(Auth::user()->role, ['mitra']))
+                        <div class="btn-group gap-1">
+                            <button class="btn btn-outline-warning btn-sm px-5 py-2" id="generateAllBtn">
+                                <i class="fa-solid fa-file-invoice-dollar"></i> Generate All Invoice
+                            </button>
 
-                        <button class="btn btn-outline-primary btn-sm px-5 py-2" data-bs-toggle="modal"
-                            data-bs-target="#formCreateModal"><i class="fa-solid fa-file-invoice-dollar"></i>
-                            Create Invoice
-                        </button>
-                        <button class="btn btn-outline-success btn-sm px-5 py-2" onclick="alert('Coming Soon')"><i
-                                class="fa-solid fa-file-invoice-dollar"></i>
-                            Export
-                        </button>
-                    </div>
-                    <hr>
-                    {{-- @endif --}}
+                            <button class="btn btn-outline-primary btn-sm px-5 py-2" data-bs-toggle="modal"
+                                data-bs-target="#formCreateModal"><i class="fa-solid fa-file-invoice-dollar"></i>
+                                Create Invoice
+                            </button>
+                            <button class="btn btn-outline-success btn-sm px-5 py-2" onclick="alert('Coming Soon')"><i
+                                    class="fa-solid fa-file-invoice-dollar"></i>
+                                Export
+                            </button>
+                        </div>
+                        <hr>
+                    @endif
                     <div class="filters">
                         <div class="row">
                             <div class="col-12 d-flex gap-2 flex-wrap align-items-center">
