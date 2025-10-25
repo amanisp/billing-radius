@@ -27,8 +27,6 @@
             ]
         });
 
-
-
         let isConfigured = {{ isset($apiKey) && $apiKey ? 'true' : 'false' }};
 
         // ---------------------------
@@ -81,7 +79,7 @@
             const templateModalEl = document.getElementById('templateModal');
             if (templateModalEl) templateModalEl.addEventListener('show.bs.modal', function() {
                 loadTemplates();
-                loadAllTemplates(); // ensure select-editor also populated (safe alias)
+                loadAllTemplates();
             });
         });
 
@@ -128,7 +126,6 @@
                 });
         }
 
-
         function testConnection() {
             const phone = document.getElementById('testPhone')?.value;
             if (!phone) {
@@ -167,30 +164,134 @@
                 });
         }
 
+        // ---------------------------
+        // Broadcast Functions with Area
+        // ---------------------------
+        function updateMemberCount() {
+            const areaId = document.getElementById('areaSelect')?.value || 'all';
+            const recipientType = document.querySelector('input[name="recipients"]:checked')?.value || 'all';
+            const displayEl = document.getElementById('memberCountDisplay');
+            const areaInfoEl = document.getElementById('areaInfoDisplay');
+            const sendBtn = document.getElementById('sendBroadcastBtn');
+
+            if (!displayEl) return;
+
+            displayEl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading...';
+            if (sendBtn) {
+                sendBtn.disabled = true;
+                sendBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading...';
+            }
+
+            fetch('/tools/whatsapp/broadcast/count', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({
+                    area_id: areaId,
+                    recipients: recipientType
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const count = data.count;
+                    const areaName = data.area_name || 'All Areas';
+                    const statusText = recipientType === 'active' ? 'Active' :
+                                     recipientType === 'suspended' ? 'Suspended' : 'All';
+
+                    displayEl.innerHTML = `${count} <small>members</small>`;
+                    displayEl.className = count > 0 ? 'badge bg-primary fs-6' : 'badge bg-secondary fs-6';
+
+                    if (areaInfoEl) {
+                        if (areaId === 'all') {
+                            areaInfoEl.innerHTML = `<i class="fa-solid fa-map-marked-alt"></i> Broadcasting to ${statusText.toLowerCase()} members in <strong>all areas</strong>`;
+                        } else {
+                            areaInfoEl.innerHTML = `<i class="fa-solid fa-map-pin"></i> Broadcasting to ${statusText.toLowerCase()} members in area <strong>${areaName}</strong>`;
+                        }
+                    }
+
+                    if (sendBtn) {
+                        if (count === 0) {
+                            sendBtn.disabled = true;
+                            sendBtn.innerHTML = '<i class="fa-solid fa-exclamation-triangle"></i> No Recipients';
+                            sendBtn.className = 'btn btn-secondary';
+                        } else {
+                            sendBtn.disabled = false;
+                            sendBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Send to ${count} Members`;
+                            sendBtn.className = 'btn btn-primary';
+                        }
+                    }
+                } else {
+                    displayEl.innerHTML = '<i class="fa-solid fa-exclamation-triangle"></i> Error';
+                    displayEl.className = 'badge bg-danger fs-6';
+                    if (areaInfoEl) areaInfoEl.innerHTML = '';
+                    if (sendBtn) {
+                        sendBtn.disabled = true;
+                        sendBtn.innerHTML = '<i class="fa-solid fa-times"></i> Error Loading';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                displayEl.innerHTML = '<i class="fa-solid fa-times"></i> Failed';
+                displayEl.className = 'badge bg-danger fs-6';
+                if (areaInfoEl) areaInfoEl.innerHTML = '';
+                if (sendBtn) {
+                    sendBtn.disabled = true;
+                    sendBtn.innerHTML = '<i class="fa-solid fa-times"></i> Error';
+                }
+            });
+        }
 
         function showBroadcastModal() {
-            fetch('/tools/whatsapp/templates')
-                .then(response => response.json())
-                .then(templates => {
-                    let templateOptions = '<option value="">Select Template (Optional)</option>';
-                    templates.forEach(template => templateOptions +=
-                        `<option value="${template.type}">${template.name}</option>`);
-                    const el = document.getElementById('broadcastTemplateSelect');
-                    if (el) el.innerHTML = templateOptions;
-                })
-                .catch(() => {});
             const modal = new bootstrap.Modal(document.getElementById('broadcastModal'));
             modal.show();
+
+            // Reset form
+            document.getElementById('broadcastForm')?.reset();
+            document.querySelector('input[name="recipients"][value="all"]').checked = true;
+            document.getElementById('areaSelect').value = 'all';
+
+            // Load initial member count
+            setTimeout(() => {
+                updateMemberCount();
+            }, 300);
         }
 
-        function onTemplateChange() {
-            const templateType = document.getElementById('broadcastTemplateSelect')?.value;
-            const messageTextarea = document.getElementById('broadcastMessage');
-            if (templateType) {
-                const template = currentTemplates.find(t => t.type === templateType);
-                if (template && messageTextarea) messageTextarea.value = template.content;
+        // Event listener untuk broadcast modal
+        document.addEventListener('DOMContentLoaded', function() {
+            const broadcastModal = document.getElementById('broadcastModal');
+            if (broadcastModal) {
+                broadcastModal.addEventListener('shown.bs.modal', function() {
+                    updateMemberCount();
+                });
+
+                // Prevent form submission if no recipients
+                const broadcastForm = document.getElementById('broadcastForm');
+                if (broadcastForm) {
+                    broadcastForm.addEventListener('submit', function(e) {
+                        const sendBtn = document.getElementById('sendBroadcastBtn');
+                        if (sendBtn && sendBtn.disabled) {
+                            e.preventDefault();
+                            showNotification('Cannot send broadcast: No recipients available', 'error');
+                            return false;
+                        }
+
+                        // Show confirmation
+                        const areaSelect = document.getElementById('areaSelect');
+                        const areaText = areaSelect.options[areaSelect.selectedIndex].text;
+                        const count = document.getElementById('memberCountDisplay').textContent.split(' ')[0];
+
+                        if (!confirm(`Are you sure you want to send broadcast to ${count} members in ${areaText}?`)) {
+                            e.preventDefault();
+                            return false;
+                        }
+                    });
+                }
             }
-        }
+        });
 
         // ---------------------------
         // Templates: fetch & render
@@ -208,15 +309,13 @@
                     return response.json();
                 })
                 .then(templates => {
-                    console.log('Templates loaded from server:', templates); // Debug log
+                    console.log('Templates loaded from server:', templates);
                     currentTemplates = templates || [];
 
-                    // Verify we have templates
                     if (currentTemplates.length === 0) {
                         console.warn('No templates received from server');
                     }
 
-                    // render cards
                     if (!container) return;
                     let html = '<div class="row">';
                     currentTemplates.forEach(template => {
@@ -276,7 +375,6 @@
 
                     html += '</div>';
 
-                    // Variables reference card (unchanged)
                     html += `
                         <div class="card mt-3">
                             <div class="card-header">
@@ -336,7 +434,6 @@
                 });
         }
 
-        // alias kept for backward compatibility
         function loadAllTemplates() {
             return loadTemplates();
         }
@@ -349,8 +446,8 @@
 
         function loadTemplateContent() {
             currentType = document.getElementById('templateTypeSelect').value;
-            document.getElementById('saveBtn')
-            document.getElementById('resetBtn')
+            document.getElementById('saveBtn');
+            document.getElementById('resetBtn');
 
             fetch("{{ route('whatsapp.templates.get') }}", {
                     method: 'POST',
@@ -366,15 +463,16 @@
                 .then(data => {
                     document.getElementById('templateContent').value = data.content;
                     originalContent = data.content;
-                    document.getElementById('saveBtn')
+                    document.getElementById('saveBtn');
                 });
         }
 
-        // 🔹 load pertama kali otomatis pilih "invoice_terbit"
         document.addEventListener("DOMContentLoaded", function() {
             const select = document.getElementById('templateTypeSelect');
-            select.value = "invoice_terbit"; // set default
-            loadTemplateContent(); // langsung load template
+            if (select) {
+                select.value = "invoice_terbit";
+                loadTemplateContent();
+            }
         });
 
         function saveTemplate() {

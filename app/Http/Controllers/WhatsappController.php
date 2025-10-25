@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SendWhatsAppMessageJob;
+use App\Models\Area;
 use App\Models\Groups;
 use App\Models\Member;
 use App\Models\GlobalSettings;
@@ -38,9 +39,21 @@ class WhatsappController extends Controller
         $group     = Groups::find($user->group_id);
         $apiKey    = $this->getApiKey($user->group_id);
 
+        // Load areas untuk broadcast modal
+        $data = Area::where('group_id', $user->group_id)
+            ->withCount(['connection as member_count' => function ($query) {
+                $query->whereHas('member', function ($q) {
+                    $q->whereNotNull('phone_number')
+                        ->where('phone_number', '!=', '')
+                        ->where('phone_number', '!=', '0');
+                });
+            }])
+            ->orderBy('name')
+            ->get();
 
-        return view('pages.whatsapp.index', compact('group', 'apiKey'));
+        return view('pages.whatsapp.index', compact('group', 'apiKey', 'data'));
     }
+
 
     public function getMessageLogs(Request $request)
     {
@@ -188,6 +201,67 @@ class WhatsappController extends Controller
         ], 500);
     }
 
+    public function getBroadcastCount(Request $request)
+    {
+        try {
+            $user = Auth::user();
+
+            $request->validate([
+                'area_id' => 'required',
+                'recipients' => 'required|in:all,active,suspended'
+            ]);
+
+            $areaId = $request->area_id;
+            $recipientType = $request->recipients;
+
+            // Base query untuk member dengan phone number valid
+            $query = Member::where('group_id', $user->group_id)
+                ->whereNotNull('phone_number')
+                ->where('phone_number', '!=', '')
+                ->where('phone_number', '!=', '0')
+                ->whereHas('connection');
+
+            // Filter by area - langsung dari database
+            if ($areaId !== 'all') {
+                $query->whereHas('connection', function ($q) use ($areaId) {
+                    $q->where('area_id', $areaId);
+                });
+            }
+
+            // Filter by status - langsung dari connection database
+            if ($recipientType === 'active') {
+                $query->whereHas('connection', fn($q) => $q->where('isolir', false));
+            } elseif ($recipientType === 'suspended') {
+                $query->whereHas('connection', fn($q) => $q->where('isolir', true));
+            }
+
+            $count = $query->count();
+
+            // Get area name dari database (bukan API)
+            $areaName = null;
+            if ($areaId !== 'all') {
+                $area = Area::where('id', $areaId)
+                    ->where('group_id', $user->group_id)
+                    ->first();
+                $areaName = $area ? $area->name : 'Unknown Area';
+            }
+
+            return response()->json([
+                'success' => true,
+                'count' => $count,
+                'area_name' => $areaName
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting broadcast count: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error calculating recipient count'
+            ], 500);
+        }
+    }
+
+
+
     public function sendBroadcast(Request $request)
     {
         $user   = Auth::user();
@@ -195,43 +269,64 @@ class WhatsappController extends Controller
 
         try {
             $request->validate([
-                'recipients' => 'required',
-                'subject' => 'required|string',
+                'area_id' => 'required',
+                'recipients' => 'required|in:all,active,suspended',
+                'subject' => 'required|string|max:255',
                 'message' => 'required|string',
             ]);
 
-            // Ambil data member sesuai filter
-            $query = Member::with([
-                'connection'
-            ])
+            if (!$apiKey) {
+                return back()->with('error', 'WhatsApp API not configured');
+            }
+
+            $areaId = $request->area_id;
+            $recipientType = $request->recipients;
+
+            // Build query untuk ambil members - langsung dari database
+            $query = Member::with(['connection', 'connection.profile'])
                 ->where('group_id', $user->group_id)
                 ->whereNotNull('phone_number')
                 ->where('phone_number', '!=', '')
-                ->where('phone_number', '!=', '0');
+                ->where('phone_number', '!=', '0')
+                ->whereHas('connection');
 
-            if ($request->recipients === 'active') {
+            // Filter by area - langsung dari database
+            if ($areaId !== 'all') {
+                $query->whereHas('connection', function ($q) use ($areaId) {
+                    $q->where('area_id', $areaId);
+                });
+            }
+
+            // Filter by status - langsung dari connection database
+            if ($recipientType === 'active') {
                 $query->whereHas('connection', fn($q) => $q->where('isolir', false));
-            } elseif ($request->recipients === 'suspended') {
+            } elseif ($recipientType === 'suspended') {
                 $query->whereHas('connection', fn($q) => $q->where('isolir', true));
             }
 
             $members = $query->get();
 
+            if ($members->isEmpty()) {
+                return back()->with('error', 'No recipients found with the selected filters.');
+            }
+
+            // Generate broadcast session ID
+            $broadcastSessionId = 'broadcast_' . date('YmdHis') . '_' . \Illuminate\Support\Str::random(8);
+
             $count = 0;
             foreach ($members as $member) {
-                $broadcastSessionId = 'broadcast_' . date('YmdHis') . '_' . \Illuminate\Support\Str::random(8);
+                $message = "Salam Bpk/Ibu {$member->fullname},\n\n" . $request->message;
 
-                $message = "Salam Bpk/Ibu {$member->fullname},\n" . $request->message;
                 $broadcast = WhatsappMessageLog::create([
                     'group_id' => $member->group_id,
-                    'phone'     => $member->phone_number,
+                    'phone'     => $member->phone_number, // Langsung dari database Member
                     'subject'   => $request->subject,
                     'message'   => $message,
                     'session_id' => $broadcastSessionId,
                     'status'    => 'pending',
                 ]);
 
-                // Hitung jeda tiap 10 pesan
+                // Calculate delay (15 seconds per batch of 10 messages)
                 $delay = floor($count / 10) * 15;
 
                 SendWhatsAppMessageJob::dispatch($apiKey, $broadcast, $member)
@@ -241,9 +336,24 @@ class WhatsappController extends Controller
                 $count++;
             }
 
-            return back()->with('success', "Broadcast queued to {$members->count()} members.");
+            // Get area name dari database (bukan API)
+            $areaName = 'all areas';
+            if ($areaId !== 'all') {
+                $area = Area::where('id', $areaId)
+                    ->where('group_id', $user->group_id)
+                    ->first();
+                $areaName = $area ? "area {$area->name}" : 'selected area';
+            }
+
+            $statusText = $recipientType === 'active' ? 'active' : ($recipientType === 'suspended' ? 'suspended' : 'all');
+
+            return back()->with(
+                'success',
+                "Broadcast queued to {$count} {$statusText} members in {$areaName}. Messages will be sent gradually."
+            );
         } catch (\Throwable $th) {
-            return redirect()->route('whatsapp.index')->with('error', $th->getMessage());
+            Log::error('Broadcast error: ' . $th->getMessage());
+            return back()->with('error', 'Failed to queue broadcast: ' . $th->getMessage());
         }
     }
 
