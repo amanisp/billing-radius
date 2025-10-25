@@ -41,12 +41,6 @@ class InvoiceController extends Controller
         $year = (int) $request->year;
         $month = (int) $request->month;
 
-        // Cek apakah sudah ada invoice bulan ini
-        $exists = InvoiceHomepass::where('member_id', $request->member_id)
-            ->whereYear('start_date', $year)
-            ->whereMonth('start_date', $month)
-            ->exists();
-
         // Ambil member dengan payment detail
         $member = Member::with('paymentDetail')->find($request->member_id);
 
@@ -59,11 +53,8 @@ class InvoiceController extends Controller
                 ->first();
 
             if ($lastCreatedInvoice) {
-                // Gunakan due_date dari invoice terakhir yang dibuat
-                $nextInvoiceDate = $lastCreatedInvoice->due_date;
-            } elseif ($member->paymentDetail->last_invoice) {
-                // Jika belum ada invoice tapi ada last_invoice (dari pembayaran sebelumnya)
-                $nextInvoiceDate = $member->paymentDetail->last_invoice;
+                $lastInvoice = $member->paymentDetail->last_invoice;
+                $nextInvoiceDate = \Carbon\Carbon::parse($lastInvoice)->addMonth()->toDateString();
             } else {
                 // Jika benar-benar invoice pertama kali, gunakan active_date
                 $nextInvoiceDate = $member->paymentDetail->active_date;
@@ -71,10 +62,10 @@ class InvoiceController extends Controller
         }
 
         return response()->json([
+            'invoice' => $lastCreatedInvoice,
             'year' => $year,
             'month' => $month,
             'id' => $request->member_id,
-            'exists' => $exists,
             'next_inv_date' => $nextInvoiceDate,
         ]);
     }
@@ -290,6 +281,7 @@ class InvoiceController extends Controller
             'overdue_amount' => $overdueAmount,
         ]);
     }
+
     public function getData(Request $request)
     {
         $user = Auth::user();
@@ -399,7 +391,7 @@ class InvoiceController extends Controller
             })
             ->addColumn('invoice_date', function ($invoice) {
                 return $invoice->start_date
-                    ? Carbon::parse($invoice->start_date)->format('d-M-Y')
+                    ? Carbon::parse($invoice->start_date)->format('d/m/Y')
                     : '-';
             })
             ->addColumn('payer', function ($invoice) {
@@ -407,12 +399,12 @@ class InvoiceController extends Controller
             })
             ->addColumn('due_date', function ($invoice) {
                 return $invoice->due_date
-                    ? Carbon::parse($invoice->due_date)->format('d-M-Y')
+                    ? Carbon::parse($invoice->due_date)->format('d/m/Y')
                     : '-';
             })
             ->addColumn('paid_at', function ($invoice) {
                 return $invoice->paid_at
-                    ? Carbon::parse($invoice->paid_at)->format('d-M-Y')
+                    ? Carbon::parse($invoice->paid_at)->format('d/m/Y')
                     : '-';
             })
             ->addColumn('payment_method', function ($invoice) {
@@ -690,6 +682,41 @@ class InvoiceController extends Controller
         ]);
     }
 
+    public function generateAll(Request $request)
+    {
+        $user = Auth::user();
+        $groupId = $user->group_id;
+        $currentMonth = Carbon::now()->format('Y-m');
+
+        // Cek siapa saja yang sudah punya invoice bulan ini
+        $existing = InvoiceHomepass::where('group_id', $groupId)
+            ->whereRaw("DATE_FORMAT(due_date, '%Y-%m') = ?", [$currentMonth])
+            ->pluck('member_id')
+            ->toArray();
+
+        // Ambil semua member aktif billing 1 yang belum punya invoice bulan ini
+        $members = Member::where('group_id', $groupId)
+            ->where('billing', 1)
+            ->whereNotIn('id', $existing)
+            ->get();
+
+        if ($members->isEmpty()) {
+            return response()->json([
+                'status' => 'info',
+                'message' => 'Semua pelanggan sudah memiliki invoice bulan ini.'
+            ], 200);
+        }
+
+        // foreach ($members as $member) {
+        //     GenerateInvoiceJob::dispatch($member);
+        // }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Proses generate invoice sedang berjalan di background (' . $members->count() . ' pelanggan).'
+        ], 200);
+    }
+
     public function createInv(Request $request)
     {
         try {
@@ -711,33 +738,13 @@ class InvoiceController extends Controller
 
             $pd = $member->paymentDetail;
 
-            $price    = (float) $pd->amount;
-            $vat      = (float) $pd->ppn;
-            $discount = (float) $pd->discount;
+            $price    =  $pd->amount;
+            $vat      =  $pd->ppn;
+            $discount =  $pd->discount;
             $periode  = (int) $request->subsperiode; // jumlah bulan dibayar
 
             // Hitung total
             $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
-
-            // Cari invoice terakhir yang pernah dibuat (paid atau unpaid)
-            $lastCreatedInvoice = InvoiceHomepass::where('member_id', $member->id)
-                ->orderByDesc('due_date')
-                ->first();
-
-            // Tentukan anchor tanggal invoice
-            if ($lastCreatedInvoice) {
-                // Jika ada invoice sebelumnya, mulai dari due_date invoice terakhir
-                $invoiceDate = Carbon::parse($lastCreatedInvoice->due_date)->startOfDay();
-            } elseif ($pd->last_invoice) {
-                // Jika belum ada invoice tapi ada last_invoice (dari pembayaran sebelumnya)
-                $invoiceDate = Carbon::parse($pd->last_invoice)->startOfDay();
-            } else {
-                // Jika benar-benar invoice pertama kali, pakai active_date
-                $invoiceDate = Carbon::parse($pd->active_date)->startOfDay();
-            }
-
-            // Hitung due date berdasarkan billing_period (subsperiode)
-            $dueDate = $invoiceDate->copy()->addMonths($periode)->startOfDay();
 
             // Generate invoice number
             $invNumber = InvoiceHelper::generateInvoiceNumber(
@@ -747,11 +754,17 @@ class InvoiceController extends Controller
 
             $duration = InvoiceHelper::invoiceDurationThisMonth();
 
+            $dueDate = Carbon::parse($request->duedate)->startOfDay();
+            $lastInvoice = $dueDate->copy()->addMonths($request->subsperiode - 1)->toDateString();
+            PaymentDetail::where('id', $member->payment_detail_id)
+                ->update(['last_invoice' => $lastInvoice]);
+
+
             // === Xendit invoice ===
             $create_invoice_request = new CreateInvoiceRequest([
                 'external_id'      => $invNumber,
                 'description'      => 'Tagihan nomor internet ' . $member->connection->internet_number .
-                    ' Periode: ' . $request->periode,
+                    'Periode: ' . $request->periode,
                 'amount'           => intval($total_amount),
                 'invoice_duration' => $duration,
                 'currency'         => 'IDR',
@@ -766,8 +779,8 @@ class InvoiceController extends Controller
                 'connection_id'        => $member->connection->id,
                 'member_id'            => $member->id,
                 'invoice_type'         => 'H',
-                'start_date'           => $invoiceDate->toDateString(), // Hanya tanggal, tanpa jam
-                'due_date'             => $dueDate->toDateString(),     // Hanya tanggal, tanpa jam
+                'start_date'           => now()->toDateString(), // Hanya tanggal, tanpa jam
+                'due_date'             => $request->duedate,     // Hanya tanggal, tanpa jam
                 'subscription_period'  => $request->periode,
                 'inv_number'           => $invNumber,
                 'amount'               => $total_amount,
@@ -779,7 +792,7 @@ class InvoiceController extends Controller
             InvoiceHomepass::create($data);
 
             return redirect()->route('billing.invoice')
-                ->with('success', 'Invoice berhasil dibuat untuk ' . $periode . ' bulan!');
+                ->with('success', 'Invoice berhasil dibuat');
         } catch (\Throwable $th) {
             return redirect()->route('billing.invoice')
                 ->with('error', $th->getMessage());

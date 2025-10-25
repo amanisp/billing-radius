@@ -93,9 +93,13 @@
                     {{-- Only show create button for Mitra and Kasir --}}
                     {{-- @if (in_array(Auth::user()->role, ['mitra', 'kasir'])) --}}
                     <div class="btn-group gap-1">
+                        <button class="btn btn-outline-warning btn-sm px-5 py-2" id="generateAllBtn">
+                            <i class="fa-solid fa-file-invoice-dollar"></i> Generate All Invoice
+                        </button>
+
                         <button class="btn btn-outline-primary btn-sm px-5 py-2" data-bs-toggle="modal"
                             data-bs-target="#formCreateModal"><i class="fa-solid fa-file-invoice-dollar"></i>
-                            Manual Invoice
+                            Create Invoice
                         </button>
                         <button class="btn btn-outline-success btn-sm px-5 py-2" onclick="alert('Coming Soon')"><i
                                 class="fa-solid fa-file-invoice-dollar"></i>
@@ -187,19 +191,23 @@
                             success: function(stats) {
                                 // Update Monthly Invoice card
                                 $('.status-card.total .fs-4').text(stats.total_invoices || 0);
-                                $('.status-card.total .text-muted').text('Rp ' + formatNumber(stats.total_amount || 0));
+                                $('.status-card.total .text-muted').text('Rp ' + formatNumber(stats
+                                    .total_amount || 0));
 
                                 // Update Overdue card
                                 $('.status-card.active .fs-4').text(stats.overdue_count || 0);
-                                $('.status-card.active .text-muted').text('Rp ' + formatNumber(stats.overdue_amount || 0));
+                                $('.status-card.active .text-muted').text('Rp ' + formatNumber(stats
+                                    .overdue_amount || 0));
 
                                 // Update Unpaid card
                                 $('.status-card.suspend:has(.bg-warning) .fs-4').text(stats.unpaid_count || 0);
-                                $('.status-card.suspend:has(.bg-warning) .text-muted').text('Rp ' + formatNumber(stats.unpaid_amount || 0));
+                                $('.status-card.suspend:has(.bg-warning) .text-muted').text('Rp ' +
+                                    formatNumber(stats.unpaid_amount || 0));
 
                                 // Update Paid card
                                 $('.status-card.suspend:has(.bg-primary) .fs-4').text(stats.paid_count || 0);
-                                $('.status-card.suspend:has(.bg-primary) .text-muted').text('Rp ' + formatNumber(stats.paid_amount || 0));
+                                $('.status-card.suspend:has(.bg-primary) .text-muted').text('Rp ' +
+                                    formatNumber(stats.paid_amount || 0));
                             },
                             error: function() {
                                 console.log('Failed to load statistics');
@@ -480,8 +488,8 @@
                         }
 
                         const basePrice = parseInt($('#amount').data('raw') || 0);
-                        const vat = parseFloat($('#vat').val() || 0);
-                        const disc = parseFloat($('#disc').val() || 0);
+                        const vat = $('#vat').val() || 0
+                        const disc = $('#disc').val() || 0
 
                         let subtotal = basePrice * subsperiode;
 
@@ -529,9 +537,11 @@
                                     _token: $('meta[name="csrf-token"]').attr('content')
                                 },
                                 success: function(res) {
+                                    console.log(res)
+
                                     let dueDate;
 
-                                    if (res.exists) {
+                                    if (res.invoice && Object.keys(res.invoice).length > 0) {
                                         if (res.next_inv_date) {
                                             dueDate = new Date(res.next_inv_date);
                                         } else {
@@ -541,6 +551,8 @@
                                     } else {
                                         dueDate = new Date(parsed);
                                     }
+
+                                    console.log(res)
 
                                     const formatted =
                                         dueDate.getFullYear() + '-' +
@@ -610,6 +622,45 @@
                         });
                     });
 
+                });
+
+                // Generate Invoice
+                $('#generateAllBtn').on('click', function() {
+                    const groupId = $(this).data('group');
+
+                    Swal.fire({
+                        title: 'Generate semua invoice?',
+                        text: "Proses ini akan membuat invoice untuk semua pelanggan yang belum punya invoice bulan ini.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Ya, lanjutkan!',
+                        cancelButtonText: 'Batal'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            $.ajax({
+                                url: '/billing/generate',
+                                type: 'POST',
+                                data: {
+                                    _token: '{{ csrf_token() }}'
+                                },
+                                beforeSend: function() {
+                                    Swal.fire({
+                                        title: 'Sedang memproses...',
+                                        text: 'Mohon tunggu, sistem sedang membuat invoice.',
+                                        allowOutsideClick: false,
+                                        didOpen: () => Swal.showLoading()
+                                    });
+                                },
+                                success: function(res) {
+                                    Swal.fire('Berhasil!', res.message, 'success');
+                                },
+                                error: function(xhr) {
+                                    const res = xhr.responseJSON || {};
+                                    Swal.fire('Gagal!', res.message || 'Terjadi kesalahan.', 'error');
+                                }
+                            });
+                        }
+                    });
                 });
             </script>
         @endpush

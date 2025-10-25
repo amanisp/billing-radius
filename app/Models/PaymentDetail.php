@@ -20,10 +20,6 @@ class PaymentDetail extends Model
     protected $casts = [
         'active_date' => 'date',
         'last_invoice' => 'date',
-        'billing_period' => 'integer',
-        'amount' => 'decimal:2',
-        'discount' => 'decimal:2',
-        'ppn' => 'decimal:2',
     ];
 
     public function group()
