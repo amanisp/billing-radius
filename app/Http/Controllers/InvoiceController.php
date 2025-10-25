@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\InvoiceHelper;
+use App\Jobs\GenerateAllInvoiceJob;
 use App\Models\Connection;
 use App\Models\GlobalSettings;
 use App\Models\InvoiceHomepass;
@@ -686,36 +687,72 @@ class InvoiceController extends Controller
     {
         $user = Auth::user();
         $groupId = $user->group_id;
-        $currentMonth = Carbon::now()->format('Y-m');
+        $now = Carbon::now()->startOfMonth();
 
-        // Cek siapa saja yang sudah punya invoice bulan ini
-        $existing = InvoiceHomepass::where('group_id', $groupId)
-            ->whereRaw("DATE_FORMAT(due_date, '%Y-%m') = ?", [$currentMonth])
-            ->pluck('member_id')
-            ->toArray();
-
-        // Ambil semua member aktif billing 1 yang belum punya invoice bulan ini
-        $members = Member::where('group_id', $groupId)
+        // Ambil semua member aktif billing
+        $members = Member::with(['paymentDetail', 'connection.profile'])
+            ->where('group_id', $groupId)
             ->where('billing', 1)
-            ->whereNotIn('id', $existing)
             ->get();
 
-        if ($members->isEmpty()) {
-            return response()->json([
-                'status' => 'info',
-                'message' => 'Semua pelanggan sudah memiliki invoice bulan ini.'
-            ], 200);
+        $membersToGenerate = collect();
+
+        foreach ($members as $member) {
+            $pd = $member->paymentDetail;
+            if (!$pd) continue;
+
+            // Ambil invoice terakhir
+            $lastInvoice = InvoiceHomepass::where('member_id', $member->id)
+                ->orderByDesc('due_date')
+                ->first();
+
+            // Jika belum ada invoice sama sekali → gunakan active_date
+            if (!$lastInvoice) {
+                $activeDate = $pd->active_date ? Carbon::parse($pd->active_date)->startOfMonth() : $now;
+                // Jika active_date <= bulan ini, generate 1 invoice bulan ini
+                if ($activeDate->lte($now)) {
+                    $membersToGenerate->push($member);
+                }
+                continue;
+            }
+
+            // Sudah ada invoice → cek apakah sudah sampai bulan ini atau ke depan
+            $hasFutureInvoice = InvoiceHomepass::where('member_id', $member->id)
+                ->whereDate('due_date', '>=', $now)
+                ->exists();
+
+            if ($hasFutureInvoice) {
+                // Sudah ada invoice bulan ini atau bulan depan → skip
+                continue;
+            }
+
+            // Jika belum ada invoice dari bulan lalu sampai sekarang, generate
+            $lastDue = Carbon::parse($lastInvoice->due_date)->startOfMonth();
+            if ($lastDue->lt($now)) {
+                $monthsDiff = $lastDue->diffInMonths($now);
+                if ($monthsDiff >= 1) {
+                    $membersToGenerate->push($member);
+                }
+            }
         }
 
-        // foreach ($members as $member) {
-        //     GenerateInvoiceJob::dispatch($member);
-        // }
+        if ($membersToGenerate->isEmpty()) {
+            return response()->json([
+                'status'  => 'info',
+                'message' => 'Semua pelanggan sudah memiliki invoice sampai bulan ini atau ke depan.'
+            ]);
+        }
+
+        foreach ($membersToGenerate as $member) {
+            GenerateAllInvoiceJob::dispatch($member)->onQueue('invoices');
+        }
 
         return response()->json([
-            'status' => 'success',
-            'message' => 'Proses generate invoice sedang berjalan di background (' . $members->count() . ' pelanggan).'
-        ], 200);
+            'status'  => 'success',
+            'message' => 'Proses generate invoice sedang berjalan di background (' . $membersToGenerate->count() . ' pelanggan).'
+        ]);
     }
+
 
     public function createInv(Request $request)
     {
@@ -802,14 +839,27 @@ class InvoiceController extends Controller
 
     public function destroy($id)
     {
-        $data = InvoiceHomepass::where('id', $id)->firstOrFail();
+        $invoice = InvoiceHomepass::findOrFail($id);
+        $member = Member::findOrFail($invoice->member_id);
 
-        // Hapus data
-        $data->delete();
+        // Hapus invoice dulu
+        $invoice->delete();
+
+        // Cek apakah masih ada invoice lain untuk member tersebut
+        $lastInvoice = InvoiceHomepass::where('member_id', $member->id)
+            ->orderByDesc('due_date')
+            ->first();
+
+        // Jika masih ada invoice lain, update last_invoice pakai due_date terakhir
+        // Jika tidak ada, set null
+        PaymentDetail::where('id', $member->payment_detail_id)
+            ->update([
+                'last_invoice' => $lastInvoice ? $lastInvoice->due_date : null,
+            ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Data Berhasil Dihapus!',
+            'message' => 'Data Berhasil Dihapus dan last_invoice diperbarui!',
         ]);
     }
 }

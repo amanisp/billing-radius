@@ -108,31 +108,38 @@
                     </div>
                     <hr>
                     {{-- @endif --}}
-                    <div class="filters d-flex gap-2 flex-wrap align-items-center">
-                        <select id="statusFilter" class="form-select" style="max-width: 180px;">
-                            <option value="">All Status</option>
-                            <option value="paid">Paid</option>
-                            <option value="unpaid">Unpaid</option>
-                        </select>
-                        <select id="typeFilter" class="form-select" style="max-width: 180px;">
-                            <option value="">All Type</option>
-                            <option value="prabayar">Prabayar</option>
-                            <option value="pascabayar">Pascabayar</option>
-                        </select>
-                        <select id="areaFilter" class="form-select" style="max-width: 180px;">
-                            <option value="">All Area</option>
-                        </select>
-                        <div class="d-flex gap-2 align-items-center">
-                            <label class="text-nowrap mb-0 fw-semibold">Tanggal Dari:</label>
-                            <input type="date" id="dateFrom" class="form-control" style="max-width: 160px;">
+                    <div class="filters">
+                        <div class="row">
+                            <div class="col-12 d-flex gap-2 flex-wrap align-items-center">
+                                <select id="statusFilter" class="form-select" style="max-width: 180px;">
+                                    <option value="">All Status</option>
+                                    <option value="paid">Paid</option>
+                                    <option value="unpaid">Unpaid</option>
+                                </select>
+                                <select id="typeFilter" class="form-select" style="max-width: 180px;">
+                                    <option value="">All Type</option>
+                                    <option value="prabayar">Prabayar</option>
+                                    <option value="pascabayar">Pascabayar</option>
+                                </select>
+                                <select id="areaFilter" class="form-select" style="max-width: 180px;">
+                                    <option value="">All Area</option>
+                                </select>
+                            </div>
+                            <div class="col-12 d-flex gap-2 flex-wrap align-items-center mt-2">
+                                <div class="d-flex gap-2 align-items-center">
+                                    <label class="text-nowrap mb-0 fw-semibold">Start:</label>
+                                    <input type="date" id="dateFrom" class="form-control" style="max-width: 160px;">
+                                </div>
+                                <div class="d-flex gap-2 align-items-center">
+                                    <label class="text-nowrap mb-0 fw-semibold">End:</label>
+                                    <input type="date" id="dateTo" class="form-control" style="max-width: 160px;">
+                                </div>
+                                <button id="resetFilters" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fa-solid fa-rotate-right"></i> Reset
+                                </button>
+                            </div>
                         </div>
-                        <div class="d-flex gap-2 align-items-center">
-                            <label class="text-nowrap mb-0 fw-semibold">Sampai:</label>
-                            <input type="date" id="dateTo" class="form-control" style="max-width: 160px;">
-                        </div>
-                        <button id="resetFilters" class="btn btn-outline-secondary btn-sm">
-                            <i class="fa-solid fa-rotate-right"></i> Reset
-                        </button>
+
                     </div>
                 </div>
                 <hr>
