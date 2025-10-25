@@ -22,6 +22,7 @@
         "predis/predis": "^3.2",
         "pusher/pusher-php-server": "^7.2",
         "sentry/sentry-laravel": "^4.16",
+        "tymon/jwt-auth": "^2.2",
         "xendit/xendit-php": "^6.3",
         "yajra/laravel-datatables-oracle": "^11.1"
     },
