@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AuthMember;
 use App\Http\Controllers\Api\WhatsAppApiController;
 use App\Http\Controllers\WhatsappController;
 use Illuminate\Http\Request;
@@ -12,3 +13,10 @@ Route::get('/user', function (Request $request) {
 // WhatsApp API Routes
 Route::post('/coba/send-message', [WhatsappController::class, 'testConnection']);
 Route::post('/whatsapp/webhook/{groupId?}', [WhatsAppApiController::class, 'webhook']);
+
+
+Route::prefix('v1')->group(function () {
+    Route::prefix('auth-member')->group(function () {
+        Route::post('/', [AuthMember::class, 'signIn']);
+    });
+});
