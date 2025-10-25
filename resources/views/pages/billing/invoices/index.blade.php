@@ -90,44 +90,55 @@
             <div class="card">
                 <div class="card-header">
                     {{-- Only show create button for Mitra and Kasir --}}
-                    {{-- @if (in_array(Auth::user()->role, ['mitra', 'kasir'])) --}}
-                    <div class="btn-group gap-1">
-                        <button class="btn btn-outline-primary btn-sm px-5 py-2" data-bs-toggle="modal"
-                            data-bs-target="#formCreateModal"><i class="fa-solid fa-file-invoice-dollar"></i>
-                            Manual Invoice
-                        </button>
-                        <button class="btn btn-outline-success btn-sm px-5 py-2" onclick="alert('Coming Soon')"><i
-                                class="fa-solid fa-file-invoice-dollar"></i>
-                            Export
-                        </button>
-                    </div>
-                    <hr>
-                    {{-- @endif --}}
-                    <div class="filters d-flex gap-2 flex-wrap align-items-center">
-                        <select id="statusFilter" class="form-select" style="max-width: 180px;">
-                            <option value="">All Status</option>
-                            <option value="paid">Paid</option>
-                            <option value="unpaid">Unpaid</option>
-                        </select>
-                        <select id="typeFilter" class="form-select" style="max-width: 180px;">
-                            <option value="">All Type</option>
-                            <option value="prabayar">Prabayar</option>
-                            <option value="pascabayar">Pascabayar</option>
-                        </select>
-                        <select id="areaFilter" class="form-select" style="max-width: 180px;">
-                            <option value="">All Area</option>
-                        </select>
-                        <div class="d-flex gap-2 align-items-center">
-                            <label class="text-nowrap mb-0 fw-semibold">Tanggal Dari:</label>
-                            <input type="date" id="dateFrom" class="form-control" style="max-width: 160px;">
+                    @if (in_array(Auth::user()->role, ['mitra']))
+                        <div class="btn-group gap-1">
+                            <button class="btn btn-outline-warning btn-sm px-5 py-2" id="generateAllBtn">
+                                <i class="fa-solid fa-file-invoice-dollar"></i> Generate All Invoice
+                            </button>
+
+                            <button class="btn btn-outline-primary btn-sm px-5 py-2" data-bs-toggle="modal"
+                                data-bs-target="#formCreateModal"><i class="fa-solid fa-file-invoice-dollar"></i>
+                                Create Invoice
+                            </button>
+                            <button class="btn btn-outline-success btn-sm px-5 py-2" onclick="alert('Coming Soon')"><i
+                                    class="fa-solid fa-file-invoice-dollar"></i>
+                                Export
+                            </button>
                         </div>
-                        <div class="d-flex gap-2 align-items-center">
-                            <label class="text-nowrap mb-0 fw-semibold">Sampai:</label>
-                            <input type="date" id="dateTo" class="form-control" style="max-width: 160px;">
+                        <hr>
+                    @endif
+                    <div class="filters">
+                        <div class="row">
+                            <div class="col-12 d-flex gap-2 flex-wrap align-items-center">
+                                <select id="statusFilter" class="form-select" style="max-width: 180px;">
+                                    <option value="">All Status</option>
+                                    <option value="paid">Paid</option>
+                                    <option value="unpaid">Unpaid</option>
+                                </select>
+                                <select id="typeFilter" class="form-select" style="max-width: 180px;">
+                                    <option value="">All Type</option>
+                                    <option value="prabayar">Prabayar</option>
+                                    <option value="pascabayar">Pascabayar</option>
+                                </select>
+                                <select id="areaFilter" class="form-select" style="max-width: 180px;">
+                                    <option value="">All Area</option>
+                                </select>
+                            </div>
+                            <div class="col-12 d-flex gap-2 flex-wrap align-items-center mt-2">
+                                <div class="d-flex gap-2 align-items-center">
+                                    <label class="text-nowrap mb-0 fw-semibold">Start:</label>
+                                    <input type="date" id="dateFrom" class="form-control" style="max-width: 160px;">
+                                </div>
+                                <div class="d-flex gap-2 align-items-center">
+                                    <label class="text-nowrap mb-0 fw-semibold">End:</label>
+                                    <input type="date" id="dateTo" class="form-control" style="max-width: 160px;">
+                                </div>
+                                <button id="resetFilters" class="btn btn-outline-secondary btn-sm">
+                                    <i class="fa-solid fa-rotate-right"></i> Reset
+                                </button>
+                            </div>
                         </div>
-                        <button id="resetFilters" class="btn btn-outline-secondary btn-sm">
-                            <i class="fa-solid fa-rotate-right"></i> Reset
-                        </button>
+
                     </div>
                 </div>
                 <hr>
@@ -186,19 +197,23 @@
                             success: function(stats) {
                                 // Update Monthly Invoice card
                                 $('.status-card.total .fs-4').text(stats.total_invoices || 0);
-                                $('.status-card.total .text-muted').text('Rp ' + formatNumber(stats.total_amount || 0));
+                                $('.status-card.total .text-muted').text('Rp ' + formatNumber(stats
+                                    .total_amount || 0));
 
                                 // Update Overdue card
                                 $('.status-card.active .fs-4').text(stats.overdue_count || 0);
-                                $('.status-card.active .text-muted').text('Rp ' + formatNumber(stats.overdue_amount || 0));
+                                $('.status-card.active .text-muted').text('Rp ' + formatNumber(stats
+                                    .overdue_amount || 0));
 
                                 // Update Unpaid card
                                 $('.status-card.suspend:has(.bg-warning) .fs-4').text(stats.unpaid_count || 0);
-                                $('.status-card.suspend:has(.bg-warning) .text-muted').text('Rp ' + formatNumber(stats.unpaid_amount || 0));
+                                $('.status-card.suspend:has(.bg-warning) .text-muted').text('Rp ' +
+                                    formatNumber(stats.unpaid_amount || 0));
 
                                 // Update Paid card
                                 $('.status-card.suspend:has(.bg-primary) .fs-4').text(stats.paid_count || 0);
-                                $('.status-card.suspend:has(.bg-primary) .text-muted').text('Rp ' + formatNumber(stats.paid_amount || 0));
+                                $('.status-card.suspend:has(.bg-primary) .text-muted').text('Rp ' +
+                                    formatNumber(stats.paid_amount || 0));
                             },
                             error: function() {
                                 console.log('Failed to load statistics');
@@ -479,8 +494,8 @@
                         }
 
                         const basePrice = parseInt($('#amount').data('raw') || 0);
-                        const vat = parseFloat($('#vat').val() || 0);
-                        const disc = parseFloat($('#disc').val() || 0);
+                        const vat = $('#vat').val() || 0
+                        const disc = $('#disc').val() || 0
 
                         let subtotal = basePrice * subsperiode;
 
@@ -528,9 +543,11 @@
                                     _token: $('meta[name="csrf-token"]').attr('content')
                                 },
                                 success: function(res) {
+                                    console.log(res)
+
                                     let dueDate;
 
-                                    if (res.exists) {
+                                    if (res.invoice && Object.keys(res.invoice).length > 0) {
                                         if (res.next_inv_date) {
                                             dueDate = new Date(res.next_inv_date);
                                         } else {
@@ -540,6 +557,8 @@
                                     } else {
                                         dueDate = new Date(parsed);
                                     }
+
+                                    console.log(res)
 
                                     const formatted =
                                         dueDate.getFullYear() + '-' +
@@ -609,6 +628,45 @@
                         });
                     });
 
+                });
+
+                // Generate Invoice
+                $('#generateAllBtn').on('click', function() {
+                    const groupId = $(this).data('group');
+
+                    Swal.fire({
+                        title: 'Generate semua invoice?',
+                        text: "Proses ini akan membuat invoice untuk semua pelanggan yang belum punya invoice bulan ini.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Ya, lanjutkan!',
+                        cancelButtonText: 'Batal'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            $.ajax({
+                                url: '/billing/generate',
+                                type: 'POST',
+                                data: {
+                                    _token: '{{ csrf_token() }}'
+                                },
+                                beforeSend: function() {
+                                    Swal.fire({
+                                        title: 'Sedang memproses...',
+                                        text: 'Mohon tunggu, sistem sedang membuat invoice.',
+                                        allowOutsideClick: false,
+                                        didOpen: () => Swal.showLoading()
+                                    });
+                                },
+                                success: function(res) {
+                                    Swal.fire('Berhasil!', res.message, 'success');
+                                },
+                                error: function(xhr) {
+                                    const res = xhr.responseJSON || {};
+                                    Swal.fire('Gagal!', res.message || 'Terjadi kesalahan.', 'error');
+                                }
+                            });
+                        }
+                    });
                 });
             </script>
         @endpush

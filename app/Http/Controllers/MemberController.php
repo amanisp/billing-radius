@@ -58,6 +58,7 @@ class MemberController extends Controller
                 // Safely extract payment detail values
                 $pd = $account->paymentDetail;
 
+
                 $activeDate = $pd && $pd->active_date
                     ? Carbon::parse($pd->active_date)->format('Y-m-d')
                     : '';
@@ -77,14 +78,13 @@ class MemberController extends Controller
                 ><i class="fa-solid fa-pencil"></i></button>';
 
                 $paymentBtn = '
-                <button type="button" class="btn btn-outline-info btn-payment btn-sm ms-1"
+                <button type="button" class="btn btn-outline-primary btn-payment btn-sm ms-1"
                     data-id="' . $account->id . '"
                     data-fullname="' . e($account->fullname) . '"
                     data-payment-id="' . e(optional($pd)->id) . '"
                     data-payment-type="' . e(optional($pd)->payment_type) . '"
-                    data-billing-period="' . e(optional($pd)->billing_period ?? 1) . '"
+                    data-billing-period="' . e(optional($pd)->billing_period) . '"
                     data-active-date="' . e($activeDate) . '"
-                    data-amount="' . e(optional($pd)->amount ?? 0) . '"
                     data-discount="' . e(optional($pd)->discount ?? 0) . '"
                     data-ppn="' . e(optional($pd)->ppn ?? 0) . '"
                     data-last-invoice="' . e($lastInvoice) . '"
@@ -139,49 +139,44 @@ class MemberController extends Controller
             'message' => 'Data Berhasil Diedit!',
         ]);
     }
+
+
     public function updatePaymentDetail(Request $request, $id)
     {
-        $validated = $request->validate([
-            'payment_type'   => 'required|in:prabayar,pascabayar',
-            'billing_period' => 'required|integer|min:1',
-            'active_date'    => 'required|date',
-            'amount'         => 'required|numeric|min:0',
-            'discount'       => 'nullable|numeric|min:0|max:100',
-            'ppn'            => 'nullable|numeric|min:0|max:100',
-        ]);
+        try {
+            $validated = $request->validate([
+                'payment_type'   => 'required|in:prabayar,pascabayar',
+                'billing_period' => 'required',
+                'active_date'    => 'required|date',
+                'discount'       => 'nullable',
+                'ppn'            => 'nullable|numeric|min:0|max:100',
+            ]);
 
-        $member = Member::findOrFail($id);
+            $member = Member::findOrFail($id);
 
-        $payload = [
-            'group_id'       => Auth::user()->group_id,
-            'payment_type'   => $validated['payment_type'],
-            'billing_period' => (int) $validated['billing_period'],
-            'active_date'    => $validated['active_date'],
-            'amount'         => (float) $validated['amount'],
-            'discount'       => isset($validated['discount']) ? (float) $validated['discount'] : 0,
-            'ppn'            => isset($validated['ppn']) ? (float) $validated['ppn'] : 0,
-        ];
+            $payload = [
+                'group_id'       => Auth::user()->group_id,
+                'payment_type'   => $validated['payment_type'],
+                'billing_period' =>  $validated['billing_period'],
+                'active_date'    => $validated['active_date'],
+                'discount'       => isset($validated['discount']) ? $validated['discount'] : 0,
+                'ppn'            => isset($validated['ppn']) ? $validated['ppn'] : 0,
+            ];
 
-        if ($member->paymentDetail) {
-            $oldData = $member->paymentDetail->toArray();
-            $member->paymentDetail->update($payload);
+            if ($member->paymentDetail) {
+                $oldData = $member->paymentDetail->toArray();
+                $member->paymentDetail->update($payload);
 
-            ActivityLogController::logUpdate(
-                $oldData,
-                'payment_details',
-                $member->paymentDetail
-            );
-        } else {
-            $paymentDetail = PaymentDetail::create($payload);
-            // RELASI: simpan ke member
-            $member->update(['payment_detail_id' => $paymentDetail->id]);
+                ActivityLogController::logUpdate(
+                    $oldData,
+                    'payment_details',
+                    $member->paymentDetail
+                );
+            }
 
-            ActivityLogController::logCreate('payment_details', $paymentDetail);
+            return redirect()->route('members.index')->with('success', 'Payment Detail berhasil diupdate!');
+        } catch (\Throwable $th) {
+            return redirect()->route('members.index')->with('error', $th->getMessage());
         }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Payment Detail Berhasil Disimpan!',
-        ]);
     }
 }

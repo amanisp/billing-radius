@@ -95,7 +95,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/members', [MemberController::class, 'index'])->name('members.index');
         Route::get('/members/read', [MemberController::class, 'getData'])->name('members.getData');
         Route::put('/members/update/{id}', [MemberController::class, 'update']);
-        Route::post('members/{id}/payment-detail', [MemberController::class, 'updatePaymentDetail'])->name('members.updatePaymentDetail');
+        Route::put('members/{id}/payment-detail', [MemberController::class, 'updatePaymentDetail'])->name('members.updatePD');
 
         // Route PPPoE - Now using ConnectionController
         Route::get('/pppoe', [ConnectionController::class, 'index'])->name('pppoe.index');
@@ -199,6 +199,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/unpaid', [InvoiceController::class, 'invoice'])->name('billing.unpaid');
         Route::get('/unpaid/read', [InvoiceController::class, 'getData'])->name('billing.getData');
         Route::post('/create_invoice', [InvoiceController::class, 'createInv'])->name('billing.create');
+        Route::post('/generate', [InvoiceController::class, 'generateAll'])->name('billing.generate');
         Route::post('/unpaid/pay', [InvoiceController::class, 'payManual'])->name('billing.pay');
     });
 
