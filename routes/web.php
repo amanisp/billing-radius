@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\AksesController;
 use App\Http\Controllers\AreaController;
 use App\Http\Controllers\Auth\NewPasswordController;
@@ -203,6 +204,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/unpaid/pay', [InvoiceController::class, 'payManual'])->name('billing.pay');
     });
 
+    Route::prefix('accounting')->group(function () {
+        Route::get('/', [AccountingController::class, 'index'])->name('accounting.index');
+        Route::get('/data', [AccountingController::class, 'getData'])->name('accounting.getData');
+        Route::get('/show/{id}', [AccountingController::class, 'show'])->name('accounting.show');
+        Route::get('/stats', [AccountingController::class, 'getStats'])->name('accounting.getStats');
+        Route::get('/export', [AccountingController::class, 'export'])->name('accounting.export');
+
+        // Add Income & Expense
+        Route::post('/expense/store', [AccountingController::class, 'storeExpense'])->name('accounting.storeExpense');
+        Route::post('/income/store', [AccountingController::class, 'storeOtherIncome'])->name('accounting.storeOtherIncome');
+
+        // Delete (only for mitra)
+        Route::delete('/destroy/{id}', [AccountingController::class, 'destroy'])->name('accounting.destroy');
+    });
+
+
+
     // Activity Log
     Route::middleware(['web', 'auth'])
         ->get('/logs', [ActivityLogController::class, 'index'])
@@ -245,6 +263,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // });
 });
 
+Route::post('/webhook/xendit/invoice', [InvoiceController::class, 'xenditCallback'])->name('xendit.callback');
 // Route::middleware('auth')->group(function () {
 //     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
 //     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
