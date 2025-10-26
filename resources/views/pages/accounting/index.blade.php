@@ -14,14 +14,7 @@
         @endif
 
         <div class="page-heading">
-            <div class="page-title">
-                <div class="row">
-                    <div class="col-12 col-md-6 order-md-1 order-last">
-                        <h3>Pembukuan</h3>
-                        <p class="text-subtitle text-muted">Riwayat pemasukan dan pengeluaran</p>
-                    </div>
-                </div>
-            </div>
+
 
             <!-- Statistics Cards -->
             <section class="section">
@@ -38,7 +31,8 @@
                                     </div>
                                     <div class="col-md-8 col-lg-12 col-xl-12 col-xxl-7">
                                         <h6 class="text-muted font-semibold">Pemasukan Bulan Ini</h6>
-                                        <h6 class="font-extrabold mb-0 text-success">Rp {{ number_format($monthlyIncome, 0, ',', '.') }}</h6>
+                                        <h6 class="font-extrabold mb-0 text-success">Rp
+                                            {{ number_format($monthlyIncome, 0, ',', '.') }}</h6>
                                     </div>
                                 </div>
                             </div>
@@ -57,7 +51,8 @@
                                     </div>
                                     <div class="col-md-8 col-lg-12 col-xl-12 col-xxl-7">
                                         <h6 class="text-muted font-semibold">Pengeluaran Bulan Ini</h6>
-                                        <h6 class="font-extrabold mb-0 text-danger">Rp {{ number_format($monthlyExpense, 0, ',', '.') }}</h6>
+                                        <h6 class="font-extrabold mb-0 text-danger">Rp
+                                            {{ number_format($monthlyExpense, 0, ',', '.') }}</h6>
                                     </div>
                                 </div>
                             </div>
@@ -76,7 +71,8 @@
                                     </div>
                                     <div class="col-md-8 col-lg-12 col-xl-12 col-xxl-7">
                                         <h6 class="text-muted font-semibold">Profit Bulan Ini</h6>
-                                        <h6 class="font-extrabold mb-0 {{ $monthlyProfit >= 0 ? 'text-primary' : 'text-warning' }}">
+                                        <h6
+                                            class="font-extrabold mb-0 {{ $monthlyProfit >= 0 ? 'text-primary' : 'text-warning' }}">
                                             Rp {{ number_format($monthlyProfit, 0, ',', '.') }}
                                         </h6>
                                     </div>
@@ -190,10 +186,12 @@
                                     </select>
                                 </div>
                                 <div class="col-md-2 mb-2">
-                                    <input type="date" class="form-control" id="filter-date-from" placeholder="Dari Tanggal">
+                                    <input type="date" class="form-control" id="filter-date-from"
+                                        placeholder="Dari Tanggal">
                                 </div>
                                 <div class="col-md-2 mb-2">
-                                    <input type="date" class="form-control" id="filter-date-to" placeholder="Sampai Tanggal">
+                                    <input type="date" class="form-control" id="filter-date-to"
+                                        placeholder="Sampai Tanggal">
                                 </div>
                                 <div class="col-md-1 mb-2">
                                     <button class="btn btn-outline-secondary w-100" id="btn-reset-filter">
@@ -325,7 +323,8 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Jumlah <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" name="amount" required min="0" step="0.01">
+                            <input type="number" class="form-control" name="amount" required min="0"
+                                step="0.01">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Tanggal <span class="text-danger">*</span></label>
@@ -374,7 +373,8 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Jumlah <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" name="amount" required min="0" step="0.01">
+                            <input type="number" class="form-control" name="amount" required min="0"
+                                step="0.01">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Metode Pembayaran <span class="text-danger">*</span></label>
@@ -415,218 +415,179 @@
     </div>
 
     @push('script-page')
-    <script>
-    $(document).ready(function() {
-        // Set default date to today for date inputs
-        const today = new Date().toISOString().split('T')[0];
-        $('input[name="transaction_date"]').val(today);
+        <script>
+            $(document).ready(function() {
+                // Set default date to today for date inputs
+                const today = new Date().toISOString().split('T')[0];
+                $('input[name="transaction_date"]').val(today);
 
-        // Initialize DataTable
-        const table = $('#table-accounting').DataTable({
-            processing: true,
-            serverSide: true,
-            responsive: true,
-            autoWidth: false,
-            ajax: {
-                url: '{{ route("accounting.getData") }}',
-                data: function(d) {
-                    d.transaction_type = $('#filter-type').val();
-                    d.category = $('#filter-category').val();
-                    d.payment_method = $('#filter-payment').val();
-                    d.date_from = $('#filter-date-from').val();
-                    d.date_to = $('#filter-date-to').val();
-                }
-            },
-            columns: [
-                { data: 'DT_RowIndex', name: 'DT_RowIndex', orderable: false, searchable: false },
-                { data: 'transaction_date_formatted', name: 'transaction_date' },
-                { data: 'type_badge', name: 'transaction_type' },
-                { data: 'category_label', name: 'category' },
-                { data: 'reference', name: 'reference', orderable: false },
-                { data: 'party_name', name: 'member_name' },
-                { data: 'formatted_amount', name: 'amount' },
-                { data: 'payment_method_label', name: 'payment_method' },
-                { data: 'user_name', name: 'user_name', orderable: false },
-                { data: 'action', name: 'action', orderable: false, searchable: false }
-            ],
-            order: [[1, 'desc']]
-        });
-
-        // Filter handlers
-        $('#filter-type, #filter-category, #filter-payment, #filter-date-from, #filter-date-to').on('change', function() {
-            table.ajax.reload();
-        });
-
-        $('#btn-reset-filter').on('click', function() {
-            $('#filter-type, #filter-category, #filter-payment').val('');
-            $('#filter-date-from, #filter-date-to').val('');
-            table.ajax.reload();
-        });
-
-        // Detail Button
-        $(document).on('click', '.btn-detail', function() {
-            const id = $(this).data('id');
-
-            $.ajax({
-                url: `/accounting/show/${id}`,
-                type: 'GET',
-                success: function(response) {
-                    if (response.success) {
-                        const data = response.data;
-
-                        // Type badge
-                        const typeBadge = data.transaction_type === 'income'
-                            ? '<span class="badge bg-success">Pemasukan</span>'
-                            : '<span class="badge bg-danger">Pengeluaran</span>';
-
-                        $('#detail_type').html(typeBadge);
-                        $('#detail_category').text(data.category_label);
-
-                        // Amount with color
-                        const amountColor = data.transaction_type === 'income' ? 'text-success' : 'text-danger';
-                        const amountSign = data.transaction_type === 'income' ? '+' : '-';
-                        $('#detail_amount').html(`<span class="${amountColor}">${amountSign} ${data.formatted_amount}</span>`);
-
-                        $('#detail_date').text(data.transaction_date);
-                        $('#detail_reference').text(data.invoice_number || data.description || '-');
-                        $('#detail_party').text(data.member_name || '-');
-                        $('#detail_payment_method').text(data.payment_method_label || '-');
-                        $('#detail_user').text(data.user_name || '-');
-                        $('#detail_description').text(data.description || '-');
-                        $('#detail_notes').text(data.notes || '-');
-                        $('#detail_receipt').text(data.receipt_number || '-');
-
-                        // Show/hide payment section for expenses
-                        if (data.transaction_type === 'expense') {
-                            $('#detail_payment_section').hide();
-                        } else {
-                            $('#detail_payment_section').show();
+                // Initialize DataTable
+                const table = $('#table-accounting').DataTable({
+                    processing: true,
+                    serverSide: true,
+                    responsive: true,
+                    autoWidth: false,
+                    ajax: {
+                        url: '{{ route('accounting.getData') }}',
+                        data: function(d) {
+                            d.transaction_type = $('#filter-type').val();
+                            d.category = $('#filter-category').val();
+                            d.payment_method = $('#filter-payment').val();
+                            d.date_from = $('#filter-date-from').val();
+                            d.date_to = $('#filter-date-to').val();
                         }
+                    },
+                    columns: [{
+                            data: 'DT_RowIndex',
+                            name: 'DT_RowIndex',
+                            orderable: false,
+                            searchable: false
+                        },
+                        {
+                            data: 'transaction_date_formatted',
+                            name: 'transaction_date'
+                        },
+                        {
+                            data: 'type_badge',
+                            name: 'transaction_type'
+                        },
+                        {
+                            data: 'category_label',
+                            name: 'category'
+                        },
+                        {
+                            data: 'reference',
+                            name: 'reference',
+                            orderable: false
+                        },
+                        {
+                            data: 'party_name',
+                            name: 'member_name'
+                        },
+                        {
+                            data: 'formatted_amount',
+                            name: 'amount'
+                        },
+                        {
+                            data: 'payment_method_label',
+                            name: 'payment_method'
+                        },
+                        {
+                            data: 'user_name',
+                            name: 'user_name',
+                            orderable: false
+                        },
+                        {
+                            data: 'action',
+                            name: 'action',
+                            orderable: false,
+                            searchable: false
+                        }
+                    ],
+                    order: [
+                        [1, 'desc']
+                    ]
+                });
 
-                        $('#modalDetail').modal('show');
-                    }
-                },
-                error: function(xhr) {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error',
-                        text: 'Gagal mengambil detail transaksi'
-                    });
-                }
-            });
-        });
-
-        // Add Expense Button
-        $('#btn-add-expense').on('click', function() {
-            $('#form-expense')[0].reset();
-            $('input[name="transaction_date"]').val(today);
-            $('#modalAddExpense').modal('show');
-        });
-
-        // Add Income Button
-        $('#btn-add-income').on('click', function() {
-            $('#form-income')[0].reset();
-            $('input[name="transaction_date"]').val(today);
-            $('#modalAddIncome').modal('show');
-        });
-
-        // Submit Expense Form
-        $('#form-expense').on('submit', function(e) {
-            e.preventDefault();
-
-            const formData = $(this).serialize();
-
-            $.ajax({
-                url: '{{ route("accounting.storeExpense") }}',
-                type: 'POST',
-                data: formData,
-                headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                },
-                success: function(response) {
-                    if (response.success) {
-                        $('#modalAddExpense').modal('hide');
+                // Filter handlers
+                $('#filter-type, #filter-category, #filter-payment, #filter-date-from, #filter-date-to').on('change',
+                    function() {
                         table.ajax.reload();
-
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Berhasil',
-                            text: response.message,
-                            timer: 2000,
-                            showConfirmButton: false
-                        });
-                    }
-                },
-                error: function(xhr) {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error',
-                        text: xhr.responseJSON?.message || 'Gagal menyimpan pengeluaran'
                     });
-                }
-            });
-        });
 
-        // Submit Income Form
-        $('#form-income').on('submit', function(e) {
-            e.preventDefault();
+                $('#btn-reset-filter').on('click', function() {
+                    $('#filter-type, #filter-category, #filter-payment').val('');
+                    $('#filter-date-from, #filter-date-to').val('');
+                    table.ajax.reload();
+                });
 
-            const formData = $(this).serialize();
+                // Detail Button
+                $(document).on('click', '.btn-detail', function() {
+                    const id = $(this).data('id');
 
-            $.ajax({
-                url: '{{ route("accounting.storeOtherIncome") }}',
-                type: 'POST',
-                data: formData,
-                headers: {
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                },
-                success: function(response) {
-                    if (response.success) {
-                        $('#modalAddIncome').modal('hide');
-                        table.ajax.reload();
-
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Berhasil',
-                            text: response.message,
-                            timer: 2000,
-                            showConfirmButton: false
-                        });
-                    }
-                },
-                error: function(xhr) {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error',
-                        text: xhr.responseJSON?.message || 'Gagal menyimpan pemasukan'
-                    });
-                }
-            });
-        });
-
-        // Delete Transaction
-        $(document).on('click', '.btn-delete', function() {
-            const id = $(this).data('id');
-
-            Swal.fire({
-                title: 'Konfirmasi Hapus',
-                text: 'Apakah Anda yakin ingin menghapus transaksi ini?',
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#d33',
-                cancelButtonColor: '#3085d6',
-                confirmButtonText: 'Ya, Hapus!',
-                cancelButtonText: 'Batal'
-            }).then((result) => {
-                if (result.isConfirmed) {
                     $.ajax({
-                        url: `/accounting/destroy/${id}`,
-                        type: 'DELETE',
+                        url: `/accounting/show/${id}`,
+                        type: 'GET',
+                        success: function(response) {
+                            if (response.success) {
+                                const data = response.data;
+
+                                // Type badge
+                                const typeBadge = data.transaction_type === 'income' ?
+                                    '<span class="badge bg-success">Pemasukan</span>' :
+                                    '<span class="badge bg-danger">Pengeluaran</span>';
+
+                                $('#detail_type').html(typeBadge);
+                                $('#detail_category').text(data.category_label);
+
+                                // Amount with color
+                                const amountColor = data.transaction_type === 'income' ?
+                                    'text-success' : 'text-danger';
+                                const amountSign = data.transaction_type === 'income' ? '+' : '-';
+                                $('#detail_amount').html(
+                                    `<span class="${amountColor}">${amountSign} ${data.formatted_amount}</span>`
+                                );
+
+                                $('#detail_date').text(data.transaction_date);
+                                $('#detail_reference').text(data.invoice_number || data
+                                    .description || '-');
+                                $('#detail_party').text(data.member_name || '-');
+                                $('#detail_payment_method').text(data.payment_method_label || '-');
+                                $('#detail_user').text(data.user_name || '-');
+                                $('#detail_description').text(data.description || '-');
+                                $('#detail_notes').text(data.notes || '-');
+                                $('#detail_receipt').text(data.receipt_number || '-');
+
+                                // Show/hide payment section for expenses
+                                if (data.transaction_type === 'expense') {
+                                    $('#detail_payment_section').hide();
+                                } else {
+                                    $('#detail_payment_section').show();
+                                }
+
+                                $('#modalDetail').modal('show');
+                            }
+                        },
+                        error: function(xhr) {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: 'Gagal mengambil detail transaksi'
+                            });
+                        }
+                    });
+                });
+
+                // Add Expense Button
+                $('#btn-add-expense').on('click', function() {
+                    $('#form-expense')[0].reset();
+                    $('input[name="transaction_date"]').val(today);
+                    $('#modalAddExpense').modal('show');
+                });
+
+                // Add Income Button
+                $('#btn-add-income').on('click', function() {
+                    $('#form-income')[0].reset();
+                    $('input[name="transaction_date"]').val(today);
+                    $('#modalAddIncome').modal('show');
+                });
+
+                // Submit Expense Form
+                $('#form-expense').on('submit', function(e) {
+                    e.preventDefault();
+
+                    const formData = $(this).serialize();
+
+                    $.ajax({
+                        url: '{{ route('accounting.storeExpense') }}',
+                        type: 'POST',
+                        data: formData,
                         headers: {
                             'X-CSRF-TOKEN': '{{ csrf_token() }}'
                         },
                         success: function(response) {
                             if (response.success) {
+                                $('#modalAddExpense').modal('hide');
                                 table.ajax.reload();
 
                                 Swal.fire({
@@ -642,31 +603,115 @@
                             Swal.fire({
                                 icon: 'error',
                                 title: 'Error',
-                                text: xhr.responseJSON?.message || 'Gagal menghapus transaksi'
+                                text: xhr.responseJSON?.message ||
+                                    'Gagal menyimpan pengeluaran'
                             });
                         }
                     });
-                }
+                });
+
+                // Submit Income Form
+                $('#form-income').on('submit', function(e) {
+                    e.preventDefault();
+
+                    const formData = $(this).serialize();
+
+                    $.ajax({
+                        url: '{{ route('accounting.storeOtherIncome') }}',
+                        type: 'POST',
+                        data: formData,
+                        headers: {
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                $('#modalAddIncome').modal('hide');
+                                table.ajax.reload();
+
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Berhasil',
+                                    text: response.message,
+                                    timer: 2000,
+                                    showConfirmButton: false
+                                });
+                            }
+                        },
+                        error: function(xhr) {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: xhr.responseJSON?.message ||
+                                    'Gagal menyimpan pemasukan'
+                            });
+                        }
+                    });
+                });
+
+                // Delete Transaction
+                $(document).on('click', '.btn-delete', function() {
+                    const id = $(this).data('id');
+
+                    Swal.fire({
+                        title: 'Konfirmasi Hapus',
+                        text: 'Apakah Anda yakin ingin menghapus transaksi ini?',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#3085d6',
+                        confirmButtonText: 'Ya, Hapus!',
+                        cancelButtonText: 'Batal'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            $.ajax({
+                                url: `/accounting/destroy/${id}`,
+                                type: 'DELETE',
+                                headers: {
+                                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                                },
+                                success: function(response) {
+                                    if (response.success) {
+                                        table.ajax.reload();
+
+                                        Swal.fire({
+                                            icon: 'success',
+                                            title: 'Berhasil',
+                                            text: response.message,
+                                            timer: 2000,
+                                            showConfirmButton: false
+                                        });
+                                    }
+                                },
+                                error: function(xhr) {
+                                    Swal.fire({
+                                        icon: 'error',
+                                        title: 'Error',
+                                        text: xhr.responseJSON?.message ||
+                                            'Gagal menghapus transaksi'
+                                    });
+                                }
+                            });
+                        }
+                    });
+                });
+
+                // Export CSV
+                $('#btn-export').on('click', function() {
+                    const type = $('#filter-type').val();
+                    const dateFrom = $('#filter-date-from').val();
+                    const dateTo = $('#filter-date-to').val();
+
+                    let url = '{{ route('accounting.export') }}?';
+                    const params = [];
+
+                    if (type) params.push(`transaction_type=${type}`);
+                    if (dateFrom) params.push(`date_from=${dateFrom}`);
+                    if (dateTo) params.push(`date_to=${dateTo}`);
+
+                    url += params.join('&');
+                    window.location.href = url;
+                });
             });
-        });
-
-        // Export CSV
-        $('#btn-export').on('click', function() {
-            const type = $('#filter-type').val();
-            const dateFrom = $('#filter-date-from').val();
-            const dateTo = $('#filter-date-to').val();
-
-            let url = '{{ route("accounting.export") }}?';
-            const params = [];
-
-            if (type) params.push(`transaction_type=${type}`);
-            if (dateFrom) params.push(`date_from=${dateFrom}`);
-            if (dateTo) params.push(`date_to=${dateTo}`);
-
-            url += params.join('&');
-            window.location.href = url;
-        });
-    });
-    </script>
+        </script>
     @endpush
 @endsection
