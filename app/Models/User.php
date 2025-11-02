@@ -5,10 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [
         'username',
@@ -64,7 +65,7 @@ class User extends Authenticatable
     public function assignedAreas()
     {
         return $this->belongsToMany(Area::class, 'technician_areas', 'user_id', 'area_id')
-                    ->withTimestamps();
+            ->withTimestamps();
     }
 
     /**

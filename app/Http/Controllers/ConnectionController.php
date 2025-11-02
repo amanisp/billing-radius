@@ -22,10 +22,8 @@ use App\Models\Profiles;
 use App\Models\Member;
 use DateInterval;
 use DateTime;
-use Yajra\DataTables\DataTables;
+use Yajra\DataTables\Facades\DataTables;
 use App\Models\Nas;
-use App\Models\PaymentDetail;
-use Google\Service\AnalyticsReporting\Activity;
 use Illuminate\Validation\Rule;
 
 class ConnectionController extends Controller
@@ -91,7 +89,7 @@ class ConnectionController extends Controller
         if ($request->has('profile_filter') && !empty($request->profile_filter) && trim($request->profile_filter) != '') {
             $query->where('profile_id', $request->profile_filter);
         }
-        return DataTables::of($query)
+        return DataTables::eloquent($query)
             ->addIndexColumn()
             ->addColumn('profile', fn($account) => $account->profile->name ?? '-')
             ->addColumn('togle', function ($account) {

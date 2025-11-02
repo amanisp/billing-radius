@@ -16,6 +16,7 @@ class Area extends Model
     {
         return $this->hasMany(OpticalDist::class);
     }
+
     public function mitras()
     {
         return $this->hasMany(Mitra::class);

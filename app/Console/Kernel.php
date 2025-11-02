@@ -12,10 +12,10 @@ class Kernel extends ConsoleKernel
 {
     protected function schedule(Schedule $schedule): void
     {
-        $schedule->job(new GenerateMonthlyInvoiceJob(app(WhatsappService::class)))
-            ->dailyAt('07:00') // setiap malam jam 23:55
-            ->withoutOverlapping()
-            ->onOneServer(); // aman untuk multi-server
+        // $schedule->job(new GenerateMonthlyInvoiceJob(app(WhatsappService::class)))
+        //     ->dailyAt('07:00') // setiap malam jam 23:55
+        //     ->withoutOverlapping()
+        //     ->onOneServer(); // aman untuk multi-server
     }
 
     protected function commands(): void

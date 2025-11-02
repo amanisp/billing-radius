@@ -3,12 +3,25 @@
         $(document).ready(function() {
             let table = $('#dataTable').DataTable({
                 processing: true,
-                serverSide: false,
+                serverSide: true,
                 responsive: true,
                 autoWidth: false,
-                ajax: @json(route('members.getData')),
-                headers: {
-                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                ajax: {
+                    url: @json(route('members.getData')),
+                    type: 'GET',
+                    beforeSend: function() {
+                        $('#loadingSpinner').show();
+                    },
+                    complete: function() {
+                        $('#loadingSpinner').hide();
+                    },
+                    error: function() {
+                        $('#loadingSpinner').hide();
+                        alert('Gagal memuat data. Silakan coba lagi.');
+                    },
+                    headers: {
+                        'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                    },
                 },
                 columns: [{
                         data: 'DT_RowIndex',
@@ -20,16 +33,19 @@
                         name: 'connection.area.name'
                     },
                     {
-                        data: 'fullname',
+                        data: 'fullname'
                     },
                     {
-                        data: 'phone_number',
+                        data: 'phone_number'
                     },
                     {
                         data: 'action',
-                    },
+                        orderable: false,
+                        searchable: false
+                    }
                 ]
             });
+
 
             // Edit
             $(document).on("click", ".btn-edit", function() {

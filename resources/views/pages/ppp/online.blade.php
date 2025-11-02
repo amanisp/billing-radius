@@ -37,9 +37,22 @@
                 $(document).ready(function() {
                     let table = $('#dataTable').DataTable({
                         processing: true,
-                        serverSide: false,
+                        serverSide: true,
                         responsive: true,
-                        ajax: @json(route('online.getData')),
+                        ajax: {
+                            url: @json(route('online.getData')),
+                            type: 'GET',
+                            beforeSend: function() {
+                                $('#loadingSpinner').show();
+                            },
+                            complete: function() {
+                                $('#loadingSpinner').hide();
+                            },
+                            error: function() {
+                                $('#loadingSpinner').hide();
+                                alert('Gagal memuat data. Silakan coba lagi.');
+                            },
+                        }, // <-- koma ini penting!
                         columns: [{
                                 data: 'DT_RowIndex',
                                 name: 'DT_RowIndex',
@@ -47,32 +60,31 @@
                                 searchable: false
                             },
                             {
-                                data: 'session',
+                                data: 'session'
                             },
                             {
-                                data: 'username',
+                                data: 'username'
                             },
                             {
-                                data: 'login_time',
+                                data: 'login_time'
                             },
                             {
-                                data: 'last_update',
+                                data: 'last_update'
                             },
                             {
-                                data: 'ip_mac',
+                                data: 'ip_mac'
                             },
                             {
-                                data: 'upload',
+                                data: 'upload'
                             },
                             {
-                                data: 'download',
+                                data: 'download'
                             },
                             {
-                                data: 'uptime',
+                                data: 'uptime'
                             },
                         ]
                     });
-
                 });
             </script>
         @endpush
