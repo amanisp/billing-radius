@@ -131,16 +131,27 @@
     $(document).ready(function() {
         let table = $('#dataTable').DataTable({
             processing: true,
-            serverSide: false,
+            serverSide: true,
             responsive: true,
             autoWidth: false,
             ajax: {
                 url: @json(route('pppoe.getData')),
+                type: 'GET',
                 data: function(d) {
                     // Menggunakan ID yang sudah ada di HTML
                     d.status_filter = $('#operationFilter').val();
                     d.profile_filter = $('#roleFilter').val();
-                }
+                },
+                beforeSend: function() {
+                    $('#loadingSpinner').show();
+                },
+                complete: function() {
+                    $('#loadingSpinner').hide();
+                },
+                error: function() {
+                    $('#loadingSpinner').hide();
+                    alert('Gagal memuat data. Silakan coba lagi.');
+                },
             },
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')

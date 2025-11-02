@@ -35,7 +35,7 @@ Route::prefix('notification')->group(function () {
 
 Route::middleware('guest')->group(
     function () {
-        Route::redirect('/', '/login');
+        // Route::redirect('/', '/login');
 
         Route::get('forgot-password', [PasswordResetLinkController::class, 'create'])
             ->name('password.request');

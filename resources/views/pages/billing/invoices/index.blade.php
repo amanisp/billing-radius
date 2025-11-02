@@ -91,20 +91,21 @@
                 <div class="card-header">
                     {{-- Only show create button for Mitra and Kasir --}}
                     @if (in_array(Auth::user()->role, ['mitra']))
-                        <div class="btn-group gap-1">
-                            <button class="btn btn-outline-warning btn-sm px-5 py-2" id="generateAllBtn">
+                        <div class="btn-group d-flex flex-wrap flex-md-row flex-column gap-2 w-100">
+                            <button class="btn btn-outline-warning btn-sm flex-fill py-2" id="generateAllBtn">
                                 <i class="fa-solid fa-file-invoice-dollar"></i> Generate All Invoice
                             </button>
 
-                            <button class="btn btn-outline-primary btn-sm px-5 py-2" data-bs-toggle="modal"
-                                data-bs-target="#formCreateModal"><i class="fa-solid fa-file-invoice-dollar"></i>
-                                Create Invoice
+                            <button class="btn btn-outline-primary btn-sm flex-fill py-2" data-bs-toggle="modal"
+                                data-bs-target="#formCreateModal">
+                                <i class="fa-solid fa-file-invoice-dollar"></i> Create Invoice
                             </button>
-                            <button class="btn btn-outline-success btn-sm px-5 py-2" onclick="alert('Coming Soon')"><i
-                                    class="fa-solid fa-file-invoice-dollar"></i>
-                                Export
+
+                            <button class="btn btn-outline-success btn-sm flex-fill py-2" onclick="alert('Coming Soon')">
+                                <i class="fa-solid fa-file-invoice-dollar"></i> Export
                             </button>
                         </div>
+
                         <hr>
                     @endif
                     <div class="filters">

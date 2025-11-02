@@ -7,7 +7,7 @@ use App\Models\PaymentDetail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Yajra\DataTables\DataTables;
+use Yajra\DataTables\Facades\DataTables;
 use Carbon\Carbon;
 
 class MemberController extends Controller
@@ -21,6 +21,7 @@ class MemberController extends Controller
     {
         $user = Auth::user();
 
+        // Base query tanpa get()
         $query = Member::with(['paymentDetail', 'connection.profile', 'connection.area'])
             ->orderBy('created_at', 'desc');
 
@@ -44,20 +45,16 @@ class MemberController extends Controller
             $query->where('group_id', $user->group_id);
         }
 
-        $data = $query->get();
-
-        return DataTables::of($data)
+        // Gunakan DataTables facade yang benar
+        return DataTables::eloquent($query)
             ->addIndexColumn()
             ->addColumn('area_name', function ($account) {
-                // Ambil area name dari relasi connection
                 return $account->connection && $account->connection->area
                     ? e($account->connection->area->name)
                     : '<span class="text-muted">-</span>';
             })
             ->addColumn('action', function ($account) {
-                // Safely extract payment detail values
                 $pd = $account->paymentDetail;
-
 
                 $activeDate = $pd && $pd->active_date
                     ? Carbon::parse($pd->active_date)->format('Y-m-d')
