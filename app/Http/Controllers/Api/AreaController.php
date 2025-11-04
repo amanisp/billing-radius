@@ -197,22 +197,4 @@ class AreaController extends Controller
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
-
-    /**
-     * GET /api/areas/list
-     * Ambil list area (id, name) berdasarkan group user.
-     */
-    public function getAreaList()
-    {
-        $user = $this->getAuthUser();
-
-        $data = ModelArea::select('id', 'name')
-            ->where('group_id', $user->group_id)
-            ->get();
-
-        return response()->json([
-            'status' => true,
-            'data' => $data
-        ]);
-    }
 }
