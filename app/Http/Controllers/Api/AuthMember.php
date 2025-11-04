@@ -7,7 +7,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Connection;
 use App\Models\Member;
 use Illuminate\Http\Request;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 use function Pest\Laravel\json;
 
@@ -36,12 +35,9 @@ class AuthMember extends Controller
                 return ResponseFormatter::error(null, 'Member tidak ditemukan', 404);
             }
 
-            // Buat JWT token untuk member
-            $token = JWTAuth::fromUser($member);
 
             // Return response
             $responseData = [
-                'token' => $token,
                 'token_type' => 'bearer',
             ];
 

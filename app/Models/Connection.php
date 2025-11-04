@@ -29,7 +29,6 @@ class Connection extends Model
 
     protected $casts = [
         'isolir' => 'boolean',
-        'billing_active' => 'boolean',
     ];
 
     public static function generateNomorLayanan($mitraId)

@@ -3,9 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Tymon\JWTAuth\Contracts\JWTSubject;
-
-class Member extends Model implements JWTSubject
+class Member extends Model
 {
     protected $fillable = [
         'group_id',
