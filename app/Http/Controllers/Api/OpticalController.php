@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
-use App\Models\Area;
 use App\Models\OpticalDist;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -69,37 +68,37 @@ class OpticalController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
 
-            $isSuperadmin = $user->role === 'superadmin';
-
-            $rules = [
-                'name'     => ['required', 'string', 'max:255', Rule::unique('optical_dists')->where(fn($q) => $q->where('group_id', $user->group_id))],
-                'area_id'  => 'required|exists:areas,id',
-                'lat'      => 'required|string|max:255',
-                'lng'      => 'required|string|max:255',
-                'capacity' => 'required|string|max:15',
-            ];
-
-            if ($isSuperadmin) {
-                $rules['ip_public']   = 'required|ipv4';
-                $rules['device_name'] = 'required|string|max:255';
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $validated = $request->validate($rules);
+            $validate = $request->validate(
+                [
+                    'name'     => ['required', 'string', 'max:255', Rule::unique('optical_dists')->where(fn($q) => $q->where('group_id', $user->group_id))],
+                    'area_id'  => 'required|exists:areas,id',
+                    'lat'      => 'max:255',
+                    'lng'      => 'max:255',
+                    'capacity' => 'required|max:15',
+                    'type'     => 'required'
+                ]
+            );
 
-            $data = array_merge($validated, [
+            $newArea = OpticalDist::create([
                 'group_id' => $user->group_id,
-                'type'     => $isSuperadmin ? 'POP' : $request->type
+                'name' => $validate['name'],
+                'area_id' => $validate['area_id'],
+                'lat' => $validate['lat'],
+                'lng' => $validate['lng'],
+                'capacity' => $validate['capacity'],
+                'type' => $validate['type']
             ]);
 
-            $optical = OpticalDist::create($data);
+            ActivityLogged::dispatch('CREATE', null, $newArea);
 
-            ActivityLogged::dispatch('CREATE', null, $optical);
-
-            return ResponseFormatter::success($optical, 'Data optical berhasil ditambahkan', 200);
+            return ResponseFormatter::success($newArea, 'Data berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -117,21 +116,14 @@ class OpticalController extends Controller
                 return response()->json(['message' => 'Data optical tidak ditemukan!'], 403);
             }
 
-            $isSuperadmin = $user->role === 'superadmin';
-
             $rules = [
-                'name'     => ['required', 'string', 'max:255', Rule::unique('optical_dists')->ignore($optical->id)->where(fn($q) => $q->where('group_id', $user->group_id))],
-                'lat'      => 'required|string|max:255',
-                'lng'      => 'required|string|max:255',
-                'capacity' => 'required|string|max:15',
+                'name'     => ['required', 'string', 'max:255', Rule::unique('optical_dists')->ignore($id)->where(fn($q) => $q->where('group_id', $user->group_id))],
+                'area_id'  => 'required|exists:areas,id',
+                'lat'      => 'max:255',
+                'lng'      => 'max:255',
+                'capacity' => 'required|max:15',
+                'type'     => 'required'
             ];
-
-            if ($isSuperadmin) {
-                $rules['ip_public']   = 'required|ipv4';
-                $rules['device_name'] = 'required|string|max:255';
-            } else {
-                $rules['type'] = 'required|string';
-            }
 
             $validated = $request->validate($rules);
 
@@ -168,20 +160,5 @@ class OpticalController extends Controller
         } catch (\Throwable $th) {
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
-    }
-
-    /**
-     * GET /api/opticals/list
-     * Ambil list optical (id, name)
-     */
-    public function getOpticalList()
-    {
-        $user = $this->getAuthUser();
-
-        $data = OpticalDist::select('id', 'name')
-            ->where('group_id', $user->group_id)
-            ->get();
-
-        return ResponseFormatter::success($data, 'List optical berhasil dimuat');
     }
 }

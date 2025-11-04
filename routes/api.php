@@ -32,17 +32,15 @@ Route::middleware('auth:sanctum')->group(function () {
             //======Start Master Data======
             // Area
             Route::get('/areas', [AreaController::class, 'index']);
-            Route::get('/areas/list', [AreaController::class, 'getAreaList']);
             Route::post('/areas', [AreaController::class, 'store']);
             Route::post('/areas/assign', [AreaController::class, 'assignTechnician']);
             Route::delete('/areas/{id}', [AreaController::class, 'destroy']);
 
             // Optical/ODP
             Route::get('/opticals', [OpticalController::class, 'index']);
-            // Route::get('/areas/list', [AreaController::class, 'getAreaList']);
-            // Route::post('/areas', [AreaController::class, 'store']);
-            // Route::post('/areas/assign', [AreaController::class, 'assignTechnician']);
-            // Route::delete('/areas/{id}', [AreaController::class, 'destroy']);
+            Route::post('/opticals', [OpticalController::class, 'store']);
+            Route::put('/opticals/{id}', [OpticalController::class, 'update']);
+            Route::delete('/opticals/{id}', [OpticalController::class, 'destroy']);
 
             //======End Master Data======
             // Profiles
