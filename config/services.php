@@ -40,4 +40,9 @@ return [
         'api_key' => env('4fc00a3700d44525b5eb7f56ea61ccc2f6f9405c'),
     ],
 
+    'freeradius' => [
+        'url' => env('FREERADIUS_API_URL'),
+        'token' => env('FREERADIUS_API_TOKEN'),
+    ],
+
 ];

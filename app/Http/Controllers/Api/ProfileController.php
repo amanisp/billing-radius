@@ -53,7 +53,7 @@ class ProfileController extends Controller
 
             return ResponseFormatter::success($profiles, 'Data profiles berhasil dimuat');
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -75,8 +75,8 @@ class ProfileController extends Controller
                     Rule::unique('profiles')->where(fn($q) => $q->where('group_id', $user->group_id))
                 ],
                 'price' => 'required|numeric|min:0',
-                'rate_rx' => 'nullable|string',
-                'rate_tx' => 'nullable|string',
+                'rate_rx' => 'string|required',
+                'rate_tx' => 'string|required',
                 'burst_rx' => 'nullable|string',
                 'burst_tx' => 'nullable|string',
                 'threshold_rx' => 'nullable|string',
@@ -108,7 +108,7 @@ class ProfileController extends Controller
                 'groupname' => $profile->name . '-' . $user->group_id,
                 'attribute' => 'Mikrotik-Rate-Limit',
                 'op' => ':=',
-                'value' => "{$profile->rate_rx}/{$profile->rate_tx} {$profile->burst_rx}/{$profile->burst_tx} {$profile->threshold_rx}/{$profile->threshold_tx} {$profile->time_rx}/{$profile->time_tx} {$profile->priority}",
+                'value' => "{$profile->rate_tx}/{$profile->rate_rx} {$profile->burst_tx}/{$profile->burst_rx} {$profile->threshold_tx}/{$profile->threshold_rx} {$profile->time_tx}/{$profile->time_rx} {$profile->priority}",
                 'group_id' => $user->group_id
             ]);
 
@@ -116,10 +116,10 @@ class ProfileController extends Controller
 
             ActivityLogged::dispatch('CREATE', null, $profile);
 
-            return ResponseFormatter::success($profile, 'Profile berhasil ditambahkan', 201);
+            return ResponseFormatter::success($profile, 'Profile berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -190,7 +190,7 @@ class ProfileController extends Controller
             return ResponseFormatter::success($profile, 'Profile berhasil diperbarui', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -205,7 +205,7 @@ class ProfileController extends Controller
             $profile = Profiles::where('id', $id)->firstOrFail();
 
             if ($profile->group_id !== $user->group_id) {
-                return response()->json(['message' => 'Profile tidak ditemukan!'], 403);
+                return response()->json(['message' => 'Profile tidak ditemukan!'], 200);
             }
 
             DB::beginTransaction();
@@ -226,22 +226,7 @@ class ProfileController extends Controller
             return ResponseFormatter::success($deletedData, 'Profile berhasil dihapus', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
-    }
-
-    /**
-     * GET /api/profiles/list
-     * Simple list untuk dropdown
-     */
-    public function getList()
-    {
-        $user = $this->getAuthUser();
-
-        $data = Profiles::select('id', 'name', 'price')
-            ->where('group_id', $user->group_id)
-            ->get();
-
-        return ResponseFormatter::success($data, 'List profiles berhasil dimuat');
     }
 }

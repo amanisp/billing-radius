@@ -13,14 +13,14 @@ class ActivityLogged implements ShouldDispatchAfterCommit
 
     /**
      * @param string $operation   The action performed (created, updated, deleted, etc.)
-     * @param string|null $table_name The name of the table affected
+     * @param string|array|null $table_name  The name(s) of the table(s) affected
      * @param array $details      For updates: ['old' => [...], 'new' => [...]]
      * @param string|null $username  Optional: who did the action (default: Auth user)
      * @param string|null $role      Optional: role of user (default: Auth role)
      */
     public function __construct(
         public string $operation,
-        public ?string $table_name = null,
+        public array|string|null $table_name = null,
         public mixed $details = [],
         public ?string $username = null,
         public ?string $role = null

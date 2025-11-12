@@ -9,6 +9,8 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
+    protected $connection = 'mysql';
+
     use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [

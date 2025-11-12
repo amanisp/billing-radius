@@ -1,14 +1,18 @@
 <?php
 
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AuthMember;
 use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MemberController;
+use App\Http\Controllers\Api\NasController;
 use App\Http\Controllers\Api\OpticalController;
 use App\Http\Controllers\Api\PayoutController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\SessionController;
+use App\Http\Controllers\Api\VpnController;
 use App\Http\Controllers\Api\WhatsAppApiController;
 use App\Http\Controllers\WhatsappController;
 use Illuminate\Http\Request;
@@ -29,6 +33,13 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::get('/me', [AuthController::class, 'me']);
 
+            // ======Admin======
+            Route::get('/admin', [AdminController::class, 'index']);
+            Route::post('/admin', [AdminController::class, 'store']);
+            // Route::put('/admin/{id}', [AksesController::class, 'update']);
+            // Route::put('/admin/profile', [AksesController::class, 'updateProfile']);
+            // Route::delete('/admin/{id}', [AksesController::class, 'destroy']);
+
             //======Start Master Data======
             // Area
             Route::get('/areas', [AreaController::class, 'index']);
@@ -41,15 +52,25 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/opticals', [OpticalController::class, 'store']);
             Route::put('/opticals/{id}', [OpticalController::class, 'update']);
             Route::delete('/opticals/{id}', [OpticalController::class, 'destroy']);
-
             //======End Master Data======
-            // Profiles
-            Route::get('/profiles', [ProfileController::class, 'index']);
-            Route::get('/profiles/list', [ProfileController::class, 'getList']);
-            Route::post('/profiles', [ProfileController::class, 'store']);
-            Route::put('/profiles/{id}', [ProfileController::class, 'update']);
-            Route::delete('/profiles/{id}', [ProfileController::class, 'destroy']);
 
+            //======Start NAS======
+            // VPN
+            Route::get('/nas/vpn', [VpnController::class, 'index']);
+            Route::post('/nas/vpn', [VpnController::class, 'store']);
+            Route::delete('/nas/vpn/{id}', [VpnController::class, 'destroy']);
+
+            // NAS
+            Route::get('/nas', [NasController::class, 'index']);
+            Route::post('/nas', [NasController::class, 'store']);
+            Route::delete('/nas/{id}', [NasController::class, 'destroy']);
+
+            //======End NAS======
+
+
+            // ==========Start PPP-DHCP=========
+            // Session
+            Route::get('/session-ppp', [SessionController::class, 'index']);
             //=== Connections ===
             Route::get('/connections', [ConnectionController::class, 'index']);
             Route::get('/connections/stats', [ConnectionController::class, 'stats']);
@@ -65,6 +86,14 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/members/{id}', [MemberController::class, 'update']);
             Route::put('/members/{id}/payment-detail', [MemberController::class, 'updatePaymentDetail']);
             Route::get('/members/{id}/invoices', [MemberController::class, 'getInvoices']);
+
+            // Profiles
+            Route::get('/profiles', [ProfileController::class, 'index']);
+            Route::post('/profiles', [ProfileController::class, 'store']);
+            Route::put('/profiles/{id}', [ProfileController::class, 'update']);
+            Route::delete('/profiles/{id}', [ProfileController::class, 'destroy']);
+
+            // ==========End PPP-DHCP=========
 
             //=== Invoices ===
             Route::get('/invoices', [InvoiceController::class, 'index']);
