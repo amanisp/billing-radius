@@ -128,7 +128,7 @@ class AreaController extends Controller
             $validated = $request->validate([
                 'area_id' => 'required|exists:areas,id',
                 'technician_ids' => 'array',
-                'technician_ids.*' => 'exists:users,id'
+                'technician_ids.*' => 'exists:users,id',
             ]);
 
             $user = $this->getAuthUser();
@@ -138,39 +138,27 @@ class AreaController extends Controller
                 return response()->json(['message' => 'Area tidak ditemukan!'], 403);
             }
 
-            $currentTechnicians = $area->assignedTechnicians()->pluck('user_id')->toArray();
             $newTechnicians = $validated['technician_ids'] ?? [];
 
-            $toAttach = array_diff($newTechnicians, $currentTechnicians);
-            $toDetach = array_diff($currentTechnicians, $newTechnicians);
-
-            if (!empty($toAttach)) {
-                $area->assignedTechnicians()->attach($toAttach);
-            }
-            if (!empty($toDetach)) {
-                $area->assignedTechnicians()->detach($toDetach);
-            }
+            // 🔹 Update pivot tanpa duplikat & sinkronisasi otomatis
+            $area->assignedTechnicians()->sync($newTechnicians);
 
             ActivityLogged::dispatch('UPDATE', null, [
                 'action' => 'assign_technicians',
                 'area' => $area->name,
-                'added' => User::whereIn('id', $toAttach)->pluck('name')->toArray(),
-                'removed' => User::whereIn('id', $toDetach)->pluck('name')->toArray(),
+                'assigned' => User::whereIn('id', $newTechnicians)->pluck('name')->toArray(),
             ]);
 
-            return response()->json([
-                'status' => true,
-                'message' => 'Data teknisi area berhasil diperbarui!'
-            ]);
-            $data = [
-                'old_tech' => $currentTechnicians,
-                'new_tect' => $newTechnicians
-            ];
-            return ResponseFormatter::success($data, 'Data teknisi area berhasil diperbarui', 200);
+            return ResponseFormatter::success(
+                ['assigned' => $newTechnicians],
+                'Data teknisi area berhasil diperbarui',
+                200
+            );
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
 
     /**
      * DELETE /api/areas/{id}

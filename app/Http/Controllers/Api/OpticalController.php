@@ -32,9 +32,17 @@ class OpticalController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
 
-            $query = OpticalDist::where('group_id', $user->group_id)->withCount(['connection']);
+            $query = OpticalDist::where('group_id', $user->group_id)
+                ->withCount(['connection']);
+
+            // 🔍 Filter berdasarkan area_id
+            if ($areaId = $request->get('area_id')) {
+                $query->where('area_id', $areaId);
+            }
 
             // 🔍 Search
             if ($search = $request->get('search')) {
@@ -54,11 +62,13 @@ class OpticalController extends Controller
             $perPage = $request->get('per_page', 5);
             $opticals = $query->paginate($perPage);
 
-            return ResponseFormatter::success($opticals, 'Data optical berhasil dimuat');
+            return ResponseFormatter::success($opticals, 'Data optical berhasil dimuat', 200);
         } catch (\Throwable $th) {
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
+
 
     /**
      * POST /api/opticals
