@@ -333,9 +333,15 @@ class InvoiceController extends Controller
             // Calculate total
             $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
 
+            // Get connection data safely
+            $connection = $member->getRelation('connection');
+            $connectionId = $connection?->id;
+            $areaId = $connection?->area_id ?? 1;
+            $internetNumber = $connection?->internet_number ?? '-';
+
             // Generate invoice number
             $invNumber = InvoiceHelper::generateInvoiceNumber(
-                $member->connection->area_id ?? 1,
+                $areaId,
                 'H'
             );
 
@@ -346,7 +352,7 @@ class InvoiceController extends Controller
             // Create Xendit invoice
             $create_invoice_request = new CreateInvoiceRequest([
                 'external_id' => $invNumber,
-                'description' => 'Tagihan nomor internet ' . $member->connection->internet_number . ' Periode: ' . $validated['periode'],
+                'description' => 'Tagihan nomor internet ' . $internetNumber . ' Periode: ' . $validated['periode'],
                 'amount' => intval($total_amount),
                 'invoice_duration' => $duration,
                 'currency' => 'IDR',
@@ -358,7 +364,7 @@ class InvoiceController extends Controller
 
             // Save to database
             $invoice = InvoiceHomepass::create([
-                'connection_id' => $member->connection->id,
+                'connection_id' => $connectionId,
                 'member_id' => $member->id,
                 'invoice_type' => 'H',
                 'start_date' => now()->toDateString(),
@@ -525,6 +531,12 @@ class InvoiceController extends Controller
 
                 $footer = GlobalSettings::where('group_id', $user->group_id)->value('footer');
 
+                // Load connection relationship safely
+                if (!$invoice->relationLoaded('connection')) {
+                    $invoice->load('connection.profile');
+                }
+                $connection = $invoice->getRelation('connection');
+
                 $this->whatsappService->sendFromTemplate(
                     $apiKey,
                     $invoice->member->phone_number,
@@ -533,8 +545,8 @@ class InvoiceController extends Controller
                         'full_name' => $invoice->member->fullname,
                         'no_invoice' => $invoice->inv_number,
                         'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
-                        'pppoe_user' => $invoice->connection->username ?? '-',
-                        'pppoe_profile' => $invoice->connection->profile->name ?? '-',
+                        'pppoe_user' => $connection?->username ?? '-',
+                        'pppoe_profile' => $connection?->profile?->name ?? '-',
                         'period' => $invoice->subscription_period,
                         'payment_gateway' => $methodMap[$validated['payment_method']] ?? ucfirst($validated['payment_method']),
                         'footer' => $footer
@@ -731,6 +743,9 @@ class InvoiceController extends Controller
                 if ($apiKey) {
                     $footer = GlobalSettings::where('group_id', $invoice->group_id)->value('footer');
 
+                    // Get connection relationship safely
+                    $connection = $invoice->getRelation('connection');
+
                     $this->whatsappService->sendFromTemplate(
                         $apiKey,
                         $invoice->member->phone_number,
@@ -739,8 +754,8 @@ class InvoiceController extends Controller
                             'full_name' => $invoice->member->fullname,
                             'no_invoice' => $invoice->inv_number,
                             'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
-                            'pppoe_user' => $invoice->connection->username ?? '-',
-                            'pppoe_profile' => $invoice->connection->profile->name ?? '-',
+                            'pppoe_user' => $connection?->username ?? '-',
+                            'pppoe_profile' => $connection?->profile?->name ?? '-',
                             'period' => $invoice->subscription_period,
                             'payment_gateway' => 'Payment Gateway',
                             'footer' => $footer
