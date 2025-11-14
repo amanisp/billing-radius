@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\LogsController;
 use App\Http\Controllers\Api\MemberController;
 use App\Http\Controllers\Api\NasController;
 use App\Http\Controllers\Api\OpticalController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\PayoutController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\VpnController;
+use App\Http\Controllers\Api\WhastappApi;
 use App\Http\Controllers\Api\WhatsAppApiController;
 use App\Http\Controllers\WhatsappController;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +23,7 @@ Route::post('/coba/send-message', [WhatsappController::class, 'testConnection'])
 Route::post('/whatsapp/webhook/{groupId?}', [WhatsAppApiController::class, 'webhook']);
 
 Route::post('/v1/login', [AuthController::class, 'login']);
+Route::post('/v1/signup', [AuthController::class, 'signup']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1')->group(function () {
@@ -109,5 +112,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payouts', [PayoutController::class, 'createPayout']);
         Route::post('/payouts/{id}/check-status', [PayoutController::class, 'checkStatus']);
         Route::delete('/payouts/{id}', [PayoutController::class, 'destroy']);
+      
+      
+         // Logs
+        Route::get('/logs', [LogsController::class, 'index']);
+
+            // Whatsapp API
+        Route::get('/whatsapp/{id}', [WhastappApi::class, 'index']);
     });
 });

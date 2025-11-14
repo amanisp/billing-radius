@@ -13,8 +13,68 @@ class WhatsappService
 
     public function __construct()
     {
-        $this->baseUrl = 'https://wisender-api.amanisp.net.id/api';
+        $this->baseUrl = config('app.wa_api', env('WA_API_HOST'));
         $this->messageLogger = app(WhatsappMessageLogger::class);
+    }
+
+    // Create Token
+    public function createSession($name)
+    {
+        // request ke API wa
+        $response = Http::timeout(20)->post("{$this->baseUrl}/sessions", [
+            'name' => $name
+        ]);
+
+        if ($response->failed()) {
+            return [
+                'ok' => false,
+                'message' => 'Failed to connect to WhatsApp API',
+                'error' => $response->body()
+            ];
+        }
+
+        $data = $response->json();
+
+        if (!($data['ok'] ?? false)) {
+            return [
+                'ok' => false,
+                'message' => $data['message'] ?? 'Unknown error'
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'sessionId' => $data['session']['sessionId'],
+            'token'     => $data['session']['token'],
+            'name'      => $data['session']['name']
+        ];
+    }
+
+
+    // Show Session
+    public function checkSession($session)
+    {
+        // request ke API wa
+        $response = Http::timeout(20)->post("{$this->baseUrl}/sessions{$session}");
+
+        if ($response->failed()) {
+            return [
+                'ok' => false,
+                'message' => 'Failed to connect to WhatsApp API',
+                'error' => $response->body()
+            ];
+        }
+
+        $data = $response->json();
+
+        if (!($data['ok'] ?? false)) {
+            return [
+                'ok' => false,
+                'message' => $data['message'] ?? 'Unknown error'
+            ];
+        }
+
+        return $data;
     }
 
     public function sendFromTemplate($apiKey, $phone, $templateKey, $variables = [], $logParams = [])

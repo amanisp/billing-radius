@@ -6,6 +6,7 @@ use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Controller;
+use App\Models\TechnicianArea;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -187,6 +188,10 @@ class AdminController extends Controller
             $user = User::findOrFail($id);
             $deletedData = $user;
 
+            if (isset($user)) {
+                $areaList = TechnicianArea::where('user_id', $user->id);
+                $areaList->delete();
+            }
             $user->delete();
             ActivityLogged::dispatch('DELETE', null, $deletedData);
 
