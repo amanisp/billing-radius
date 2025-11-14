@@ -4,13 +4,75 @@ namespace App\Http\Controllers\Api;
 
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
-use App\Models\User; // TAMBAHKAN INI
+use App\Models\GlobalSettings;
+use App\Models\Groups;
+use App\Models\User;
+use App\Services\WhatsappService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
+
+    public function signup(Request $request)
+    {
+        try {
+            $token = $request->input('token');
+
+            $validToken = config('app.api_token', env('API_ACCESS_TOKEN'));
+
+            if (!$token || $token !== $validToken) {
+                return ResponseFormatter::error(null, 'Unauthorized: Token tidak valid atau tidak ditemukan', 200);
+            }
+
+            $validated = $request->validate([
+                'fullname'     => 'required|string|max:255|unique:users,name|unique:groups,name',
+                'phone'        => 'required|string|max:255|unique:users,phone_number',
+                'email'        => 'required|string|email|max:255|unique:users,email',
+                'username'     => 'required|string|max:255|unique:users,username',
+                'password'     => 'required|string|min:8',
+            ]);
+
+            $wa = new WhatsappService();
+            $create = $wa->createSession($request->fullname);
+
+
+            $group = Groups::create([
+                'name' => $validated['fullname'],
+                'slug' => Str::slug($validated['fullname']),
+                'wa_api_token' => $create['sessionId'],
+                'group_type' => 'mitra',
+            ]);
+
+            GlobalSettings::create([
+                'isolir_mode' => false,
+                'group_id' => $group->id,
+            ]);
+
+            $newUser = User::create([
+                'name'        => $validated['fullname'],
+                'email'       => $validated['email'],
+                'phone_number' => $validated['phone'],
+                'role'        => 'mitra',
+                'username'    => $validated['username'],
+                'password'    => Hash::make($validated['password']),
+                'group_id'    => $group->id,
+            ]);
+
+
+            $data = [
+                'user' => $newUser,
+                'group' => $group
+            ];
+            return ResponseFormatter::success($data, 'Signup Berhasil', 200);
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
+        }
+    }
+
+
     public function login(Request $request)
     {
         try {
@@ -56,9 +118,11 @@ class AuthController extends Controller
                 return ResponseFormatter::error(null, 'Email atau Username atau Password salah.', 401);
             }
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
+
+
 
     public function logout(Request $request)
     {
