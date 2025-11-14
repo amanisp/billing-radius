@@ -7,6 +7,8 @@ use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\Connection;
 use App\Models\User;
+use App\Models\Member;
+use App\Models\PaymentDetail;
 use App\Models\Area;
 use App\Models\OpticalDist;
 use App\Models\Profiles;
@@ -30,7 +32,7 @@ class ConnectionController extends Controller
     }
 
     /**
-     * GET /api/connections
+     * GET /api/v1/connections
      * List connections dengan pagination, search, dan sort
      */
     public function index(Request $request)
@@ -105,7 +107,7 @@ class ConnectionController extends Controller
     }
 
     /**
-     * GET /api/connections/stats
+     * GET /api/v1/connections/stats
      * Get connection statistics
      */
     public function stats(Request $request)
@@ -131,8 +133,8 @@ class ConnectionController extends Controller
     }
 
     /**
-     * POST /api/connections
-     * Create new connection
+     * POST /api/v1/connections
+     * Create new connection only (without member)
      */
     public function store(Request $request)
     {
@@ -200,7 +202,147 @@ class ConnectionController extends Controller
     }
 
     /**
-     * PUT /api/connections/{id}
+     * POST /api/v1/connections/with-member
+     * Create new connection WITH member and payment detail
+     */
+    public function storeWithMember(Request $request)
+    {
+        try {
+            $user = $this->getAuthUser();
+            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
+
+            $groupId = $user->group_id;
+
+            // Validation for connection
+            $connectionRules = [
+                'type' => 'required|string|in:pppoe,dhcp',
+                'profile_id' => 'required|exists:profiles,id',
+                'nas_id' => 'nullable|exists:nas,id',
+                'area_id' => 'nullable|exists:areas,id',
+                'optical_id' => 'nullable|exists:optical_dists,id',
+                'isolir' => 'boolean',
+            ];
+
+            // Type-specific validation
+            if ($request->type === 'pppoe') {
+                $connectionRules['username'] = [
+                    'required',
+                    'string',
+                    'max:255',
+                    Rule::unique('connections', 'username')->where(fn($q) => $q->where('group_id', $groupId)),
+                ];
+                $connectionRules['password'] = 'required|string';
+            } elseif ($request->type === 'dhcp') {
+                $connectionRules['mac_address'] = 'required|string|max:17';
+            }
+
+            // Validation for member
+            $memberRules = [
+                'fullname' => 'required|string|max:255',
+                'phone_number' => 'nullable|string|max:20',
+                'email' => 'nullable|email',
+                'id_card' => 'nullable|string|max:16',
+                'address' => 'nullable|string|max:500',
+            ];
+
+            // Validation for payment detail
+            $paymentRules = [
+                'billing' => 'required|boolean',
+                'payment_type' => 'required_if:billing,true|string|in:prabayar,pascabayar',
+                'billing_period' => 'required_if:billing,true|string|in:fixed,renewal',
+                'active_date' => 'required_if:billing,true|date',
+                'amount' => 'required_if:billing,true|numeric|min:0',
+                'discount' => 'nullable|numeric|min:0',
+                'ppn' => 'nullable|numeric|min:0',
+            ];
+
+            $allRules = array_merge($connectionRules, $memberRules, $paymentRules);
+            $validated = $request->validate($allRules);
+
+            DB::beginTransaction();
+
+            // 1. Create Connection
+            $connection = Connection::create([
+                'type' => $validated['type'],
+                'username' => $request->username,
+                'password' => $request->password,
+                'mac_address' => $request->mac_address,
+                'profile_id' => $validated['profile_id'],
+                'group_id' => $groupId,
+                'internet_number' => Connection::generateNomorLayanan($groupId),
+                'isolir' => $request->input('isolir', false),
+                'nas_id' => $request->nas_id,
+                'area_id' => $request->area_id,
+                'optical_id' => $request->optical_id,
+            ]);
+
+            // 2. Create Member
+            $member = Member::create([
+                'connection_id' => $connection->id,
+                'group_id' => $groupId,
+                'fullname' => $validated['fullname'],
+                'phone_number' => $request->phone_number,
+                'email' => $request->email,
+                'id_card' => $request->id_card,
+                'address' => $request->address,
+                'billing' => $request->input('billing', false),
+            ]);
+
+            // 3. Create Payment Detail (if billing is enabled)
+            $paymentDetail = null;
+            if ($request->input('billing') == true) {
+                // Calculate next invoice date
+                $activeDate = new \DateTime($request->active_date ?? now());
+                $nextInvoice = null;
+
+                if ($request->billing_period === 'renewal') {
+                    $nextInvoice = (clone $activeDate)->add(new \DateInterval('P1M'))->format('Y-m-d');
+                }
+
+                $paymentDetail = PaymentDetail::create([
+                    'member_id' => $member->id,
+                    'group_id' => $groupId,
+                    'payment_type' => $validated['payment_type'],
+                    'billing_period' => $validated['billing_period'],
+                    'active_date' => $request->active_date,
+                    'next_invoice' => $nextInvoice,
+                    'last_invoice' => null,
+                    'amount' => $validated['amount'],
+                    'discount' => $request->input('discount', 0),
+                    'ppn' => $request->input('ppn', 0),
+                ]);
+            }
+
+            // 4. Create radius records for PPPoE
+            if ($connection->type === 'pppoe' && $connection->username && $connection->password) {
+                $this->createRadiusRecords($connection, $groupId);
+            }
+
+            DB::commit();
+
+            // Load relationships for response
+            $connection->load(['member.paymentDetail', 'profile', 'area', 'optical', 'nas']);
+
+            ActivityLogged::dispatch('CREATE', null, [
+                'connection' => $connection->toArray(),
+                'member' => $member->toArray(),
+                'payment_detail' => $paymentDetail ? $paymentDetail->toArray() : null,
+            ]);
+
+            return ResponseFormatter::success([
+                'connection' => $connection,
+                'member' => $member,
+                'payment_detail' => $paymentDetail,
+            ], 'Connection with member berhasil ditambahkan', 201);
+
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
+
+    /**
+     * PUT /api/v1/connections/{id}
      * Update connection
      */
     public function update(Request $request, $id)
@@ -312,7 +454,7 @@ class ConnectionController extends Controller
     }
 
     /**
-     * POST /api/connections/{id}/toggle-isolir
+     * POST /api/v1/connections/{id}/toggle-isolir
      * Toggle isolir status
      */
     public function toggleIsolir(Request $request, $id)
@@ -347,7 +489,7 @@ class ConnectionController extends Controller
     }
 
     /**
-     * DELETE /api/connections/{id}
+     * DELETE /api/v1/connections/{id}
      * Delete connection
      */
     public function destroy($id)
@@ -397,7 +539,7 @@ class ConnectionController extends Controller
     }
 
     /**
-     * GET /api/connections/{username}/sessions
+     * GET /api/v1/connections/{username}/sessions
      * Get connection session history
      */
     public function getSessions($username)
