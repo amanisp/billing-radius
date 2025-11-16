@@ -49,18 +49,28 @@ class ConnectionController extends Controller
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->where('username', 'like', "%{$search}%")
-                      ->orWhere('internet_number', 'like', "%{$search}%")
-                      ->orWhere('mac_address', 'like', "%{$search}%")
-                      ->orWhereHas('member', function($q2) use ($search) {
-                          $q2->where('fullname', 'like', "%{$search}%");
-                      });
+                        ->orWhere('internet_number', 'like', "%{$search}%")
+                        ->orWhere('mac_address', 'like', "%{$search}%")
+                        ->orWhereHas('member', function ($q2) use ($search) {
+                            $q2->where('fullname', 'like', "%{$search}%");
+                        });
                 });
             }
 
             // Filter by status (isolir/active)
-            if ($request->has('status') && $request->status !== '') {
-                $query->where('isolir', $request->status === 'isolir' ? 1 : 0);
+            if ($request->filled('status')) { // cek kalau status ada dan tidak kosong
+                $statusMap = [
+                    'isolir' => 1,  // suspend
+                    'active' => 0,  // aktif
+                ];
+
+                $statusValue = $statusMap[$request->status] ?? null;
+
+                if ($statusValue !== null) {
+                    $query->where('isolir', $statusValue);
+                }
             }
+
 
             // Filter by profile
             if ($request->has('profile_id') && $request->profile_id) {
@@ -334,7 +344,6 @@ class ConnectionController extends Controller
                 'member' => $member,
                 'payment_detail' => $paymentDetail,
             ], 'Connection with member berhasil ditambahkan', 201);
-
         } catch (\Throwable $th) {
             DB::rollBack();
             return ResponseFormatter::error(null, $th->getMessage(), 500);
