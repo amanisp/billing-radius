@@ -112,12 +112,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payouts', [PayoutController::class, 'createPayout']);
         Route::post('/payouts/{id}/check-status', [PayoutController::class, 'checkStatus']);
         Route::delete('/payouts/{id}', [PayoutController::class, 'destroy']);
-      
-      
-         // Logs
-        Route::get('/logs', [LogsController::class, 'index']);
 
-            // Whatsapp API
-        Route::get('/whatsapp/{id}', [WhastappApi::class, 'index']);
+
+        // Logs
+        Route::get('/logs', [LogsController::class, 'index']);
     });
 });
