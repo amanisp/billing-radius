@@ -62,10 +62,14 @@ class MemberController extends Controller
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->where('fullname', 'like', "%{$search}%")
-                      ->orWhere('phone_number', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%")
-                      ->orWhere('id_card', 'like', "%{$search}%");
+                        ->orWhere('phone_number', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('id_card', 'like', "%{$search}%");
                 });
+            }
+
+            if ($request->has('area_id') && $request->area_id) {
+                $query->where('area_id', $request->area_id);
             }
 
             // Filter by billing status
@@ -103,7 +107,7 @@ class MemberController extends Controller
                 'connection.profile',
                 'connection.area',
                 'connection.optical',
-                'invoices' => function($q) {
+                'invoices' => function ($q) {
                     $q->latest()->limit(10);
                 }
             ])->findOrFail($id);
