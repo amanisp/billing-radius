@@ -115,7 +115,7 @@ class ConnectionController extends Controller
 
             return ResponseFormatter::success($connections, 'Data connections berhasil dimuat');
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -141,7 +141,7 @@ class ConnectionController extends Controller
 
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -207,10 +207,10 @@ class ConnectionController extends Controller
 
             ActivityLogged::dispatch('CREATE', null, $connection);
 
-            return ResponseFormatter::success($connection, 'Connection berhasil ditambahkan', 201);
+            return ResponseFormatter::success($connection, 'Connection berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -255,7 +255,7 @@ class ConnectionController extends Controller
                 'phone_number' => 'nullable|string|max:20',
                 'email' => 'nullable|email',
                 'id_card' => 'nullable|string|max:16',
-                'address' => 'nullable|string|max:500',
+                'address' => 'nullable|string|max:200',
             ];
 
             // Validation for payment detail
@@ -346,10 +346,10 @@ class ConnectionController extends Controller
                 'connection' => $connection,
                 'member' => $member,
                 'payment_detail' => $paymentDetail,
-            ], 'Connection with member berhasil ditambahkan', 201);
+            ], 'Connection with member berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -461,7 +461,7 @@ class ConnectionController extends Controller
             return ResponseFormatter::success($connection, 'Connection berhasil diperbarui', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -496,7 +496,7 @@ class ConnectionController extends Controller
             ], 'Status isolir berhasil diubah', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -546,7 +546,7 @@ class ConnectionController extends Controller
             return ResponseFormatter::success($deletedData, 'Connection berhasil dihapus', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
@@ -595,7 +595,7 @@ class ConnectionController extends Controller
                 ]
             ], 'Session data berhasil dimuat');
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 
