@@ -68,8 +68,11 @@ class MemberController extends Controller
                 });
             }
 
+            // Filter by area_id (relasi berada di connection)
             if ($request->has('area_id') && $request->area_id) {
-                $query->where('area_id', $request->area_id);
+                $query->whereHas('connection', function ($q) use ($request) {
+                    $q->where('area_id', $request->area_id);
+                });
             }
 
             // Filter by billing status
