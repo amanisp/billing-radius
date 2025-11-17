@@ -103,8 +103,11 @@ class ConnectionController extends Controller
                 $latestSession = DB::connection('radius')
                     ->table('radacct')
                     ->where('username', $username)
-                    ->orderBy('acctstarttime', 'DESC')
+                    ->whereNull('acctstoptime')         // Hanya session online
+                    ->where('acctupdatetime', '>=', now()->subMinutes(5)) // Antighost session
+                    ->orderBy('acctstarttime', 'DESC')  // Ambil session terbaru
                     ->first();
+
 
                 $connection->is_online = $latestSession && is_null($latestSession->acctstoptime);
                 return $connection;
