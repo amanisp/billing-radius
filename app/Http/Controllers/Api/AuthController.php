@@ -35,14 +35,14 @@ class AuthController extends Controller
                 'password'     => 'required|string|min:8',
             ]);
 
-            $wa = new WhatsappService();
-            $create = $wa->createSession($request->fullname);
+            // $wa = new WhatsappService();
+            // $create = $wa->createSession($request->fullname);
 
 
             $group = Groups::create([
                 'name' => $validated['fullname'],
                 'slug' => Str::slug($validated['fullname']),
-                'wa_api_token' => $create['sessionId'],
+                'wa_api_token' => 'default',
                 'group_type' => 'mitra',
             ]);
 
