@@ -69,6 +69,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/connections/stats', [ConnectionController::class, 'stats']);
         Route::get('/connections/import-template', [ConnectionController::class, 'downloadImportTemplate']);
 
+        //IMPORT
+        Route::post('/connections/import', [ConnectionController::class, 'importConnections']);
+        Route::get('/connections/import/batches', [ConnectionController::class, 'getImportBatches']);
+        Route::get('/connections/import/batch/{batchId}', [ConnectionController::class, 'getImportBatchStatus']);
+        Route::get('/connections/import/batch/{batchId}/errors', [ConnectionController::class, 'getImportErrors']);
+        Route::delete('/connections/import/batch/{batchId}', [ConnectionController::class, 'deleteImportBatch']);
+
         // Create connection (basic - without member)
         Route::post('/connections', [ConnectionController::class, 'store']);
 
