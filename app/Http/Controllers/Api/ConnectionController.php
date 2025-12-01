@@ -643,16 +643,16 @@ class ConnectionController extends Controller
      */
     public function importConnections(Request $request)
     {
+        $user = $this->getAuthUser();
         $validator = Validator::make($request->all(), [
             'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // Max 10MB
-            'group_id' => 'required|exists:groups,id'
         ]);
         if ($validator->fails()) {
             return ResponseFormatter::error(null, $validator->errors(), 200);
         }
         try {
             $file = $request->file('file');
-            $groupId = $request->input('group_id');
+            $groupId = $user->group_id;
             // Create import instance
             $import = new PppoeAccountsImport($groupId);
 
