@@ -638,181 +638,169 @@ class ConnectionController extends Controller
     }
 
     /**
- * Import PPPoE accounts from Excel file
- * POST /api/v1/connections/import
- */
-public function importConnections(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // Max 10MB
-        'group_id' => 'required|exists:groups,id'
-    ]);
-    if ($validator->fails()) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Validation error',
-            'errors' => $validator->errors()
-        ], 422);
-    }
-    try {
-        $file = $request->file('file');
-        $groupId = $request->input('group_id');
-        // Create import instance
-        $import = new PppoeAccountsImport($groupId);
-
-        // Start import process
-        Excel::import($import, $file);
-        return response()->json([
-            'success' => true,
-            'message' => 'Import started successfully',
-            'data' => [
-                'batch_id' => $import->getImportBatchId(),
-                'status' => 'processing'
-            ]
-        ], 200);
-    } catch (\Exception $e) {
-        Log::error('Import failed', [
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
+     * Import PPPoE accounts from Excel file
+     * POST /api/v1/connections/import
+     */
+    public function importConnections(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // Max 10MB
+            'group_id' => 'required|exists:groups,id'
         ]);
-        return response()->json([
-            'success' => false,
-            'message' => 'Import failed: ' . $e->getMessage()
-        ], 500);
-    }
-}
-/**
- * Get list of import batches
- * GET /api/v1/connections/import/batches
- */
-public function getImportBatches(Request $request)
-{
-    try {
-        $perPage = $request->input('per_page', 15);
-        $status = $request->input('status'); // processing, completed, completed_with_errors, failed
-        $query = DB::table('import_batches')
-            ->where('type', 'pppoe_accounts')
-            ->orderBy('created_at', 'desc');
-        if ($status) {
-            $query->where('status', $status);
+        if ($validator->fails()) {
+            return ResponseFormatter::error(null, $validator->errors(), 200);
         }
-        $batches = $query->paginate($perPage);
-        return response()->json([
-            'success' => true,
-            'data' => $batches
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch import batches: ' . $e->getMessage()
-        ], 500);
+        try {
+            $file = $request->file('file');
+            $groupId = $request->input('group_id');
+            // Create import instance
+            $import = new PppoeAccountsImport($groupId);
+
+            // Start import process
+            Excel::import($import, $file);
+            $data = [
+                'batch_id' => $import->getImportBatchId()
+            ];
+            return ResponseFormatter::success($data, 'Import started successfully', 200);
+        } catch (\Exception $e) {
+            Log::error('Import failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return ResponseFormatter::error(null, $e->getMessage(), 200);
+        }
     }
-}
-/**
- * Get import batch status and statistics
- * GET /api/v1/connections/import/batch/{batchId}
- */
-public function getImportBatchStatus($batchId)
-{
-    try {
-        $batch = DB::table('import_batches')
-            ->where('id', $batchId)
-            ->first();
-        if (!$batch) {
+    /**
+     * Get list of import batches
+     * GET /api/v1/connections/import/batches
+     */
+    public function getImportBatches(Request $request)
+    {
+        try {
+            $perPage = $request->input('per_page', 15);
+            $status = $request->input('status'); // processing, completed, completed_with_errors, failed
+            $query = DB::table('import_batches')
+                ->where('type', 'pppoe_accounts')
+                ->orderBy('created_at', 'desc');
+            if ($status) {
+                $query->where('status', $status);
+            }
+            $batches = $query->paginate($perPage);
+            return response()->json([
+                'success' => true,
+                'data' => $batches
+            ], 200);
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Import batch not found'
-            ], 404);
+                'message' => 'Failed to fetch import batches: ' . $e->getMessage()
+            ], 500);
         }
-        // Get error summary by type
-        $errorSummary = DB::table('import_error_logs')
-            ->select('error_type', DB::raw('count(*) as count'))
-            ->where('import_batch_id', $batchId)
-            ->groupBy('error_type')
-            ->get();
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'batch' => $batch,
-                'error_summary' => $errorSummary,
-                'success_rate' => $batch->total_rows > 0
-                    ? round((($batch->processed_rows - $batch->failed_rows) / $batch->total_rows) * 100, 2)
-                    : 0
-            ]
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch batch status: ' . $e->getMessage()
-        ], 500);
     }
-}
-/**
- * Get import errors for a batch
- * GET /api/v1/connections/import/batch/{batchId}/errors
- */
-public function getImportErrors(Request $request, $batchId)
-{
-    try {
-        $perPage = $request->input('per_page', 50);
-        $errorType = $request->input('error_type');
-        $resolved = $request->input('resolved'); // true/false
-        $query = DB::table('import_error_logs')
-            ->where('import_batch_id', $batchId)
-            ->orderBy('row_number', 'asc');
-        if ($errorType) {
-            $query->where('error_type', $errorType);
+    /**
+     * Get import batch status and statistics
+     * GET /api/v1/connections/import/batch/{batchId}
+     */
+    public function getImportBatchStatus($batchId)
+    {
+        try {
+            $batch = DB::table('import_batches')
+                ->where('id', $batchId)
+                ->first();
+            if (!$batch) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Import batch not found'
+                ], 404);
+            }
+            // Get error summary by type
+            $errorSummary = DB::table('import_error_logs')
+                ->select('error_type', DB::raw('count(*) as count'))
+                ->where('import_batch_id', $batchId)
+                ->groupBy('error_type')
+                ->get();
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'batch' => $batch,
+                    'error_summary' => $errorSummary,
+                    'success_rate' => $batch->total_rows > 0
+                        ? round((($batch->processed_rows - $batch->failed_rows) / $batch->total_rows) * 100, 2)
+                        : 0
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch batch status: ' . $e->getMessage()
+            ], 500);
         }
-        if ($resolved !== null) {
-            $query->where('is_resolved', $resolved === 'true' ? 1 : 0);
-        }
-        $errors = $query->paginate($perPage);
-        return response()->json([
-            'success' => true,
-            'data' => $errors
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch errors: ' . $e->getMessage()
-        ], 500);
     }
-}
-/**
- * Delete import batch and its error logs
- * DELETE /api/v1/connections/import/batch/{batchId}
- */
-public function deleteImportBatch($batchId)
-{
-    try {
-        DB::beginTransaction();
-        // Delete error logs first
-        DB::table('import_error_logs')
-            ->where('import_batch_id', $batchId)
-            ->delete();
-        // Delete batch record
-        $deleted = DB::table('import_batches')
-            ->where('id', $batchId)
-            ->delete();
-        if (!$deleted) {
+    /**
+     * Get import errors for a batch
+     * GET /api/v1/connections/import/batch/{batchId}/errors
+     */
+    public function getImportErrors(Request $request, $batchId)
+    {
+        try {
+            $perPage = $request->input('per_page', 50);
+            $errorType = $request->input('error_type');
+            $resolved = $request->input('resolved'); // true/false
+            $query = DB::table('import_error_logs')
+                ->where('import_batch_id', $batchId)
+                ->orderBy('row_number', 'asc');
+            if ($errorType) {
+                $query->where('error_type', $errorType);
+            }
+            if ($resolved !== null) {
+                $query->where('is_resolved', $resolved === 'true' ? 1 : 0);
+            }
+            $errors = $query->paginate($perPage);
+            return response()->json([
+                'success' => true,
+                'data' => $errors
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch errors: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    /**
+     * Delete import batch and its error logs
+     * DELETE /api/v1/connections/import/batch/{batchId}
+     */
+    public function deleteImportBatch($batchId)
+    {
+        try {
+            DB::beginTransaction();
+            // Delete error logs first
+            DB::table('import_error_logs')
+                ->where('import_batch_id', $batchId)
+                ->delete();
+            // Delete batch record
+            $deleted = DB::table('import_batches')
+                ->where('id', $batchId)
+                ->delete();
+            if (!$deleted) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Import batch not found'
+                ], 404);
+            }
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Import batch deleted successfully'
+            ], 200);
+        } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Import batch not found'
-            ], 404);
+                'message' => 'Failed to delete batch: ' . $e->getMessage()
+            ], 500);
         }
-        DB::commit();
-        return response()->json([
-            'success' => true,
-            'message' => 'Import batch deleted successfully'
-        ], 200);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to delete batch: ' . $e->getMessage()
-        ], 500);
     }
-}
-
 }
