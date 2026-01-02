@@ -90,9 +90,9 @@ class InvoiceController extends Controller
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->where('inv_number', 'like', "%{$search}%")
-                      ->orWhereHas('member', function($q2) use ($search) {
-                          $q2->where('fullname', 'like', "%{$search}%");
-                      });
+                        ->orWhereHas('member', function ($q2) use ($search) {
+                            $q2->where('fullname', 'like', "%{$search}%");
+                        });
                 });
             }
 
@@ -303,19 +303,19 @@ class InvoiceController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
 
             $validated = $request->validate([
                 'member_id' => 'required|exists:members,id',
-                'subsperiode' => 'required|integer|min:1',
-                'duedate' => 'required|date',
+                'subs_periode' => 'required|integer|min:1',
+                'due_date' => 'required|date',
                 'periode' => 'required|string',
                 'amount' => 'required|numeric|min:0',
             ]);
 
-            $apiInstance = new InvoiceApi();
-
-            $member = Member::with(['paymentDetail', 'connection.profile'])
+            $member = Member::with('paymentDetail', 'connection.profile')
                 ->where('id', $validated['member_id'])
                 ->where('billing', 1)
                 ->firstOrFail();
@@ -324,76 +324,20 @@ class InvoiceController extends Controller
                 return response()->json(['message' => 'Member tidak ditemukan!'], 403);
             }
 
-            $pd = $member->paymentDetail;
-            $price = $pd->amount;
-            $vat = $pd->ppn;
-            $discount = $pd->discount;
-            $periode = (int) $validated['subsperiode'];
-
-            // Calculate total
-            $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
-
-            // Get connection data safely
-            $connection = $member->getRelation('connection');
-            $connectionId = $connection?->id;
-            $areaId = $connection?->area_id ?? 1;
-            $internetNumber = $connection?->internet_number ?? '-';
-
-            // Generate invoice number
-            $invNumber = InvoiceHelper::generateInvoiceNumber(
-                $areaId,
-                'H'
+            // ✅ Pakai method generateInvoice()
+            $invoice = $member->paymentDetail->generateInvoice(
+                $validated['subs_periode'],
+                $validated['due_date']
             );
-
-            $duration = InvoiceHelper::invoiceDurationThisMonth();
-
-            DB::beginTransaction();
-
-            // Create Xendit invoice
-            $create_invoice_request = new CreateInvoiceRequest([
-                'external_id' => $invNumber,
-                'description' => 'Tagihan nomor internet ' . $internetNumber . ' Periode: ' . $validated['periode'],
-                'amount' => intval($total_amount),
-                'invoice_duration' => $duration,
-                'currency' => 'IDR',
-                'payer_email' => $member->email ?: 'customer@amanisp.net.id',
-                'reminder_time' => 1
-            ]);
-
-            $generateInvoice = $apiInstance->createInvoice($create_invoice_request);
-
-            // Save to database
-            $invoice = InvoiceHomepass::create([
-                'connection_id' => $connectionId,
-                'member_id' => $member->id,
-                'invoice_type' => 'H',
-                'start_date' => now()->toDateString(),
-                'due_date' => $validated['duedate'],
-                'subscription_period' => $validated['periode'],
-                'inv_number' => $invNumber,
-                'amount' => $total_amount,
-                'status' => 'unpaid',
-                'group_id' => $member->group_id,
-                'payment_url' => $generateInvoice['invoice_url'],
-            ]);
-
-            // Update last_invoice
-            $dueDate = Carbon::parse($validated['duedate'])->startOfDay();
-            $lastInvoice = $dueDate->copy()->addMonths($validated['subsperiode'] - 1)->toDateString();
-            PaymentDetail::where('id', $member->payment_detail_id)->update([
-                'last_invoice' => $lastInvoice
-            ]);
-
-            DB::commit();
 
             ActivityLogged::dispatch('CREATE', null, $invoice);
 
             return ResponseFormatter::success($invoice, 'Invoice berhasil dibuat', 201);
         } catch (\Throwable $th) {
-            DB::rollBack();
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
 
     /**
      * POST /api/invoices/generate-all
@@ -403,64 +347,42 @@ class InvoiceController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
 
-            $groupId = $user->group_id;
-            $now = Carbon::now()->startOfMonth();
-
-            $members = Member::with(['paymentDetail', 'connection.profile'])
-                ->where('group_id', $groupId)
-                ->where('billing', 1)
+            //  Pakai method needsInvoiceGeneration()
+            $paymentDetails = PaymentDetail::with('member.connection')
+                ->where('group_id', $user->group_id)
                 ->get();
 
-            $membersToGenerate = collect();
+            $generated = 0;
 
-            foreach ($members as $member) {
-                $pd = $member->paymentDetail;
-                if (!$pd) continue;
-
-                $lastInvoice = InvoiceHomepass::where('member_id', $member->id)
-                    ->orderByDesc('due_date')
-                    ->first();
-
-                if (!$lastInvoice) {
-                    $activeDate = $pd->active_date ? Carbon::parse($pd->active_date)->startOfMonth() : $now;
-                    if ($activeDate->lte($now)) {
-                        $membersToGenerate->push($member);
-                    }
-                    continue;
-                }
-
-                $hasFutureInvoice = InvoiceHomepass::where('member_id', $member->id)
-                    ->whereDate('due_date', '>=', $now)
-                    ->exists();
-
-                if (!$hasFutureInvoice) {
-                    $lastDue = Carbon::parse($lastInvoice->due_date)->startOfMonth();
-                    if ($lastDue->lt($now)) {
-                        $monthsDiff = $lastDue->diffInMonths($now);
-                        if ($monthsDiff >= 1) {
-                            $membersToGenerate->push($member);
-                        }
-                    }
+            foreach ($paymentDetails as $pd) {
+                if ($pd->needsInvoiceGeneration()) {
+                    GenerateAllInvoiceJob::dispatch($pd->member)->onQueue('invoices');
+                    $generated++;
                 }
             }
 
-            if ($membersToGenerate->isEmpty()) {
-                return ResponseFormatter::success(null, 'Semua pelanggan sudah memiliki invoice sampai bulan ini', 200);
+            if ($generated === 0) {
+                return ResponseFormatter::success(
+                    null,
+                    'Semua pelanggan sudah memiliki invoice sampai bulan ini',
+                    200
+                );
             }
 
-            foreach ($membersToGenerate as $member) {
-                GenerateAllInvoiceJob::dispatch($member)->onQueue('invoices');
-            }
-
-            return ResponseFormatter::success([
-                'count' => $membersToGenerate->count()
-            ], 'Proses generate invoice sedang berjalan di background', 200);
+            return ResponseFormatter::success(
+                ['count' => $generated],
+                "Proses generate invoice sedang berjalan di background",
+                200
+            );
         } catch (\Throwable $th) {
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
 
     /**
      * POST /api/invoices/{id}/pay-manual

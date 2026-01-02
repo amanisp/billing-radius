@@ -16,10 +16,19 @@ class User extends Authenticatable
     protected $fillable = [
         'username',
         'name',
+        'fullname',
         'role',
         'group_id',
+        'area_id',
         'email',
         'phone_number',
+        'address',
+        'nik',
+        'npwp',
+        'nip',
+        'customer_number',
+        'register',
+        'payment',
         'email_verified_at',
         'password',
     ];
@@ -34,6 +43,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'register' => 'date',
         ];
     }
 
@@ -43,6 +53,14 @@ class User extends Authenticatable
     public function mitra()
     {
         return $this->belongsTo(Mitra::class, 'group_id');
+    }
+
+    /**
+     *  Relasi user dengan area
+     */
+    public function area()
+    {
+        return $this->belongsTo(Area::class, 'area_id');
     }
 
     /**
@@ -62,7 +80,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Relasi teknisi dengan area yang di-assign (TAMBAHKAN INI)
+     * Relasi teknisi dengan area yang di-assign
      */
     public function assignedAreas()
     {

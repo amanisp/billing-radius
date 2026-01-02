@@ -7,7 +7,17 @@ use Illuminate\Database\Eloquent\Model;
 
 class Area extends Model
 {
-    protected $fillable = ['name', 'group_id', 'area_code'];
+    protected $fillable = [
+        'name',
+        'group_id',
+        'area_code',
+        'is_primary'
+    ];
+
+    // Cast is_primary sebagai boolean
+    protected $casts = [
+        'is_primary' => 'boolean'
+    ];
 
     /**
      * Relasi Area dengan Optical (Area memiliki banyak Optical)
@@ -22,17 +32,13 @@ class Area extends Model
         return $this->hasMany(Mitra::class);
     }
 
-
     public function mitraCount()
     {
         return $this->mitras()->count();
     }
 
-
     /**
      * Menghitung jumlah ODP yang ada di Area ini
-     *
-     * @return int
      */
     public function opticalCount()
     {
@@ -49,6 +55,7 @@ class Area extends Model
     {
         return $this->connection()->count();
     }
+
     /**
      * Relasi area dengan teknisi yang di-assign
      */
@@ -57,5 +64,21 @@ class Area extends Model
         return $this->belongsToMany(User::class, 'technician_areas', 'area_id', 'user_id')
             ->whereIn('role', ['teknisi', 'kasir'])
             ->withTimestamps();
+    }
+
+    /**
+     *  Scope untuk ambil area primary
+     */
+    public function scopePrimary($query)
+    {
+        return $query->where('is_primary', true);
+    }
+
+    /**
+     * 🔥 Scope untuk ambil area superadmin
+     */
+    public function scopeSuperadminAreas($query)
+    {
+        return $query->where('group_id', 1);
     }
 }

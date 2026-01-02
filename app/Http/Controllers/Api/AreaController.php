@@ -30,8 +30,44 @@ class AreaController extends Controller
     }
 
     /**
-     * GET /api/areas
-     * Ambil daftar area berdasarkan role user.
+     * 🔥 GET SUPERADMIN AREAS (Public - untuk dropdown signup)
+     *
+     * GET /api/v1/areas/superadmin-areas
+     *
+     * Response:
+     * {
+     *   "data": {
+     *     "areas": [...],
+     *     "default_area_id": 1
+     *   }
+     * }
+     */
+    public function getSuperadminAreas(Request $request)
+    {
+        try {
+            $areas = ModelArea::where('group_id', 1)
+                ->select('id', 'name', 'area_code', 'is_primary', 'created_at')
+                ->orderBy('name', 'asc')
+                ->get();
+
+            // Cari primary area
+            $primaryArea = $areas->firstWhere('is_primary', true);
+
+            $data = [
+                'areas' => $areas,
+                'default_area_id' => $primaryArea?->id,
+                'total' => $areas->count()
+            ];
+
+            return ResponseFormatter::success($data, 'Data area superadmin berhasil dimuat', 200);
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
+
+    /**
+     * GET /api/v1/areas
+     * Ambil daftar area berdasarkan role user yang login
      */
     public function index(Request $request)
     {
@@ -39,20 +75,22 @@ class AreaController extends Controller
             $user = $this->getAuthUser();
 
             if (!$user) {
-                return response()->json(['message' => 'Unauthorized'], 401);
+                return ResponseFormatter::error(null, 'Unauthorized', 401);
             }
 
-            $query = ModelArea::select('id', 'name', 'area_code', 'group_id', 'created_at')
-                ->with(['assignedTechnicians']) // tambahkan ini
+            $query = ModelArea::select('id', 'name', 'area_code', 'group_id', 'is_primary', 'created_at')
+                ->with(['assignedTechnicians'])
                 ->withCount(['opticals', 'connection']);
 
-
+            // 🔥 Filter berdasarkan role
             if (in_array($user->role, ['teknisi', 'kasir'])) {
+                // Teknisi/Kasir: hanya area yang di-assign
                 $assignedIds = DB::table('technician_areas')
                     ->where('user_id', $user->id)
                     ->pluck('area_id');
                 $query->whereIn('id', $assignedIds);
             } else {
+                // Superadmin, Mitra, Admin: filter by group_id
                 $query->where('group_id', $user->group_id);
             }
 
@@ -70,20 +108,18 @@ class AreaController extends Controller
             $query->orderBy($sortField, $sortDirection);
 
             // 📄 Pagination
-            $perPage = $request->get('per_page', 5);
+            $perPage = $request->get('per_page', 10);
             $areas = $query->paginate($perPage);
 
-            return ResponseFormatter::success($areas, 'Data area berhasil dimuat');
+            return ResponseFormatter::success($areas, 'Data area berhasil dimuat', 200);
         } catch (\Throwable $th) {
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
 
-
-
     /**
-     * POST /api/areas
-     * Tambah area baru.
+     * POST /api/v1/areas
+     * Tambah area baru
      */
     public function store(Request $request)
     {
@@ -91,36 +127,111 @@ class AreaController extends Controller
             $user = $this->getAuthUser();
 
             if (!$user) {
-                return response()->json(['message' => 'Unauthorized'], 401);
+                return ResponseFormatter::error(null, 'Unauthorized', 401);
             }
 
-            $validate = $request->validate([
+            $validated = $request->validate([
                 'name' => [
                     'required',
                     'string',
                     'max:255',
                     Rule::unique('areas')->where(fn($query) => $query->where('group_id', $user->group_id))
                 ],
-                'area_code' => ['required', 'string', 'max:255', Rule::unique('areas')->where(fn($query) => $query->where('group_id', $user->group_id))]
+                'area_code' => [
+                    'required',
+                    'string',
+                    'max:255',
+                    Rule::unique('areas')->where(fn($query) => $query->where('group_id', $user->group_id))
+                ],
+                'is_primary' => 'nullable|boolean' // 🔥 NEW
             ]);
+
+            // 🔥 Jika is_primary = true, set area lain jadi false
+            if (isset($validated['is_primary']) && $validated['is_primary']) {
+                ModelArea::where('group_id', $user->group_id)
+                    ->update(['is_primary' => false]);
+            }
 
             $newArea = ModelArea::create([
                 'group_id' => $user->group_id,
-                'name' => $validate['name'],
-                'area_code' => $validate['area_code']
+                'name' => $validated['name'],
+                'area_code' => $validated['area_code'],
+                'is_primary' => $validated['is_primary'] ?? false
             ]);
 
             ActivityLogged::dispatch('CREATE', null, $newArea);
 
-            return ResponseFormatter::success($newArea, 'Data berhasil ditambahkan', 200);
+            return ResponseFormatter::success($newArea, 'Data area berhasil ditambahkan', 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseFormatter::error($e->errors(), 'Validasi gagal', 422);
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
 
     /**
-     * POST /api/areas/assign
-     * Assign teknisi atau kasir ke area.
+     * 🔥 PUT /api/v1/areas/{id}
+     * Update area (termasuk set primary)
+     */
+    public function update(Request $request, $id)
+    {
+        try {
+            $user = $this->getAuthUser();
+
+            if (!$user) {
+                return ResponseFormatter::error(null, 'Unauthorized', 401);
+            }
+
+            $area = ModelArea::where('id', $id)
+                ->where('group_id', $user->group_id)
+                ->firstOrFail();
+
+            $validated = $request->validate([
+                'name' => [
+                    'sometimes',
+                    'required',
+                    'string',
+                    'max:255',
+                    Rule::unique('areas')->where(
+                        fn($query) =>
+                        $query->where('group_id', $user->group_id)
+                    )->ignore($id)
+                ],
+                'area_code' => [
+                    'sometimes',
+                    'required',
+                    'string',
+                    'max:255',
+                    Rule::unique('areas')->where(
+                        fn($query) =>
+                        $query->where('group_id', $user->group_id)
+                    )->ignore($id)
+                ],
+                'is_primary' => 'sometimes|boolean'
+            ]);
+
+            // 🔥 Jika is_primary diubah jadi true, set area lain jadi false
+            if (isset($validated['is_primary']) && $validated['is_primary']) {
+                ModelArea::where('group_id', $user->group_id)
+                    ->where('id', '!=', $id)
+                    ->update(['is_primary' => false]);
+            }
+
+            $area->update($validated);
+
+            ActivityLogged::dispatch('UPDATE', $area->getOriginal(), $area->fresh());
+
+            return ResponseFormatter::success($area->fresh(), 'Data area berhasil diupdate', 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseFormatter::error($e->errors(), 'Validasi gagal', 422);
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
+
+    /**
+     * POST /api/v1/areas/assign
+     * Assign teknisi atau kasir ke area
      */
     public function assignTechnician(Request $request)
     {
@@ -135,12 +246,12 @@ class AreaController extends Controller
             $area = ModelArea::findOrFail($validated['area_id']);
 
             if ($area->group_id !== $user->group_id) {
-                return response()->json(['message' => 'Area tidak ditemukan!'], 403);
+                return ResponseFormatter::error(null, 'Area tidak ditemukan!', 403);
             }
 
             $newTechnicians = $validated['technician_ids'] ?? [];
 
-            // 🔹 Update pivot tanpa duplikat & sinkronisasi otomatis
+            // 🔹 Sync pivot table
             $area->assignedTechnicians()->sync($newTechnicians);
 
             ActivityLogged::dispatch('UPDATE', null, [
@@ -159,30 +270,26 @@ class AreaController extends Controller
         }
     }
 
-
     /**
-     * DELETE /api/areas/{id}
-     * Hapus area.
+     * DELETE /api/v1/areas/{id}
+     * Hapus area
      */
     public function destroy($id)
     {
         try {
             $user = $this->getAuthUser();
-            $area = ModelArea::where('id', $id)->firstOrFail();
+            $area = ModelArea::where('id', $id)
+                ->where('group_id', $user->group_id)
+                ->firstOrFail();
 
-            if ($area->group_id !== $user->group_id) {
-                return response()->json(['message' => 'Area tidak ditemukan!'], 403);
-            }
-
-            $deletedData = $area;
+            $deletedData = $area->toArray();
             $area->delete();
 
             ActivityLogged::dispatch('DELETE', null, $deletedData);
 
-
-            return ResponseFormatter::success($area, 'Data berhasil dihapus', 200);
+            return ResponseFormatter::success(null, 'Data area berhasil dihapus', 200);
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
 }

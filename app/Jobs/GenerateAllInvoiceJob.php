@@ -2,16 +2,12 @@
 
 namespace App\Jobs;
 
-use App\Helpers\InvoiceHelper;
 use App\Models\InvoiceHomepass;
 use App\Models\Member;
-use App\Models\PaymentDetail;
 use Carbon\Carbon;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Xendit\Invoice\CreateInvoiceRequest;
-use Xendit\Invoice\InvoiceApi;
 
 class GenerateAllInvoiceJob implements ShouldQueue
 {
@@ -27,9 +23,9 @@ class GenerateAllInvoiceJob implements ShouldQueue
     public function handle()
     {
         $member = $this->member;
-        $apiInstance = new InvoiceApi();
-
         $pd = $member->paymentDetail;
+
+        //  Validation checks
         if (!$pd) {
             Log::warning("⚠️ Member ID {$member->id} tidak memiliki PaymentDetail, dilewati.");
             return;
@@ -40,78 +36,26 @@ class GenerateAllInvoiceJob implements ShouldQueue
             return;
         }
 
-        $price    = $pd->amount ?? 0;
-        $vat      = $pd->ppn ?? 0;
-        $discount = $pd->discount ?? 0;
-        $periode  = 1;
-
-        $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
-        $duration = InvoiceHelper::invoiceDurationThisMonth();
-
-        // === Tentukan baseDate ===
-        if ($pd->last_invoice) {
-            $baseDate = Carbon::parse($pd->last_invoice)->addMonthNoOverflow(); // lanjut bulan berikutnya
-        } elseif ($pd->active_date) {
-            $baseDate = Carbon::parse($pd->active_date);
-        } else {
-            $baseDate = Carbon::now();
-        }
-
-        // === Batas maksimal hanya sampai akhir bulan saat ini ===
+        //  Pakai method getBaseDate() dari model
+        $baseDate = $pd->getBaseDate();
         $endOfCurrentMonth = Carbon::now()->endOfMonth();
         $lastCreatedDate = null;
 
         // Loop per bulan mulai dari baseDate sampai akhir bulan ini
         while ($baseDate->lessThanOrEqualTo($endOfCurrentMonth)) {
-            $dueDate = $baseDate->copy()->endOfMonth(); // due_date = akhir bulan
+            $dueDate = $baseDate->copy()->endOfMonth();
 
-            // Cegah duplikasi invoice
-            $exists = InvoiceHomepass::where('member_id', $member->id)
-                ->whereYear('due_date', $dueDate->year)
-                ->whereMonth('due_date', $dueDate->month)
-                ->exists();
-
-            if ($exists) {
+            //  Pakai method hasInvoiceForMonth() dari model
+            if ($pd->hasInvoiceForMonth($dueDate)) {
                 Log::info("ℹ️ Invoice untuk member {$member->id} bulan {$dueDate->format('Y-m')} sudah ada, dilewati.");
             } else {
-                // Generate nomor invoice
-                $invNumber = InvoiceHelper::generateInvoiceNumber(
-                    $member->connection->area_id ?? 1,
-                    'H'
-                );
-
-                // Buat invoice ke Xendit
-                $create_invoice_request = new CreateInvoiceRequest([
-                    'external_id'      => $invNumber,
-                    'description'      => 'Tagihan nomor internet ' . ($member->connection->internet_number ?? '-') .
-                        ' Periode: ' . $dueDate->format('F Y'),
-                    'amount'           => intval($total_amount),
-                    'invoice_duration' => $duration,
-                    'currency'         => 'IDR',
-                    'payer_email'      => $member->email ?: 'customer@amanisp.net.id',
-                    'reminder_time'    => 1,
-                ]);
-
                 try {
-                    $generateInvoice = $apiInstance->createInvoice($create_invoice_request);
-
-                    InvoiceHomepass::create([
-                        'connection_id'        => $member->connection->id,
-                        'member_id'            => $member->id,
-                        'invoice_type'         => 'H',
-                        'start_date'           => now()->toDateString(),
-                        'due_date'             => $dueDate->toDateString(),
-                        'subscription_period'  => $dueDate->format('M Y'),
-                        'inv_number'           => $invNumber,
-                        'amount'               => $total_amount,
-                        'status'               => 'unpaid',
-                        'group_id'             => $member->group_id,
-                        'payment_url'          => $generateInvoice['invoice_url'],
-                    ]);
+                    //  Pakai method generateInvoiceForMonth() dari model
+                    $invoice = $pd->generateInvoiceForMonth($dueDate, 1);
 
                     $lastCreatedDate = $dueDate->toDateString();
 
-                    Log::info("✅ Invoice dibuat untuk member {$member->id} periode {$dueDate->format('F Y')}");
+                    Log::info("✅ Invoice dibuat untuk member {$member->id} periode {$dueDate->format('F Y')} - {$invoice->inv_number}");
                 } catch (\Throwable $th) {
                     Log::error("❌ Gagal generate invoice untuk member {$member->id} bulan {$dueDate->format('F Y')}: {$th->getMessage()}");
                 }
@@ -121,10 +65,56 @@ class GenerateAllInvoiceJob implements ShouldQueue
             $baseDate->addMonthNoOverflow();
         }
 
-        // Update last_invoice jika ada yang dibuat
+        //  Update last_invoice pakai method updateLastInvoice()
         if ($lastCreatedDate) {
-            $pd->update(['last_invoice' => $lastCreatedDate]);
+            $pd->updateLastInvoice($lastCreatedDate);
             Log::info("📝 Update last_invoice member {$member->id} → {$lastCreatedDate}");
         }
     }
 }
+    // public function generateInvoiceForMonth(Carbon $dueDate, $attempt = 1)
+    // {
+    //     $member = $this->member;
+
+    //     if (!$member || !$member->billing || !$member->connection) {
+    //         throw new \Exception("Member tidak memiliki data billing atau koneksi.");
+    //     }
+
+    //     // Cek apakah invoice untuk bulan tersebut sudah ada
+    //     if ($this->hasInvoiceForMonth($dueDate)) {
+    //         throw new \Exception("Invoice untuk bulan {$dueDate->format('F Y')} sudah ada.");
+    //     }
+
+    //     // Generate nomor invoice
+    //     $invNumber = 'INV-' . strtoupper(uniqid());
+
+    //     // Hitung total amount dari billing
+    //     $totalAmount = $member->billing->monthly_fee; // Contoh sederhana
+
+    //     // Panggil Xendit API untuk membuat invoice
+    //     $xenditInvoice = XenditService::createInvoice([
+    //         'external_id' => $invNumber,
+    //         'amount' => $totalAmount,
+    //         'payer_email' => $member->email,
+    //         'description' => "Invoice untuk {$dueDate->format('F Y')}",
+    //         'due_date' => $dueDate->toIso8601String(),
+    //     ]);
+
+    //     // Simpan invoice ke database
+    //     $invoice = InvoiceHomepass::create([
+    //         'member_id' => $member->id,
+    //         'connection_id' => $member->connection->id,
+    //         'invoice_type' => 'H',
+    //         'start_date' => $dueDate->copy()->startOfMonth()->toDateString(),
+    //         'due_date' => $dueDate->toDateString(),
+    //         'subscription_period' => $dueDate->format('F Y'),
+    //         'inv_number' => $invNumber,
+    //         'amount' => $totalAmount,
+    //         'status' => 'unpaid',
+    //         'group_id' => $this->group_id,
+    //         'payment_url' => $xenditInvoice['invoice_url'],
+    //     ]);
+    //     // Update last_invoice
+    //     $this->updateLastInvoice($dueDate->toDateString());
+    //     return $invoice;
+    // }
