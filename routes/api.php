@@ -22,8 +22,12 @@ use Illuminate\Support\Facades\Route;
 Route::post('/coba/send-message', [WhatsappController::class, 'testConnection']);
 Route::post('/whatsapp/webhook/{groupId?}', [WhatsAppApiController::class, 'webhook']);
 
+//  Public Routes (No Auth Required)
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);
+
+//  superadmin areas for signup dropdown (public access)
+Route::get('/v1/areas/superadmin-areas', [AreaController::class, 'getSuperadminAreas']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1')->group(function () {
@@ -38,6 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Area
         Route::get('/areas', [AreaController::class, 'index']);
         Route::post('/areas', [AreaController::class, 'store']);
+        Route::put('/areas/{id}', [AreaController::class, 'update']); // 🔥 NEW: Update area (untuk set is_primary)
         Route::post('/areas/assign', [AreaController::class, 'assignTechnician']);
         Route::delete('/areas/{id}', [AreaController::class, 'destroy']);
 
@@ -119,7 +124,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payouts', [PayoutController::class, 'createPayout']);
         Route::post('/payouts/{id}/check-status', [PayoutController::class, 'checkStatus']);
         Route::delete('/payouts/{id}', [PayoutController::class, 'destroy']);
-
 
         // Logs
         Route::get('/logs', [LogsController::class, 'index']);
