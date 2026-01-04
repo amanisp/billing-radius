@@ -43,11 +43,6 @@ class User extends Authenticatable
         ];
     }
 
-    public function mitra()
-    {
-        return $this->belongsTo(Mitra::class, 'group_id');
-    }
-
     public function area()
     {
         return $this->belongsTo(Area::class, 'area_id');
