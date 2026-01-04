@@ -96,7 +96,7 @@ class GenerateAllInvoiceJob implements ShouldQueue
                     $generateInvoice = $apiInstance->createInvoice($create_invoice_request);
 
                     InvoiceHomepass::create([
-                        'connection_id'        => $member->connection?->area_id ?? 1,
+                        'connection_id'        => $member->connection->id,
                         'member_id'            => $member->id,
                         'invoice_type'         => 'H',
                         'start_date'           => now()->toDateString(),

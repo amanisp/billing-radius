@@ -720,99 +720,100 @@ class InvoiceController extends Controller
     }
 
     public function xenditCallback(Request $request)
-    {
-        $callbackToken = $request->header('X-CALLBACK-TOKEN');
+{
+    $callbackToken = $request->header('X-CALLBACK-TOKEN');
 
-        if ($callbackToken !== env('XENDIT_CALLBACK_TOKEN')) {
-            Log::warning('Invalid Xendit callback token');
-            return response()->json(['message' => 'Invalid callback token'], 401);
-        }
+    if ($callbackToken !== env('XENDIT_CALLBACK_TOKEN')) {
+        Log::warning('Invalid Xendit callback token');
+        return response()->json(['message' => 'Invalid callback token'], 401);
+    }
 
-        DB::beginTransaction();
-        try {
-            $externalId = $request->input('external_id'); // invoice number
-            $status = $request->input('status'); // PAID, EXPIRED, etc
-            $paidAmount = $request->input('paid_amount');
-            $paidAt = $request->input('paid_at'); // ISO 8601 datetime
+    DB::beginTransaction();
+    try {
+        $externalId = $request->input('external_id'); // invoice number
+        $status = $request->input('status'); // PAID, EXPIRED, etc
+        $paidAmount = $request->input('paid_amount');
+        $paidAt = $request->input('paid_at'); // ISO 8601 datetime
 
-            Log::info('Xendit Callback Received', [
-                'external_id' => $externalId,
-                'status' => $status,
-                'paid_amount' => $paidAmount
+        Log::info('Xendit Callback Received', [
+            'external_id' => $externalId,
+            'status' => $status,
+            'paid_amount' => $paidAmount
+        ]);
+
+        if ($status === 'PAID') {
+            $invoice = InvoiceHomepass::with(['member.paymentDetail', 'connection.profile'])
+                ->where('inv_number', $externalId)
+                ->firstOrFail();
+
+            // Update invoice
+            $invoice->update([
+                'status' => 'paid',
+                'payment_method' => 'payment_gateway',
+                'paid_at' => $paidAt ? Carbon::parse($paidAt) : now()
             ]);
 
-            if ($status === 'PAID') {
-                $invoice = InvoiceHomepass::with(['member.paymentDetail', 'connection.profile'])
-                    ->where('inv_number', $externalId)
-                    ->firstOrFail();
+            AccountingTransaction::create([
+                'group_id' => $invoice->group_id,
+                'transaction_type' => 'income',
+                'category' => 'subscription_payment',
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->inv_number,
+                'member_name' => $invoice->member->fullname,
+                'amount' => $paidAmount,
+                'payment_method' => 'payment_gateway',
+                'received_by' => null, // sistem otomatis
+                'transaction_date' => $paidAt ? Carbon::parse($paidAt) : now(),
+                'description' => 'Pembayaran invoice via Payment Gateway',
+                'notes' => 'Pembayaran otomatis via Xendit - ' . $invoice->subscription_period,
+            ]);
 
-                // Update invoice
-                $invoice->update([
-                    'status' => 'paid',
-                    'payment_method' => 'payment_gateway',
-                    'paid_at' => $paidAt ? Carbon::parse($paidAt) : now()
+            // Update last_invoice
+            if ($invoice->member && $invoice->member->paymentDetail) {
+                $dueDate = Carbon::parse($invoice->due_date);
+                PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
+                    'last_invoice' => $dueDate->format('Y-m-d'),
                 ]);
-
-                AccountingTransaction::create([
-                    'group_id' => $invoice->group_id,
-                    'transaction_type' => 'income',
-                    'category' => 'subscription_payment',
-                    'invoice_id' => $invoice->id,
-                    'invoice_number' => $invoice->inv_number,
-                    'member_name' => $invoice->member->fullname,
-                    'amount' => $paidAmount,
-                    'payment_method' => 'payment_gateway',
-                    'received_by' => null, // sistem otomatis
-                    'transaction_date' => $paidAt ? Carbon::parse($paidAt) : now(),
-                    'description' => 'Pembayaran invoice via Payment Gateway',
-                    'notes' => 'Pembayaran otomatis via Xendit - ' . $invoice->subscription_period,
-                ]);
-
-                // Update last_invoice
-                if ($invoice->member && $invoice->member->paymentDetail) {
-                    $dueDate = Carbon::parse($invoice->due_date);
-                    PaymentDetail::where('id', $invoice->member->payment_detail_id)->update([
-                        'last_invoice' => $dueDate->format('Y-m-d'),
-                    ]);
-                }
-
-                DB::commit();
-
-                // Send notification
-                $apiKey = $this->getApiKey($invoice->group_id);
-                if ($apiKey) {
-                    $footer = GlobalSettings::where('group_id', $invoice->group_id)->value('footer');
-
-                    $this->whatsappService->sendFromTemplate(
-                        $apiKey,
-                        $invoice->member->phone_number,
-                        'payment_paid',
-                        [
-                            'full_name'   => $invoice->member->fullname,
-                            'no_invoice'  => $invoice->inv_number,
-                            'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
-                            'pppoe_user' => $invoice->connection->username ?? '-',
-                            'pppoe_profile' => $invoice->connection->profile->name ?? '-',
-                            'period'    => $invoice->subscription_period,
-                            'payment_gateway' => 'Payment Gateway',
-                            'footer' => $footer
-                        ],
-                        ['group_id' => $invoice->group_id]
-                    );
-                }
-
-                Log::info('Xendit Callback Processed Successfully', ['invoice' => $externalId]);
             }
 
-            return response()->json(['message' => 'Callback processed'], 200);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Xendit callback error: ' . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-            return response()->json(['message' => 'Error processing callback'], 500);
+            DB::commit();
+
+            // Send notification
+            $apiKey = $this->getApiKey($invoice->group_id);
+            if ($apiKey) {
+                $footer = GlobalSettings::where('group_id', $invoice->group_id)->value('footer');
+
+                $this->whatsappService->sendFromTemplate(
+                    $apiKey,
+                    $invoice->member->phone_number,
+                    'payment_paid',
+                    [
+                        'full_name'   => $invoice->member->fullname,
+                        'no_invoice'  => $invoice->inv_number,
+                        'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                        'pppoe_user' => $invoice->connection->username ?? '-',
+                        'pppoe_profile' => $invoice->connection->profile->name ?? '-',
+                        'period'    => $invoice->subscription_period,
+                        'payment_gateway' => 'Payment Gateway',
+                        'footer' => $footer
+                    ],
+                    ['group_id' => $invoice->group_id]
+                );
+            }
+
+            Log::info('Xendit Callback Processed Successfully', ['invoice' => $externalId]);
         }
+
+        return response()->json(['message' => 'Callback processed'], 200);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Xendit callback error: ' . $e->getMessage(), [
+            'trace' => $e->getTraceAsString()
+        ]);
+        return response()->json(['message' => 'Error processing callback'], 500);
     }
+}
 
     public function generateAll(Request $request)
     {
@@ -916,7 +917,7 @@ class InvoiceController extends Controller
 
             // Generate invoice number
             $invNumber = InvoiceHelper::generateInvoiceNumber(
-                $member->connection?->area_id ?? 1,
+                $member->connection->area_id ? $member->connection->area_id : 1,
                 'H'
             );
 
@@ -931,7 +932,7 @@ class InvoiceController extends Controller
             // === Xendit invoice ===
             $create_invoice_request = new CreateInvoiceRequest([
                 'external_id'      => $invNumber,
-                'description'      => 'Tagihan nomor internet ' . $member->connection?->internet_number .
+                'description'      => 'Tagihan nomor internet ' . $member->connection->internet_number .
                     'Periode: ' . $request->periode,
                 'amount'           => intval($total_amount),
                 'invoice_duration' => $duration,
@@ -944,7 +945,7 @@ class InvoiceController extends Controller
 
             // === Simpan ke database ===
             $data = [
-                'connection_id'        => $member->connection?->id,
+                'connection_id'        => $member->connection->id,
                 'member_id'            => $member->id,
                 'invoice_type'         => 'H',
                 'start_date'           => now()->toDateString(), // Hanya tanggal, tanpa jam
