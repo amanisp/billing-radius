@@ -9,7 +9,10 @@ class OpticalDist extends Model
 {
     protected $fillable = ['name', 'group_id', 'area_id', 'lat', 'lng', 'ip_public', 'device_name', 'capacity', 'type'];
 
-    
+    public function mitras()
+    {
+        return $this->hasMany(Mitra::class, 'pop_id');
+    }
 
 
     public function mitraCount()
