@@ -44,18 +44,24 @@ class InvoiceController extends Controller
         $year = (int) $request->year;
         $month = (int) $request->month;
 
+        // Ambil member dengan payment detail
         $member = Member::with('paymentDetail')->find($request->member_id);
 
         $nextInvoiceDate = null;
-        $lastCreatedInvoice = null;
 
         if ($member && $member->paymentDetail) {
+            // PERBAIKAN: Ambil invoice terakhir yang pernah dibuat (tidak peduli paid/unpaid)
             $lastCreatedInvoice = InvoiceHomepass::where('member_id', $member->id)
                 ->orderByDesc('due_date')
                 ->first();
 
-            //  Pakai method getNextInvoiceStartDate()
-            $nextInvoiceDate = $member->paymentDetail->getNextInvoiceStartDate()->toDateString();
+            if ($lastCreatedInvoice) {
+                $lastInvoice = $member->paymentDetail->last_invoice;
+                $nextInvoiceDate = \Carbon\Carbon::parse($lastInvoice)->addMonth()->toDateString();
+            } else {
+                // Jika benar-benar invoice pertama kali, gunakan active_date
+                $nextInvoiceDate = $member->paymentDetail->active_date;
+            }
         }
 
         return response()->json([
@@ -811,35 +817,70 @@ class InvoiceController extends Controller
     public function generateAll(Request $request)
     {
         $user = Auth::user();
+        $groupId = $user->group_id;
+        $now = Carbon::now()->startOfMonth();
 
-        // ✅ Ambil payment details dengan billing aktif
-        $paymentDetails = PaymentDetail::with('member.connection')
-            ->where('group_id', $user->group_id)
-            ->whereHas('member', function ($q) {
-                $q->where('billing', 1);
-            })
+        // Ambil semua member aktif billing
+        $members = Member::with(['paymentDetail', 'connection.profile'])
+            ->where('group_id', $groupId)
+            ->where('billing', 1)
             ->get();
 
-        $generated = 0;
+        $membersToGenerate = collect();
 
-        foreach ($paymentDetails as $pd) {
-            // ✅ Pakai method needsInvoiceGeneration()
-            if ($pd->needsInvoiceGeneration()) {
-                GenerateAllInvoiceJob::dispatch($pd->member)->onQueue('invoices');
-                $generated++;
+        foreach ($members as $member) {
+            $pd = $member->paymentDetail;
+            if (!$pd) continue;
+
+            // Ambil invoice terakhir
+            $lastInvoice = InvoiceHomepass::where('member_id', $member->id)
+                ->orderByDesc('due_date')
+                ->first();
+
+            // Jika belum ada invoice sama sekali → gunakan active_date
+            if (!$lastInvoice) {
+                $activeDate = $pd->active_date ? Carbon::parse($pd->active_date)->startOfMonth() : $now;
+                // Jika active_date <= bulan ini, generate 1 invoice bulan ini
+                if ($activeDate->lte($now)) {
+                    $membersToGenerate->push($member);
+                }
+                continue;
+            }
+
+            // Sudah ada invoice → cek apakah sudah sampai bulan ini atau ke depan
+            $hasFutureInvoice = InvoiceHomepass::where('member_id', $member->id)
+                ->whereDate('due_date', '>=', $now)
+                ->exists();
+
+            if ($hasFutureInvoice) {
+                // Sudah ada invoice bulan ini atau bulan depan → skip
+                continue;
+            }
+
+            // Jika belum ada invoice dari bulan lalu sampai sekarang, generate
+            $lastDue = Carbon::parse($lastInvoice->due_date)->startOfMonth();
+            if ($lastDue->lt($now)) {
+                $monthsDiff = $lastDue->diffInMonths($now);
+                if ($monthsDiff >= 1) {
+                    $membersToGenerate->push($member);
+                }
             }
         }
 
-        if ($generated === 0) {
+        if ($membersToGenerate->isEmpty()) {
             return response()->json([
-                'status' => 'info',
+                'status'  => 'info',
                 'message' => 'Semua pelanggan sudah memiliki invoice sampai bulan ini atau ke depan.'
             ]);
         }
 
+        foreach ($membersToGenerate as $member) {
+            GenerateAllInvoiceJob::dispatch($member)->onQueue('invoices');
+        }
+
         return response()->json([
-            'status' => 'success',
-            'message' => "Proses generate invoice sedang berjalan di background ($generated pelanggan)."
+            'status'  => 'success',
+            'message' => 'Proses generate invoice sedang berjalan di background (' . $membersToGenerate->count() . ' pelanggan).'
         ]);
     }
 
@@ -847,28 +888,76 @@ class InvoiceController extends Controller
     public function createInv(Request $request)
     {
         try {
+            $apiInstance = new InvoiceApi();
+
             $request->validate([
-                'member_id' => 'required|string|max:255',
-                'subs_periode' => 'required|integer|min:1',
-                'due_date' => 'required|date',
-                'periode' => 'required|string',
+                'member_id'   => 'required|string|max:255',
+                'subsperiode' => 'required|integer|min:1', // jumlah bulan
+                'duedate'     => 'required',               // tetap pakai untuk tampilan
+                'periode'     => 'required',
+                'item'        => 'required',
+                'amount'      => 'required',
             ]);
 
-            $member = Member::with('paymentDetail', 'connection')
+            $member = Member::with(['paymentDetail', 'connection.profile'])
                 ->where('id', $request->member_id)
                 ->where('billing', 1)
                 ->firstOrFail();
 
-            $dueDate = Carbon::parse($request->due_date)->endOfMonth();
+            $pd = $member->paymentDetail;
 
-            // ✅ Pakai method generateInvoiceForMonth()
-            $invoice = $member->paymentDetail->generateInvoiceForMonth(
-                $dueDate,
-                (int) $request->subs_periode
+            $price    =  $pd->amount;
+            $vat      =  $pd->ppn;
+            $discount =  $pd->discount;
+            $periode  = (int) $request->subsperiode; // jumlah bulan dibayar
+
+            // Hitung total
+            $total_amount = (($price + ($price * $vat / 100)) - $discount) * $periode;
+
+            // Generate invoice number
+            $invNumber = InvoiceHelper::generateInvoiceNumber(
+                $member->connection?->area_id ?? 1,
+                'H'
             );
 
-            // ✅ Update last_invoice
-            $member->paymentDetail->updateLastInvoice($dueDate);
+            $duration = InvoiceHelper::invoiceDurationThisMonth();
+
+            $dueDate = Carbon::parse($request->duedate)->startOfDay();
+            $lastInvoice = $dueDate->copy()->addMonths($request->subsperiode - 1)->toDateString();
+            PaymentDetail::where('id', $member->payment_detail_id)
+                ->update(['last_invoice' => $lastInvoice]);
+
+
+            // === Xendit invoice ===
+            $create_invoice_request = new CreateInvoiceRequest([
+                'external_id'      => $invNumber,
+                'description'      => 'Tagihan nomor internet ' . $member->connection?->internet_number .
+                    'Periode: ' . $request->periode,
+                'amount'           => intval($total_amount),
+                'invoice_duration' => $duration,
+                'currency'         => 'IDR',
+                'payer_email'      => $member->email ?: 'customer@amanisp.net.id',
+                'reminder_time'    => 1
+            ]);
+
+            $generateInvoice = $apiInstance->createInvoice($create_invoice_request);
+
+            // === Simpan ke database ===
+            $data = [
+                'connection_id'        => $member->connection?->id,
+                'member_id'            => $member->id,
+                'invoice_type'         => 'H',
+                'start_date'           => now()->toDateString(), // Hanya tanggal, tanpa jam
+                'due_date'             => $request->duedate,     // Hanya tanggal, tanpa jam
+                'subscription_period'  => $request->periode,
+                'inv_number'           => $invNumber,
+                'amount'               => $total_amount,
+                'status'               => 'unpaid',
+                'group_id'             => $member->group_id,
+                'payment_url'          => $generateInvoice['invoice_url'],
+            ];
+
+            InvoiceHomepass::create($data);
 
             return redirect()->route('billing.invoice')
                 ->with('success', 'Invoice berhasil dibuat');
