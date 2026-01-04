@@ -89,8 +89,8 @@ class NotificationController extends Controller
                                 'full_name'   => $invoice->member->fullname,
                                 'no_invoice'  => $invoice->inv_number,
                                 'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
-                                'pppoe_user' => $invoice->connection->username,
-                                'pppoe_profile' => $invoice->connection->profile->name,
+                                'pppoe_user' => $invoice->connection?->username,
+                                'pppoe_profile' => $invoice->connection?->profile->name,
                                 'period'    => $invoice->subscription_period,
                                 'payment_gateway' => 'PAYMENT GATEWAY',
                                 'footer' => $footer
