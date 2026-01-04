@@ -11,7 +11,6 @@ use App\Http\Controllers\FreeradiusController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\mapsController;
 use App\Http\Controllers\MemberController;
-use App\Http\Controllers\MitraController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OnlinePppController;
 use App\Http\Controllers\OpticalController;
@@ -79,12 +78,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 
     // Role Super Admin
-    // Route::resource('/mitra', mitraController::class);
-    Route::get('/mitra', [MitraController::class, 'index'])->name('mitra.index');
-    Route::get('/mitra/show/{id}', [MitraController::class, 'show'])->name('mitra.show');
-    Route::get('/mitra/read', [MitraController::class, 'getData'])->name('mitra.getData');
-    Route::post('/mitra', [MitraController::class, 'store'])->name('mitra.store');
-    Route::delete('/mitra/{id}', [MitraController::class, 'destroy'])->name('mitra.destroy');
+
     Route::resource('/maps', mapsController::class);
 
     Route::get('/logs', [ActivityLogController::class, 'index'])->name('logs.index');
