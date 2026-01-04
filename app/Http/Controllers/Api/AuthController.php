@@ -31,7 +31,7 @@ class AuthController extends Controller
                 'email' => 'required|string|email|max:255|unique:users,email',
                 'username' => 'required|string|max:255|unique:users,username',
                 'password' => 'required|string|min:8',
-                'area_id' => 'nullable|exists:areas,id', 
+                'area_id' => 'nullable|exists:areas,id',
             ]);
 
             $area = null;
@@ -59,7 +59,7 @@ class AuthController extends Controller
             $group = Groups::create([
                 'name' => $validated['name'],
                 'slug' => Str::slug($validated['name']),
-                'wa_api_token' => Str::random(15),
+                'wa_api_token' => 'default',
                 'group_type' => 'mitra',
             ]);
 
