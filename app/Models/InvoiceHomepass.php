@@ -2,37 +2,50 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class InvoiceHomepass extends Model
 {
+    use HasFactory;
+
+    protected $table = 'invoice_homepasses';
+
     protected $fillable = [
-        'connection_id',
         'payer_id',
+        'group_id',
         'member_id',
+        'payment_method',
         'invoice_type',
         'start_date',
         'due_date',
+        'paid_at',
         'subscription_period',
         'inv_number',
+        'payment_url',
         'amount',
         'status',
-        'group_id',
-        'payment_url',
-        'payment_method',
-        'paid_at'
+        'connection_id'
     ];
 
     protected $casts = [
         'start_date' => 'date',
         'due_date' => 'date',
-        'paid_at' => 'datetime',
+        'paid_at' => 'date',
         'amount' => 'integer',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
+    // Relationships
     public function payer()
     {
         return $this->belongsTo(User::class, 'payer_id');
+    }
+
+    public function group()
+    {
+        return $this->belongsTo(Groups::class, 'group_id');
     }
 
     public function member()
@@ -45,12 +58,7 @@ class InvoiceHomepass extends Model
         return $this->belongsTo(Connection::class, 'connection_id');
     }
 
-    public function group()
-    {
-        return $this->belongsTo(Groups::class, 'group_id');
-    }
-
-    // Scope untuk filter invoice by status
+    // Scopes
     public function scopePaid($query)
     {
         return $query->where('status', 'paid');
@@ -61,24 +69,29 @@ class InvoiceHomepass extends Model
         return $query->where('status', 'unpaid');
     }
 
-    // Scope untuk filter invoice by periode
-    public function scopeByMonth($query, $month, $year)
+    public function scopePending($query)
     {
-        return $query->whereMonth('start_date', $month)
-            ->whereYear('start_date', $year);
+        return $query->where('status', 'pending');
     }
 
-    public function accountingTransactions()
+    public function scopeByYear($query, $year)
     {
-        return $this->hasMany(AccountingTransaction::class, 'invoice_id');
+        return $query->whereYear('paid_at', $year);
     }
 
-    // Helper method untuk check apakah invoice overdue
-    public function isOverdue()
+    public function scopeByMonth($query, $month, $year = null)
     {
-        if ($this->status === 'paid') {
-            return false;
+        $query->whereMonth('paid_at', $month);
+
+        if ($year) {
+            $query->whereYear('paid_at', $year);
         }
-        return $this->due_date < now();
+
+        return $query;
+    }
+
+    public function scopeByGroup($query, $groupId)
+    {
+        return $query->where('group_id', $groupId);
     }
 }

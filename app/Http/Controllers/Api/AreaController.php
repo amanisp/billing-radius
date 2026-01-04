@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Events\ActivityLogged;
-use App\Helpers\ResponseFormatter;
 use App\Models\Area as ModelArea;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -29,33 +29,17 @@ class AreaController extends Controller
         return null;
     }
 
-    /**
-     * 🔥 GET SUPERADMIN AREAS (Public - untuk dropdown signup)
-     *
-     * GET /api/v1/areas/superadmin-areas
-     *
-     * Response:
-     * {
-     *   "data": {
-     *     "areas": [...],
-     *     "default_area_id": 1
-     *   }
-     * }
-     */
     public function getSuperadminAreas(Request $request)
     {
         try {
             $areas = ModelArea::where('group_id', 1)
-                ->select('id', 'name', 'area_code', 'is_primary', 'created_at')
+                ->select('id', 'name', 'area_code', 'created_at')
                 ->orderBy('name', 'asc')
                 ->get();
 
-            // Cari primary area
-            $primaryArea = $areas->firstWhere('is_primary', true);
-
             $data = [
                 'areas' => $areas,
-                'default_area_id' => $primaryArea?->id,
+                'default_area_id' => $areas->first()?->id,
                 'total' => $areas->count()
             ];
 
@@ -65,10 +49,6 @@ class AreaController extends Controller
         }
     }
 
-    /**
-     * GET /api/v1/areas
-     * Ambil daftar area berdasarkan role user yang login
-     */
     public function index(Request $request)
     {
         try {
@@ -78,23 +58,19 @@ class AreaController extends Controller
                 return ResponseFormatter::error(null, 'Unauthorized', 401);
             }
 
-            $query = ModelArea::select('id', 'name', 'area_code', 'group_id', 'is_primary', 'created_at')
+            $query = ModelArea::select('id', 'name', 'area_code', 'group_id', 'created_at')
                 ->with(['assignedTechnicians'])
                 ->withCount(['opticals', 'connection']);
 
-            // 🔥 Filter berdasarkan role
             if (in_array($user->role, ['teknisi', 'kasir'])) {
-                // Teknisi/Kasir: hanya area yang di-assign
                 $assignedIds = DB::table('technician_areas')
                     ->where('user_id', $user->id)
                     ->pluck('area_id');
                 $query->whereIn('id', $assignedIds);
             } else {
-                // Superadmin, Mitra, Admin: filter by group_id
                 $query->where('group_id', $user->group_id);
             }
 
-            // 🔍 Search
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
@@ -102,12 +78,10 @@ class AreaController extends Controller
                 });
             }
 
-            // 🔄 Sort
             $sortField = $request->get('sort_field', 'id');
             $sortDirection = $request->get('sort_direction', 'asc');
             $query->orderBy($sortField, $sortDirection);
 
-            // 📄 Pagination
             $perPage = $request->get('per_page', 10);
             $areas = $query->paginate($perPage);
 
@@ -117,10 +91,6 @@ class AreaController extends Controller
         }
     }
 
-    /**
-     * POST /api/v1/areas
-     * Tambah area baru
-     */
     public function store(Request $request)
     {
         try {
@@ -143,20 +113,12 @@ class AreaController extends Controller
                     'max:255',
                     Rule::unique('areas')->where(fn($query) => $query->where('group_id', $user->group_id))
                 ],
-                'is_primary' => 'nullable|boolean' // 🔥 NEW
             ]);
-
-            // 🔥 Jika is_primary = true, set area lain jadi false
-            if (isset($validated['is_primary']) && $validated['is_primary']) {
-                ModelArea::where('group_id', $user->group_id)
-                    ->update(['is_primary' => false]);
-            }
 
             $newArea = ModelArea::create([
                 'group_id' => $user->group_id,
                 'name' => $validated['name'],
                 'area_code' => $validated['area_code'],
-                'is_primary' => $validated['is_primary'] ?? false
             ]);
 
             ActivityLogged::dispatch('CREATE', null, $newArea);
@@ -169,10 +131,6 @@ class AreaController extends Controller
         }
     }
 
-    /**
-     * 🔥 PUT /api/v1/areas/{id}
-     * Update area (termasuk set primary)
-     */
     public function update(Request $request, $id)
     {
         try {
@@ -192,30 +150,16 @@ class AreaController extends Controller
                     'required',
                     'string',
                     'max:255',
-                    Rule::unique('areas')->where(
-                        fn($query) =>
-                        $query->where('group_id', $user->group_id)
-                    )->ignore($id)
+                    Rule::unique('areas')->where(fn($query) => $query->where('group_id', $user->group_id))->ignore($id)
                 ],
                 'area_code' => [
                     'sometimes',
                     'required',
                     'string',
                     'max:255',
-                    Rule::unique('areas')->where(
-                        fn($query) =>
-                        $query->where('group_id', $user->group_id)
-                    )->ignore($id)
+                    Rule::unique('areas')->where(fn($query) => $query->where('group_id', $user->group_id))->ignore($id)
                 ],
-                'is_primary' => 'sometimes|boolean'
             ]);
-
-            // 🔥 Jika is_primary diubah jadi true, set area lain jadi false
-            if (isset($validated['is_primary']) && $validated['is_primary']) {
-                ModelArea::where('group_id', $user->group_id)
-                    ->where('id', '!=', $id)
-                    ->update(['is_primary' => false]);
-            }
 
             $area->update($validated);
 
@@ -229,10 +173,6 @@ class AreaController extends Controller
         }
     }
 
-    /**
-     * POST /api/v1/areas/assign
-     * Assign teknisi atau kasir ke area
-     */
     public function assignTechnician(Request $request)
     {
         try {
@@ -251,7 +191,6 @@ class AreaController extends Controller
 
             $newTechnicians = $validated['technician_ids'] ?? [];
 
-            // 🔹 Sync pivot table
             $area->assignedTechnicians()->sync($newTechnicians);
 
             ActivityLogged::dispatch('UPDATE', null, [
@@ -270,10 +209,6 @@ class AreaController extends Controller
         }
     }
 
-    /**
-     * DELETE /api/v1/areas/{id}
-     * Hapus area
-     */
     public function destroy($id)
     {
         try {

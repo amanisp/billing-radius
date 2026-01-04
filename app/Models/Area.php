@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use Google\Service\SQLAdmin\Resource\Connect;
 use Illuminate\Database\Eloquent\Model;
 
 class Area extends Model
@@ -11,17 +10,8 @@ class Area extends Model
         'name',
         'group_id',
         'area_code',
-        'is_primary'
     ];
 
-    // Cast is_primary sebagai boolean
-    protected $casts = [
-        'is_primary' => 'boolean'
-    ];
-
-    /**
-     * Relasi Area dengan Optical (Area memiliki banyak Optical)
-     */
     public function opticals()
     {
         return $this->hasMany(OpticalDist::class);
@@ -37,9 +27,6 @@ class Area extends Model
         return $this->mitras()->count();
     }
 
-    /**
-     * Menghitung jumlah ODP yang ada di Area ini
-     */
     public function opticalCount()
     {
         return $this->opticals()->count();
@@ -50,15 +37,11 @@ class Area extends Model
         return $this->hasMany(Connection::class, 'area_id');
     }
 
-    // Hitung jumlah akun PPPoE yang menggunakan ODP ini
     public function pppoeCount()
     {
         return $this->connection()->count();
     }
 
-    /**
-     * Relasi area dengan teknisi yang di-assign
-     */
     public function assignedTechnicians()
     {
         return $this->belongsToMany(User::class, 'technician_areas', 'area_id', 'user_id')
@@ -66,17 +49,6 @@ class Area extends Model
             ->withTimestamps();
     }
 
-    /**
-     *  Scope untuk ambil area primary
-     */
-    public function scopePrimary($query)
-    {
-        return $query->where('is_primary', true);
-    }
-
-    /**
-     * 🔥 Scope untuk ambil area superadmin
-     */
     public function scopeSuperadminAreas($query)
     {
         return $query->where('group_id', 1);

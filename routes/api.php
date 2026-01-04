@@ -13,7 +13,6 @@ use App\Http\Controllers\Api\PayoutController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\VpnController;
-use App\Http\Controllers\Api\WhastappApi;
 use App\Http\Controllers\Api\WhatsAppApiController;
 use App\Http\Controllers\WhatsappController;
 use Illuminate\Support\Facades\Route;
@@ -22,11 +21,11 @@ use Illuminate\Support\Facades\Route;
 Route::post('/coba/send-message', [WhatsappController::class, 'testConnection']);
 Route::post('/whatsapp/webhook/{groupId?}', [WhatsAppApiController::class, 'webhook']);
 
-//  Public Routes (No Auth Required)
+// Public Routes (No Auth Required)
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);
 
-//  superadmin areas for signup dropdown (public access)
+// superadmin areas for signup dropdown (public access)
 Route::get('/v1/areas/superadmin-areas', [AreaController::class, 'getSuperadminAreas']);
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -34,15 +33,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
 
-        // ======Admin======
-        Route::get('/admin', [AdminController::class, 'index']);
-        Route::post('/admin', [AdminController::class, 'store']);
+        // ======Admin/Mitra Management (superadmin only)======
+        Route::middleware('role:superadmin')->group(function () {
+            Route::get('/admin/mitras', [AdminController::class, 'index']);
+            Route::post('/admin/mitras', [AdminController::class, 'store']);
+            Route::put('/admin/mitras/{id}', [AdminController::class, 'update']);
+            Route::delete('/admin/mitras/{id}', [AdminController::class, 'destroy']);
+        });
 
         //======Start Master Data======
         // Area
         Route::get('/areas', [AreaController::class, 'index']);
         Route::post('/areas', [AreaController::class, 'store']);
-        Route::put('/areas/{id}', [AreaController::class, 'update']); // 🔥 NEW: Update area (untuk set is_primary)
+        Route::put('/areas/{id}', [AreaController::class, 'update']);
         Route::post('/areas/assign', [AreaController::class, 'assignTechnician']);
         Route::delete('/areas/{id}', [AreaController::class, 'destroy']);
 

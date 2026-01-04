@@ -2,202 +2,156 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
-use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Controller;
-use App\Models\TechnicianArea;
+use App\Models\Area;
+use App\Models\GlobalSettings;
+use App\Models\Groups;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
-
-    private function getAuthUser()
-    {
-        $user = Auth::user();
-        if ($user instanceof User) return $user;
-
-        $id = Auth::id();
-        if ($id) return User::find($id);
-
-        return null;
-    }
-
-    // GET /api/admin
     public function index(Request $request)
     {
-        try {
-            $user = $this->getAuthUser();
-            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
+        $mitras = User::where('role', 'mitra')
+            ->with(['area'])
+            ->paginate($request->per_page ?? 10);
 
-            $query = User::where('group_id', $user->group_id)->where('role', 'teknisi');
-
-            // 🔍 Search
-            if ($search = $request->get('search')) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('device_name', 'like', "%{$search}%")
-                        ->orWhere('ip_public', 'like', "%{$search}%");
-                });
-            }
-
-            // 🔄 Sort
-            $sortField = $request->get('sort_field', 'id');
-            $sortDirection = $request->get('sort_direction', 'asc');
-            $query->orderBy($sortField, $sortDirection);
-
-            // 📄 Pagination
-            $perPage = $request->get('per_page', 5);
-            $opticals = $query->paginate($perPage);
-
-            return ResponseFormatter::success($opticals, 'Data admin berhasil dimuat', 200);
-        } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
-        }
+        return ResponseFormatter::success($mitras, 'List mitra berhasil dimuat', 200);
     }
 
     public function store(Request $request)
     {
         try {
-            $user = Auth::user();
             $validated = $request->validate([
-                'name'         => 'required|string|max:255|unique:users,name|unique:groups,name',
-                'phone_number' => [
-                    'required',
-                    'string',
-                    'max:15',
-                    'regex:/^(?:\+62|62|0)[0-9]{9,13}$/',
-                    Rule::unique('users', 'phone_number')
-                ],
-                'email'        => 'required|string|max:255|unique:users,email',
-                'username'     => 'required|unique:users,username',
-                'password'     => 'required|min:8',
-                'role'         => 'required',
+                'name' => 'required|string|max:255|unique:users,name|unique:groups,name',
+                'phone_number' => 'required|string|max:255|unique:users,phone_number',
+                'email' => 'required|email|unique:users,email',
+                'username' => 'required|unique:users,username',
+                'password' => 'required|min:8',
+                'area_id' => 'required|exists:areas,id',
+                'register' => 'nullable|date',
+                'payment' => 'nullable|string',
+                'nip' => 'nullable|string|max:20',
             ]);
 
-            $newUser = User::create([
-                'name'         => $validated['name'],
-                'email'        => $validated['email'],
+            $area = Area::where('id', $validated['area_id'])->where('group_id', 1)->first();
+            if (!$area) {
+                return ResponseFormatter::error(null, 'Area tidak valid', 400);
+            }
+
+            $group = Groups::create([
+                'name' => $validated['name'],
+                'slug' => Str::slug($validated['name']),
+                'wa_api_token' => Str::random(15),
+                'group_type' => 'mitra',
+            ]);
+
+            GlobalSettings::create(['isolir_mode' => false, 'group_id' => $group->id]);
+
+            $customerNumber = $this->generateCustomerNumber($area->area_code);
+
+            $newMitra = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
                 'phone_number' => $validated['phone_number'],
-                'role'         => $validated['role'],
-                'username'     => $validated['username'],
-                'password'     => Hash::make($validated['password']),
-                'group_id'     => $user->group_id,
+                'role' => 'mitra',
+                'username' => $validated['username'],
+                'password' => Hash::make($validated['password']),
+                'group_id' => $group->id,
+                'area_id' => $validated['area_id'],
+                'customer_number' => $customerNumber,
+                'register' => $validated['register'] ?? null,
+                'payment' => $validated['payment'] ?? null,
+                'nip' => $validated['nip'] ?? null,
             ]);
 
-            ActivityLogController::logCreate('users', $newUser);
-
-            return ResponseFormatter::success($newUser, 'Data admin berhasil ditambahkan', 200);
+            return ResponseFormatter::success($newMitra, 'Mitra berhasil dibuat', 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseFormatter::error($e->errors(), 'Validasi gagal', 422);
         } catch (\Throwable $th) {
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
 
-    // // PUT /api/admin/{id}
-    // public function update(Request $request, $id)
-    // {
-    //     try {
-    //         $user = User::findOrFail($id);
-    //         $oldData = $user->toArray();
-
-    //         $validated = $request->validate([
-    //             'name' => ['required', 'string', 'max:255', Rule::unique('users', 'name')->ignore($user->id)],
-    //             'username' => ['required', 'string', 'max:255', Rule::unique('users', 'username')->ignore($user->id)],
-    //             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
-    //             'phone_number' => ['nullable', 'string', 'max:255', Rule::unique('users', 'phone_number')->ignore($user->id)],
-    //             'password' => 'nullable|string|min:8',
-    //             'role' => 'required|string',
-    //         ]);
-
-    //         $user->update([
-    //             'name' => $validated['name'],
-    //             'username' => $validated['username'],
-    //             'email' => $validated['email'],
-    //             'phone_number' => $validated['phone_number'],
-    //             'role' => $validated['role'],
-    //         ]);
-
-    //         if (!empty($validated['password'])) {
-    //             $user->update(['password' => Hash::make($validated['password'])]);
-    //         }
-
-    //         ActivityLogController::logUpdate($oldData, 'users', $user->fresh());
-
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Data user berhasil diperbarui',
-    //             'data' => $user
-    //         ], 200);
-    //     } catch (\Throwable $th) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => $th->getMessage()
-    //         ], 500);
-    //     }
-    // }
-
-    // PUT /api/admin/profile
-    // public function updateProfile(Request $request)
-    // {
-    //     try {
-    //         $user = Auth::user();
-    //         $oldData = $user->toArray();
-
-    //         $validated = $request->validate([
-    //             'name' => ['required', 'string', 'max:255', Rule::unique('users', 'name')->ignore($user->id)],
-    //             'username' => ['required', 'string', 'max:255', Rule::unique('users', 'username')->ignore($user->id)],
-    //             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
-    //             'phone_number' => ['nullable', 'string', 'max:255', Rule::unique('users', 'phone_number')->ignore($user->id)],
-    //             'password' => 'nullable|string|min:8',
-    //         ]);
-
-    //         $user->update([
-    //             'name' => $validated['name'],
-    //             'username' => $validated['username'],
-    //             'email' => $validated['email'],
-    //             'phone_number' => $validated['phone_number'],
-    //         ]);
-
-    //         if (!empty($validated['password'])) {
-    //             $user->update(['password' => Hash::make($validated['password'])]);
-    //         }
-
-    //         ActivityLogController::logUpdate($oldData, 'users', $user->fresh());
-
-    //         return response()->json([
-    //             'success' => true,
-    //             'message' => 'Profil berhasil diperbarui',
-    //             'data' => $user
-    //         ], 200);
-    //     } catch (\Throwable $th) {
-    //         return response()->json([
-    //             'success' => false,
-    //             'message' => $th->getMessage()
-    //         ], 500);
-    //     }
-    // }
-
-    // DELETE /api/admin/{id}
-    public function destroy($id)
+    public function update(Request $request, $id)
     {
         try {
-            $user = User::findOrFail($id);
-            $deletedData = $user;
+            $mitra = User::where('id', $id)->where('role', 'mitra')->firstOrFail();
 
-            if (isset($user)) {
-                $areaList = TechnicianArea::where('user_id', $user->id);
-                $areaList->delete();
+            $validated = $request->validate([
+                'name' => 'sometimes|required|string|max:255|unique:users,name,' . $id . '|unique:groups,name,' . $mitra->group_id,
+                'phone_number' => 'sometimes|required|string|max:255|unique:users,phone_number,' . $id,
+                'email' => 'sometimes|required|email|unique:users,email,' . $id,
+                'username' => 'sometimes|required|unique:users,username,' . $id,
+                'password' => 'sometimes|min:8',
+                'area_id' => 'sometimes|required|exists:areas,id',
+                'register' => 'nullable|date',
+                'payment' => 'nullable|string',
+                'nip' => 'nullable|string|max:20',
+            ]);
+
+            if (isset($validated['area_id'])) {
+                $area = Area::where('id', $validated['area_id'])->where('group_id', 1)->first();
+                if (!$area) {
+                    return ResponseFormatter::error(null, 'Area tidak valid', 400);
+                }
             }
-            $user->delete();
-            ActivityLogged::dispatch('DELETE', null, $deletedData);
 
-            return ResponseFormatter::success(null, 'Data admin berhasil dihapus', 200);
+            if (isset($validated['password'])) {
+                $validated['password'] = Hash::make($validated['password']);
+            }
+
+            $mitra->update($validated);
+
+            if (isset($validated['name'])) {
+                $group = Groups::find($mitra->group_id);
+                $group->update([
+                    'name' => $validated['name'],
+                    'slug' => Str::slug($validated['name']),
+                ]);
+            }
+
+            return ResponseFormatter::success($mitra->fresh(), 'Mitra berhasil diupdate', 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ResponseFormatter::error($e->errors(), 'Validasi gagal', 422);
         } catch (\Throwable $th) {
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
+    }
+
+    public function destroy($id)
+    {
+        try {
+            $mitra = User::where('id', $id)->where('role', 'mitra')->firstOrFail();
+            $groupId = $mitra->group_id;
+
+            $mitra->delete();
+            Groups::destroy($groupId);
+            GlobalSettings::where('group_id', $groupId)->delete();
+
+            return ResponseFormatter::success(null, 'Mitra berhasil dihapus', 200);
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
+
+    private function generateCustomerNumber($areaCode)
+    {
+        $lastCustomer = User::where('customer_number', 'like', $areaCode . '%')
+            ->orderBy('customer_number', 'desc')
+            ->first();
+
+        if ($lastCustomer) {
+            $lastNumber = (int) substr($lastCustomer->customer_number, strlen($areaCode));
+            $newNumber = $lastNumber + 1;
+        } else {
+            $newNumber = 1;
+        }
+
+        return $areaCode . str_pad($newNumber, 7, '0', STR_PAD_LEFT);
     }
 }

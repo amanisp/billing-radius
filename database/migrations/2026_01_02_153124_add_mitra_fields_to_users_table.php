@@ -10,11 +10,7 @@ return new class extends Migration
     {
         Schema::table('users', function (Blueprint $table) {
             // Data lengkap Mitra
-            $table->string('fullname')->nullable()->after('name');
-            $table->text('address')->nullable()->after('phone_number');
-            $table->string('nik', 16)->nullable()->unique()->after('address');
-            $table->string('npwp', 20)->nullable()->after('nik');
-            $table->string('nip', 20)->nullable()->after('npwp');
+            $table->string('nip', 20)->nullable()->after('phone_number');
 
             // Customer number (manual input)
             $table->string('customer_number', 50)->nullable()->unique()->after('nip');
@@ -39,8 +35,6 @@ return new class extends Migration
         Schema::table('users', function (Blueprint $table) {
             $table->dropForeign(['area_id']);
             $table->dropColumn([
-                'fullname',
-                'address',
                 'nik',
                 'npwp',
                 'nip',
