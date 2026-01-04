@@ -2,7 +2,6 @@
 
 namespace App\Helpers;
 
-use App\Models\Invoice;
 use App\Models\InvoiceHomepass;
 use App\Models\Area;
 use Carbon\Carbon;
@@ -19,11 +18,9 @@ class InvoiceHelper
      * @param string $modelClass Optional: specify which model to use
      * @return string
      */
-    public static function generateInvoiceNumber($areaId, $type, $modelClass = null)
+    public static function generateInvoiceNumber($areaId, $type)
     {
-        if (!$modelClass) {
-            $modelClass = $type === 'H' ? InvoiceHomepass::class : Invoice::class;
-        }
+        $modelClass = InvoiceHomepass::class;
 
         $segmentasi = $type;
         $kodeArea = $areaId;
