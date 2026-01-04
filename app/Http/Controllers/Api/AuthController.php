@@ -8,7 +8,6 @@ use App\Models\GlobalSettings;
 use App\Models\Groups;
 use App\Models\User;
 use App\Models\Area;
-use App\Services\WhatsappService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -16,93 +15,65 @@ use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
-  
     public function signup(Request $request)
     {
         try {
-            // 🔐 Validasi API Token
             $token = $request->input('token');
             $validToken = config('app.api_token', env('API_ACCESS_TOKEN'));
 
             if (!$token || $token !== $validToken) {
-                return ResponseFormatter::error(
-                    null,
-                    'Unauthorized: Token tidak valid atau tidak ditemukan',
-                    401
-                );
+                return ResponseFormatter::error(null, 'Unauthorized: Token tidak valid atau tidak ditemukan', 401);
             }
 
-            // 📝 Validasi Input
             $validated = $request->validate([
-                'fullname'     => 'required|string|max:255|unique:users,name|unique:groups,name',
-                'phone'        => 'required|string|max:255|unique:users,phone_number',
-                'email'        => 'required|string|email|max:255|unique:users,email',
-                'username'     => 'required|string|max:255|unique:users,username',
-                'password'     => 'required|string|min:8',
-                'area_id'      => 'nullable|exists:areas,id', // 🔥 Optional
+                'name' => 'required|string|max:255|unique:users,name|unique:groups,name',
+                'phone_number' => 'required|string|max:255|unique:users,phone_number',
+                'email' => 'required|string|email|max:255|unique:users,email',
+                'username' => 'required|string|max:255|unique:users,username',
+                'password' => 'required|string|min:8',
+                'area_id' => 'nullable|exists:areas,id', 
             ]);
 
-            // 🏢 Cari atau Set Primary Area
             $area = null;
 
             if (isset($validated['area_id'])) {
-                // Jika area_id dikirim, validasi harus milik superadmin
+                // Validasi area_id milik superadmin
                 $area = Area::where('id', $validated['area_id'])
                     ->where('group_id', 1)
                     ->first();
 
                 if (!$area) {
-                    return ResponseFormatter::error(
-                        null,
-                        'Area tidak valid atau bukan milik superadmin',
-                        400
-                    );
+                    return ResponseFormatter::error(null, 'Area tidak valid atau bukan milik superadmin', 400);
                 }
             } else {
-                // Jika tidak ada area_id, ambil primary area
+                // Auto assign first superadmin area
                 $area = Area::where('group_id', 1)
-                    ->where('is_primary', true)
+                    ->orderBy('id', 'asc')
                     ->first();
 
-                // Fallback: jika tidak ada primary, ambil area pertama
                 if (!$area) {
-                    $area = Area::where('group_id', 1)
-                        ->orderBy('id', 'asc')
-                        ->first();
-                }
-
-                if (!$area) {
-                    return ResponseFormatter::error(
-                        null,
-                        'Tidak ada area superadmin yang tersedia. Silakan buat area terlebih dahulu.',
-                        400
-                    );
+                    return ResponseFormatter::error(null, 'Tidak ada area superadmin yang tersedia. Silakan buat area terlebih dahulu.', 400);
                 }
             }
 
-            // 🏗️ Create Group untuk Mitra
             $group = Groups::create([
-                'name' => $validated['fullname'],
-                'slug' => Str::slug($validated['fullname']),
+                'name' => $validated['name'],
+                'slug' => Str::slug($validated['name']),
                 'wa_api_token' => Str::random(15),
                 'group_type' => 'mitra',
             ]);
 
-            // ⚙️ Create Global Settings
             GlobalSettings::create([
                 'isolir_mode' => false,
                 'group_id' => $group->id,
             ]);
 
-            // 🔢 Generate Customer Number
             $customerNumber = $this->generateCustomerNumber($area->area_code);
 
-            // 👤 Create User Mitra
             $newUser = User::create([
-                'name'           => $validated['fullname'],
-                'fullname'       => $validated['fullname'],
+                'name'           => $validated['name'],
                 'email'          => $validated['email'],
-                'phone_number'   => $validated['phone'],
+                'phone_number'   => $validated['phone_number'],
                 'role'           => 'mitra',
                 'username'       => $validated['username'],
                 'password'       => Hash::make($validated['password']),
@@ -111,13 +82,11 @@ class AuthController extends Controller
                 'customer_number' => $customerNumber,
             ]);
 
-            // 📤 Response
             $data = [
                 'user' => [
                     'id' => $newUser->id,
                     'username' => $newUser->username,
                     'name' => $newUser->name,
-                    'fullname' => $newUser->fullname,
                     'email' => $newUser->email,
                     'phone_number' => $newUser->phone_number,
                     'role' => $newUser->role,
@@ -155,41 +124,22 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * 🔢 Generate Customer Number
-     * Format: {area_code}-{running_number}
-     * Example: 112-00001, 112-00002, 113-00001
-     */
     private function generateCustomerNumber($areaCode)
     {
-        // Cari customer_number terakhir dengan area_code yang sama
-        $lastCustomer = User::where('customer_number', 'like', $areaCode . '-%')
+        $lastCustomer = User::where('customer_number', 'like', $areaCode . '%')
             ->orderBy('customer_number', 'desc')
             ->first();
 
         if ($lastCustomer) {
-            // Extract running number dari format: 112-00001
-            $parts = explode('-', $lastCustomer->customer_number);
-            $lastNumber = isset($parts[1]) ? (int) $parts[1] : 0;
+            $lastNumber = (int) substr($lastCustomer->customer_number, strlen($areaCode));
             $newNumber = $lastNumber + 1;
         } else {
             $newNumber = 1;
         }
 
-        // Format: area_code-00001 (5 digit padding)
-        return $areaCode . '-' . str_pad($newNumber, 5, '0', STR_PAD_LEFT);
+        return $areaCode . str_pad($newNumber, 7, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * 🔐 LOGIN
-     *
-     * POST /api/v1/login
-     * Body:
-     * {
-     *   "username": "superadmin", // or email
-     *   "password": "password123"
-     * }
-     */
     public function login(Request $request)
     {
         try {
@@ -213,24 +163,19 @@ class AuthController extends Controller
                     return ResponseFormatter::error(null, 'User tidak ditemukan.', 401);
                 }
 
-                // Create token
                 $token = $user->createToken('auth_token')->plainTextToken;
 
-                // 🔥 Response dengan field lengkap
                 $data = [
                     'user' => [
                         'id' => $user->id,
                         'username' => $user->username,
                         'name' => $user->name,
-                        'fullname' => $user->fullname,
                         'email' => $user->email,
                         'role' => $user->role,
                         'group_id' => $user->group_id,
                         'area_id' => $user->area_id,
                         'phone_number' => $user->phone_number,
                         'address' => $user->address,
-                        'nik' => $user->nik,
-                        'npwp' => $user->npwp,
                         'nip' => $user->nip,
                         'customer_number' => $user->customer_number,
                         'register' => $user->register,
@@ -249,12 +194,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * 🚪 LOGOUT
-     *
-     * POST /api/v1/logout
-     * Headers: Authorization: Bearer {token}
-     */
     public function logout(Request $request)
     {
         try {
@@ -262,7 +201,6 @@ class AuthController extends Controller
                 return ResponseFormatter::error(null, 'Unauthorized', 401);
             }
 
-            // Hapus token saat logout
             $request->user()->currentAccessToken()->delete();
 
             return ResponseFormatter::success(null, 'Logout berhasil', 200);
@@ -271,12 +209,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * 👤 GET USER INFO
-     *
-     * GET /api/v1/me
-     * Headers: Authorization: Bearer {token}
-     */
     public function me(Request $request)
     {
         try {
@@ -291,15 +223,12 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'username' => $user->username,
                 'name' => $user->name,
-                'fullname' => $user->fullname,
                 'email' => $user->email,
                 'role' => $user->role,
                 'group_id' => $user->group_id,
                 'area_id' => $user->area_id,
                 'phone_number' => $user->phone_number,
                 'address' => $user->address,
-                'nik' => $user->nik,
-                'npwp' => $user->npwp,
                 'nip' => $user->nip,
                 'customer_number' => $user->customer_number,
                 'register' => $user->register,

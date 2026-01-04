@@ -14,22 +14,18 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [
-        'username',
         'name',
-        'fullname',
         'role',
         'group_id',
         'area_id',
         'email',
         'phone_number',
-        'address',
-        'nik',
-        'npwp',
         'nip',
         'customer_number',
         'register',
         'payment',
-        'email_verified_at',
+        'address',
+        'username',
         'password',
     ];
 
@@ -47,50 +43,32 @@ class User extends Authenticatable
         ];
     }
 
-    /**
-     * Relasi ke mitra
-     */
     public function mitra()
     {
         return $this->belongsTo(Mitra::class, 'group_id');
     }
 
-    /**
-     *  Relasi user dengan area
-     */
     public function area()
     {
         return $this->belongsTo(Area::class, 'area_id');
     }
 
-    /**
-     * Company memiliki banyak teknisi
-     */
     public function teknisi()
     {
         return $this->hasMany(User::class, 'group_id')->where('role', 'teknisi');
     }
 
-    /**
-     * Company memiliki banyak kasir
-     */
     public function kasir()
     {
         return $this->hasMany(User::class, 'group_id')->where('role', 'kasir');
     }
 
-    /**
-     * Relasi teknisi dengan area yang di-assign
-     */
     public function assignedAreas()
     {
         return $this->belongsToMany(Area::class, 'technician_areas', 'user_id', 'area_id')
             ->withTimestamps();
     }
 
-    /**
-     * Role Check Methods
-     */
     public function isSuperadmin(): bool
     {
         return $this->role === 'superadmin';
