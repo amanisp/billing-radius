@@ -33,6 +33,10 @@ Route::prefix('notification')->group(function () {
     Route::post('/payout', [notificationController::class, 'notifPayoutLink']);
 });
 
+Route::get('/', function () {
+    return view('errors.404');
+});
+
 Route::middleware('guest')->group(
     function () {
         // Route::redirect('/', '/login');

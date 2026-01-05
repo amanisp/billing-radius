@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConnectionController;
+use App\Http\Controllers\Api\Dashboard;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LogsController;
 use App\Http\Controllers\Api\MemberController;
@@ -29,6 +30,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
+
+        Route::get('/dashboard/stats', [Dashboard::class, 'stats']);
+        Route::get('/dashboard/stats/ppp', [Dashboard::class, 'statsPppoe']);
 
         // ======Admin======
         Route::get('/admin', [AdminController::class, 'index']);

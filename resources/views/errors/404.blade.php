@@ -19,7 +19,7 @@
                         alt="Not Found">
                     <h1 class="error-title">Not Found</h1>
                     <p class='fs-5 text-gray-600'>The page you are looking not found.</p>
-                    <a href="{{ route('login') }}" class="btn btn-lg btn-outline-primary mt-3">Go Home</a>
+                    <a href="https://app.amanisp.net.id" class="btn btn-lg btn-outline-primary mt-3">Go Home</a>
                 </div>
             </div>
         </div>

@@ -72,55 +72,97 @@ class AuthController extends Controller
         }
     }
 
-
     public function login(Request $request)
     {
         try {
             $request->validate([
-                'username' => 'required',
-                'password' => 'required|min:8',
+                'username' => 'required|string',
+                'password' => 'required|string',
             ]);
 
-            $loginType = filter_var($request->username, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+            $field = filter_var($request->username, FILTER_VALIDATE_EMAIL)
+                ? 'email'
+                : 'username';
 
-            $credentials = [
-                $loginType => $request->username,
-                'password' => $request->password,
-            ];
+            $user = User::where($field, $request->username)->first();
 
-            if (Auth::attempt($credentials)) {
-                /** @var User $user */
-                $user = Auth::user();
-
-                if (!$user instanceof User) {
-                    return ResponseFormatter::error(null, 'User tidak ditemukan.', 401);
-                }
-
-                // Create token
-                $token = $user->createToken('auth_token')->plainTextToken;
-
-                $data = [
-                    'user' => [
-                        'id' => $user->id,
-                        'username' => $user->username,
-                        'name' => $user->name,
-                        'email' => $user->email,
-                        'role' => $user->role,
-                        'group_id' => $user->group_id,
-                        'phone_number' => $user->phone_number,
-                    ],
-                    'token' => $token,
-                    'token_type' => 'Bearer'
-                ];
-
-                return ResponseFormatter::success($data, 'Login berhasil', 200);
-            } else {
-                return ResponseFormatter::error(null, 'Email atau Username atau Password salah.', 401);
+            if (!$user) {
+                return ResponseFormatter::error(null, 'User tidak ditemukan', 401);
             }
-        } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+
+            if (!Hash::check($request->password, $user->password)) {
+                return ResponseFormatter::error(null, 'Password salah', 401);
+            }
+
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            return ResponseFormatter::success([
+                'user' => [
+                    'id' => $user->id,
+                    'username' => $user->username,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'group_id' => $user->group_id,
+                    'phone_number' => $user->phone_number,
+                ],
+                'token' => $token,
+                'token_type' => 'Bearer'
+            ], 'Login berhasil');
+        } catch (\Throwable $e) {
+            return ResponseFormatter::error(null, $e->getMessage(), 500);
         }
     }
+
+
+    // public function login(Request $request)
+    // {
+    //     try {
+    //         $request->validate([
+    //             'username' => 'required',
+    //             'password' => 'required|min:8',
+    //         ]);
+
+    //         $loginType = filter_var($request->username, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+
+    //         $credentials = [
+    //             $loginType => $request->username,
+    //             'password' => $request->password,
+    //         ];
+
+    //         if (Auth::attempt($credentials)) {
+    //             /** @var User $user */
+    //             $user = Auth::user();
+
+    //             if (!$user instanceof User) {
+    //                 return ResponseFormatter::error(null, 'User tidak ditemukan.', 401);
+    //             }
+
+    //             // Create token
+    //             $token = $user->createToken('auth_token')->plainTextToken;
+
+    //             $data = [
+    //                 'user' => [
+    //                     'id' => $user->id,
+    //                     'username' => $user->username,
+    //                     'name' => $user->name,
+    //                     'email' => $user->email,
+    //                     'role' => $user->role,
+    //                     'group_id' => $user->group_id,
+    //                     'phone_number' => $user->phone_number,
+    //                 ],
+    //                 'token' => $token,
+    //                 'token_type' => 'Bearer'
+    //             ];
+
+    //             return ResponseFormatter::success($data, 'Login berhasil', 200);
+    //         } else {
+    //             return ResponseFormatter::error(null, 'Email atau Username atau Password salah.', 401);
+    //         }
+    //     } catch (\Throwable $th) {
+    //         return ResponseFormatter::error(null, $th->getMessage(), 200);
+    //     }
+    // }
 
 
 
