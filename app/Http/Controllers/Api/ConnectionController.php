@@ -10,13 +10,10 @@ use App\Http\Controllers\Controller;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\Connection;
+use App\Models\Profiles;
 use App\Models\User;
 use App\Models\Member;
 use App\Models\PaymentDetail;
-use App\Models\Area;
-use App\Models\OpticalDist;
-use App\Models\Profiles;
-use App\Models\Nas;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -268,7 +265,6 @@ class ConnectionController extends Controller
                 'payment_type' => 'required_if:billing,true|string|in:prabayar,pascabayar',
                 'billing_period' => 'required_if:billing,true|string|in:fixed,renewal',
                 'active_date' => 'required_if:billing,true|date',
-                'amount' => 'required_if:billing,true|numeric|min:0',
                 'discount' => 'nullable|numeric|min:0',
                 'ppn' => 'nullable|numeric|min:0',
             ];
@@ -277,6 +273,7 @@ class ConnectionController extends Controller
             $validated = $request->validate($allRules);
 
             DB::beginTransaction();
+
 
             // 1. Create Connection
             $connection = Connection::create([
@@ -293,17 +290,7 @@ class ConnectionController extends Controller
                 'optical_id' => $request->optical_id,
             ]);
 
-            // 2. Create Member
-            $member = Member::create([
-                'connection_id' => $connection->id,
-                'group_id' => $groupId,
-                'fullname' => $validated['fullname'],
-                'phone_number' => $request->phone_number,
-                'email' => $request->email,
-                'id_card' => $request->id_card,
-                'address' => $request->address,
-                'billing' => $request->input('billing', false),
-            ]);
+
 
             // 3. Create Payment Detail (if billing is enabled)
             $paymentDetail = null;
@@ -317,16 +304,28 @@ class ConnectionController extends Controller
                 }
 
                 $paymentDetail = PaymentDetail::create([
-                    'member_id' => $member->id,
                     'group_id' => $groupId,
                     'payment_type' => $validated['payment_type'],
                     'billing_period' => $validated['billing_period'],
                     'active_date' => $request->active_date,
                     'next_invoice' => $nextInvoice,
                     'last_invoice' => null,
-                    'amount' => $validated['amount'],
+                    'amount' => $connection->profile->price,
                     'discount' => $request->input('discount', 0),
                     'ppn' => $request->input('ppn', 0),
+                ]);
+
+                // 2. Create Member
+                $member = Member::create([
+                    'connection_id' => $connection->id,
+                    "payment_detail_id" => $paymentDetail->id,
+                    'group_id' => $groupId,
+                    'fullname' => $validated['fullname'],
+                    'phone_number' => $request->phone_number,
+                    'email' => $request->email,
+                    'id_card' => $request->id_card,
+                    'address' => $request->address,
+                    'billing' => $request->input('billing', false),
                 ]);
             }
 

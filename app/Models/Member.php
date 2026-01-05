@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+
 class Member extends Model
 {
     protected $fillable = [
@@ -26,16 +27,21 @@ class Member extends Model
 
     public function setPhoneNumberAttribute($value)
     {
-        // Hapus karakter selain angka
+        // Hapus semua karakter selain angka
         $value = preg_replace('/\D/', '', $value);
 
-        // Ubah 08 menjadi 62
-        if (substr($value, 0, 1) === '0') {
+        // Jika diawali 0 → ganti 62
+        if (str_starts_with($value, '0')) {
             $value = '62' . substr($value, 1);
+        }
+        // Jika diawali 82 → tambahkan 62
+        elseif (str_starts_with($value, '82')) {
+            $value = '62' . $value;
         }
 
         $this->attributes['phone_number'] = $value;
     }
+
 
     public function serviceActive()
     {
