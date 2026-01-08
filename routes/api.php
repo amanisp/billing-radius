@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\Dashboard;
+use App\Http\Controllers\Api\FakturController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LogsController;
 use App\Http\Controllers\Api\MemberController;
@@ -106,15 +107,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/profiles/{id}', [ProfileController::class, 'destroy']);
         // ==========End PPP-DHCP=========
 
+        // Faktur
+        Route::get('/invoices', [FakturController::class, 'index']);
+        Route::get('/invoices/member/{id}', [FakturController::class, 'invoiceByMemberId']);
+        Route::post('/invoices', [FakturController::class, 'manualPayment']);
+        Route::get('/invoices/details/{id}', [FakturController::class, 'fakturDetail']);
+        Route::get('/invoices/stats', [FakturController::class, 'stats']);
+        // Route::get('/faktur/mandiri', [FakturController::class, 'index']);
+
+
         //=== Invoices ===
-        Route::get('/invoices', [InvoiceController::class, 'index']);
-        Route::get('/invoices/stats', [InvoiceController::class, 'stats']);
-        Route::get('/invoices/date-range-stats', [InvoiceController::class, 'getDateRangeStats']);
-        Route::post('/invoices/create', [InvoiceController::class, 'createInv']);
-        Route::post('/invoices/generate-all', [InvoiceController::class, 'generateAll']);
-        Route::post('/invoices/{id}/pay-manual', [InvoiceController::class, 'payManual']);
-        Route::post('/invoices/{id}/cancel-payment', [InvoiceController::class, 'payCancel']);
-        Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy']);
+        // Route::get('/invoices', [InvoiceController::class, 'index']);
+        // Route::get('/invoices/date-range-stats', [InvoiceController::class, 'getDateRangeStats']);
+        // Route::post('/invoices/create', [InvoiceController::class, 'createInv']);
+        // Route::post('/invoices/generate-all', [InvoiceController::class, 'generateAll']);
+        // Route::post('/invoices/{id}/pay-manual', [InvoiceController::class, 'payManual']);
+        // Route::post('/invoices/{id}/cancel-payment', [InvoiceController::class, 'payCancel']);
+        // Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy']);
 
         // ========== Payouts ==========
         Route::get('/payouts', [PayoutController::class, 'index']);
