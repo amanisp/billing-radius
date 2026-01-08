@@ -364,7 +364,7 @@ class ConnectionController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            $connection = Connection::where('id', $id)->firstOrFail();
+            $connection = Connection::with('profile')->findOrFail($id);
 
             if ($connection->group_id !== $user->group_id) {
                 return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
@@ -375,46 +375,49 @@ class ConnectionController extends Controller
             // Validation
             $rules = [
                 'profile_id' => 'required|exists:profiles,id',
-                'isolir' => 'boolean',
                 'nas_id' => 'nullable|exists:nas,id',
                 'area_id' => 'nullable|exists:areas,id',
                 'optical_id' => 'nullable|exists:optical_dists,id',
-            ];
-
-            if ($request->type === 'dhcp') {
-                $rules['mac_address'] = 'required|string|max:17';
-            } elseif ($request->type === 'pppoe') {
-                $rules['username'] = [
+                'username' => [
                     'required',
                     'string',
                     'max:255',
                     Rule::unique('connections')->ignore($id)->where(fn($q) => $q->where('group_id', $user->group_id))
-                ];
-                $rules['password'] = 'required|string';
-            }
+                ],
+                'password' => 'required|string'
+            ];
 
             $validated = $request->validate($rules);
 
-            $groupId = $connection->group_id;
+            $groupId     = $connection->group_id;
             $oldUsername = $connection->username ?? $connection->mac_address;
             $newUsername = trim($request->username ?? $request->mac_address);
             $newPassword = $request->password;
 
             DB::beginTransaction();
 
-            // Update connection
+            // 1️⃣ Update connection
             $connection->update([
-                'username' => $newUsername,
-                'password' => $newPassword,
-                'mac_address' => $request->mac_address,
+                'username'   => $newUsername,
+                'password'   => $newPassword,
                 'profile_id' => $validated['profile_id'],
-                'isolir' => $request->input('isolir', false),
-                'nas_id' => $request->nas_id,
-                'area_id' => $request->area_id,
+                'nas_id'     => $request->nas_id,
+                'area_id'    => $request->area_id,
                 'optical_id' => $request->optical_id,
             ]);
 
-            // Update radius records
+            // 2️⃣ Update PaymentDetail langsung menggunakan profile terbaru
+            $profile = Profiles::find($validated['profile_id']);
+            $member = Member::where('connection_id', $connection->id)->first();
+
+            if ($member?->paymentDetail && $profile) {
+                $member->paymentDetail->update([
+                    'amount' => $profile->price,
+                ]);
+            }
+
+            // 3️⃣ Update Radius
+            // Hapus data lama
             DB::connection('radius')->table('radcheck')
                 ->where('username', $oldUsername)
                 ->where('group_id', $groupId)
@@ -425,33 +428,34 @@ class ConnectionController extends Controller
                 ->where('group_id', $groupId)
                 ->delete();
 
-            // Re-create radius records
+            // Re-create radcheck
             DB::connection('radius')->table('radcheck')->insert([
-                'username' => $newUsername,
+                'username'  => $newUsername,
                 'attribute' => 'Cleartext-Password',
-                'op' => ':=',
-                'value' => $newPassword ?? '',
-                'group_id' => $groupId
+                'op'        => ':=',
+                'value'     => $newPassword,
+                'group_id'  => $groupId
             ]);
 
-            $profile = DB::table('profiles')->find($validated['profile_id']);
+            // Re-create radusergroup
             if ($profile) {
                 DB::connection('radius')->table('radusergroup')->insert([
                     [
-                        'username' => $newUsername,
+                        'username'  => $newUsername,
                         'groupname' => 'mitra_' . $groupId,
-                        'priority' => 1,
-                        'group_id' => $groupId
+                        'priority'  => 1,
+                        'group_id'  => $groupId
                     ],
                     [
-                        'username' => $newUsername,
+                        'username'  => $newUsername,
                         'groupname' => $profile->name . '-' . $groupId,
-                        'priority' => 1,
-                        'group_id' => $groupId
+                        'priority'  => 1,
+                        'group_id'  => $groupId
                     ]
                 ]);
             }
 
+            // Update radreply
             DB::connection('radius')->table('radreply')
                 ->where('username', $oldUsername)
                 ->where('group_id', $groupId)
@@ -464,9 +468,10 @@ class ConnectionController extends Controller
             return ResponseFormatter::success($connection, 'Connection berhasil diperbarui', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
 
     /**
      * POST /api/v1/connections/{id}/toggle-isolir

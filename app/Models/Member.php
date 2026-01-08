@@ -152,21 +152,4 @@ class Member extends Model
     {
         return $query->where('group_id', $groupId);
     }
-
-
-    /**
-     * Mendapatkan identifier untuk JWT
-     */
-    public function getJWTIdentifier()
-    {
-        return $this->getKey(); // biasanya id
-    }
-
-    /**
-     * Mendapatkan custom claim untuk JWT
-     */
-    public function getJWTCustomClaims()
-    {
-        return []; // bisa tambahkan claim khusus jika perlu
-    }
 }
