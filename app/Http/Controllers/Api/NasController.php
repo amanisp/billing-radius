@@ -94,7 +94,7 @@ class NasController extends Controller
             $data = Nas::create([
                 'name'        => $validated['name'],
                 'group_id'    => $groupId,
-                'ip_radius'     => '103.203.233.235',
+                'ip_radius'     => '10.137.24.15',
                 'ip_router'         => $validated['ip_router'],
                 'secret'         => $validated['secret'],
             ]);

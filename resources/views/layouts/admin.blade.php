@@ -1,0 +1,7 @@
+@include('includes.v_header')
+@include('includes.v_sidebar')
+@yield('content')
+@include('includes.v_footer')
+@stack('scripts')
+@include('includes.v_js')
+@stack('script-page')

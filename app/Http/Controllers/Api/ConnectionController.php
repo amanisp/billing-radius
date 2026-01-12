@@ -10,13 +10,10 @@ use App\Http\Controllers\Controller;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\Connection;
+use App\Models\Profiles;
 use App\Models\User;
 use App\Models\Member;
 use App\Models\PaymentDetail;
-use App\Models\Area;
-use App\Models\OpticalDist;
-use App\Models\Profiles;
-use App\Models\Nas;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -268,7 +265,6 @@ class ConnectionController extends Controller
                 'payment_type' => 'required_if:billing,true|string|in:prabayar,pascabayar',
                 'billing_period' => 'required_if:billing,true|string|in:fixed,renewal',
                 'active_date' => 'required_if:billing,true|date',
-                'amount' => 'required_if:billing,true|numeric|min:0',
                 'discount' => 'nullable|numeric|min:0',
                 'ppn' => 'nullable|numeric|min:0',
             ];
@@ -277,6 +273,7 @@ class ConnectionController extends Controller
             $validated = $request->validate($allRules);
 
             DB::beginTransaction();
+
 
             // 1. Create Connection
             $connection = Connection::create([
@@ -293,17 +290,7 @@ class ConnectionController extends Controller
                 'optical_id' => $request->optical_id,
             ]);
 
-            // 2. Create Member
-            $member = Member::create([
-                'connection_id' => $connection->id,
-                'group_id' => $groupId,
-                'fullname' => $validated['fullname'],
-                'phone_number' => $request->phone_number,
-                'email' => $request->email,
-                'id_card' => $request->id_card,
-                'address' => $request->address,
-                'billing' => $request->input('billing', false),
-            ]);
+
 
             // 3. Create Payment Detail (if billing is enabled)
             $paymentDetail = null;
@@ -317,16 +304,28 @@ class ConnectionController extends Controller
                 }
 
                 $paymentDetail = PaymentDetail::create([
-                    'member_id' => $member->id,
                     'group_id' => $groupId,
                     'payment_type' => $validated['payment_type'],
                     'billing_period' => $validated['billing_period'],
                     'active_date' => $request->active_date,
                     'next_invoice' => $nextInvoice,
                     'last_invoice' => null,
-                    'amount' => $validated['amount'],
+                    'amount' => $connection->profile->price,
                     'discount' => $request->input('discount', 0),
                     'ppn' => $request->input('ppn', 0),
+                ]);
+
+                // 2. Create Member
+                $member = Member::create([
+                    'connection_id' => $connection->id,
+                    "payment_detail_id" => $paymentDetail->id,
+                    'group_id' => $groupId,
+                    'fullname' => $validated['fullname'],
+                    'phone_number' => $request->phone_number,
+                    'email' => $request->email,
+                    'id_card' => $request->id_card,
+                    'address' => $request->address,
+                    'billing' => $request->input('billing', false),
                 ]);
             }
 
@@ -365,7 +364,7 @@ class ConnectionController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            $connection = Connection::where('id', $id)->firstOrFail();
+            $connection = Connection::with('profile')->findOrFail($id);
 
             if ($connection->group_id !== $user->group_id) {
                 return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
@@ -376,46 +375,49 @@ class ConnectionController extends Controller
             // Validation
             $rules = [
                 'profile_id' => 'required|exists:profiles,id',
-                'isolir' => 'boolean',
                 'nas_id' => 'nullable|exists:nas,id',
                 'area_id' => 'nullable|exists:areas,id',
                 'optical_id' => 'nullable|exists:optical_dists,id',
-            ];
-
-            if ($request->type === 'dhcp') {
-                $rules['mac_address'] = 'required|string|max:17';
-            } elseif ($request->type === 'pppoe') {
-                $rules['username'] = [
+                'username' => [
                     'required',
                     'string',
                     'max:255',
                     Rule::unique('connections')->ignore($id)->where(fn($q) => $q->where('group_id', $user->group_id))
-                ];
-                $rules['password'] = 'required|string';
-            }
+                ],
+                'password' => 'required|string'
+            ];
 
             $validated = $request->validate($rules);
 
-            $groupId = $connection->group_id;
+            $groupId     = $connection->group_id;
             $oldUsername = $connection->username ?? $connection->mac_address;
             $newUsername = trim($request->username ?? $request->mac_address);
             $newPassword = $request->password;
 
             DB::beginTransaction();
 
-            // Update connection
+            // 1️⃣ Update connection
             $connection->update([
-                'username' => $newUsername,
-                'password' => $newPassword,
-                'mac_address' => $request->mac_address,
+                'username'   => $newUsername,
+                'password'   => $newPassword,
                 'profile_id' => $validated['profile_id'],
-                'isolir' => $request->input('isolir', false),
-                'nas_id' => $request->nas_id,
-                'area_id' => $request->area_id,
+                'nas_id'     => $request->nas_id,
+                'area_id'    => $request->area_id,
                 'optical_id' => $request->optical_id,
             ]);
 
-            // Update radius records
+            // 2️⃣ Update PaymentDetail langsung menggunakan profile terbaru
+            $profile = Profiles::find($validated['profile_id']);
+            $member = Member::where('connection_id', $connection->id)->first();
+
+            if ($member?->paymentDetail && $profile) {
+                $member->paymentDetail->update([
+                    'amount' => $profile->price,
+                ]);
+            }
+
+            // 3️⃣ Update Radius
+            // Hapus data lama
             DB::connection('radius')->table('radcheck')
                 ->where('username', $oldUsername)
                 ->where('group_id', $groupId)
@@ -426,33 +428,34 @@ class ConnectionController extends Controller
                 ->where('group_id', $groupId)
                 ->delete();
 
-            // Re-create radius records
+            // Re-create radcheck
             DB::connection('radius')->table('radcheck')->insert([
-                'username' => $newUsername,
+                'username'  => $newUsername,
                 'attribute' => 'Cleartext-Password',
-                'op' => ':=',
-                'value' => $newPassword ?? '',
-                'group_id' => $groupId
+                'op'        => ':=',
+                'value'     => $newPassword,
+                'group_id'  => $groupId
             ]);
 
-            $profile = DB::table('profiles')->find($validated['profile_id']);
+            // Re-create radusergroup
             if ($profile) {
                 DB::connection('radius')->table('radusergroup')->insert([
                     [
-                        'username' => $newUsername,
+                        'username'  => $newUsername,
                         'groupname' => 'mitra_' . $groupId,
-                        'priority' => 1,
-                        'group_id' => $groupId
+                        'priority'  => 1,
+                        'group_id'  => $groupId
                     ],
                     [
-                        'username' => $newUsername,
+                        'username'  => $newUsername,
                         'groupname' => $profile->name . '-' . $groupId,
-                        'priority' => 1,
-                        'group_id' => $groupId
+                        'priority'  => 1,
+                        'group_id'  => $groupId
                     ]
                 ]);
             }
 
+            // Update radreply
             DB::connection('radius')->table('radreply')
                 ->where('username', $oldUsername)
                 ->where('group_id', $groupId)
@@ -465,9 +468,10 @@ class ConnectionController extends Controller
             return ResponseFormatter::success($connection, 'Connection berhasil diperbarui', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
 
     /**
      * POST /api/v1/connections/{id}/toggle-isolir
@@ -638,181 +642,169 @@ class ConnectionController extends Controller
     }
 
     /**
- * Import PPPoE accounts from Excel file
- * POST /api/v1/connections/import
- */
-public function importConnections(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // Max 10MB
-        'group_id' => 'required|exists:groups,id'
-    ]);
-    if ($validator->fails()) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Validation error',
-            'errors' => $validator->errors()
-        ], 422);
-    }
-    try {
-        $file = $request->file('file');
-        $groupId = $request->input('group_id');
-        // Create import instance
-        $import = new PppoeAccountsImport($groupId);
-
-        // Start import process
-        Excel::import($import, $file);
-        return response()->json([
-            'success' => true,
-            'message' => 'Import started successfully',
-            'data' => [
-                'batch_id' => $import->getImportBatchId(),
-                'status' => 'processing'
-            ]
-        ], 200);
-    } catch (\Exception $e) {
-        Log::error('Import failed', [
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
+     * Import PPPoE accounts from Excel file
+     * POST /api/v1/connections/import
+     */
+    public function importConnections(Request $request)
+    {
+        $user = $this->getAuthUser();
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240', // Max 10MB
         ]);
-        return response()->json([
-            'success' => false,
-            'message' => 'Import failed: ' . $e->getMessage()
-        ], 500);
-    }
-}
-/**
- * Get list of import batches
- * GET /api/v1/connections/import/batches
- */
-public function getImportBatches(Request $request)
-{
-    try {
-        $perPage = $request->input('per_page', 15);
-        $status = $request->input('status'); // processing, completed, completed_with_errors, failed
-        $query = DB::table('import_batches')
-            ->where('type', 'pppoe_accounts')
-            ->orderBy('created_at', 'desc');
-        if ($status) {
-            $query->where('status', $status);
+        if ($validator->fails()) {
+            return ResponseFormatter::error(null, $validator->errors(), 200);
         }
-        $batches = $query->paginate($perPage);
-        return response()->json([
-            'success' => true,
-            'data' => $batches
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch import batches: ' . $e->getMessage()
-        ], 500);
+        try {
+            $file = $request->file('file');
+            $groupId = $user->group_id;
+            // Create import instance
+            $import = new PppoeAccountsImport($groupId);
+
+            // Start import process
+            Excel::import($import, $file);
+            $data = [
+                'batch_id' => $import->getImportBatchId()
+            ];
+            return ResponseFormatter::success($data, 'Import started successfully', 200);
+        } catch (\Exception $e) {
+            Log::error('Import failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return ResponseFormatter::error(null, $e->getMessage(), 200);
+        }
     }
-}
-/**
- * Get import batch status and statistics
- * GET /api/v1/connections/import/batch/{batchId}
- */
-public function getImportBatchStatus($batchId)
-{
-    try {
-        $batch = DB::table('import_batches')
-            ->where('id', $batchId)
-            ->first();
-        if (!$batch) {
+    /**
+     * Get list of import batches
+     * GET /api/v1/connections/import/batches
+     */
+    public function getImportBatches(Request $request)
+    {
+        try {
+            $perPage = $request->input('per_page', 15);
+            $status = $request->input('status'); // processing, completed, completed_with_errors, failed
+            $query = DB::table('import_batches')
+                ->where('type', 'pppoe_accounts')
+                ->orderBy('created_at', 'desc');
+            if ($status) {
+                $query->where('status', $status);
+            }
+            $batches = $query->paginate($perPage);
+            return response()->json([
+                'success' => true,
+                'data' => $batches
+            ], 200);
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Import batch not found'
-            ], 404);
+                'message' => 'Failed to fetch import batches: ' . $e->getMessage()
+            ], 500);
         }
-        // Get error summary by type
-        $errorSummary = DB::table('import_error_logs')
-            ->select('error_type', DB::raw('count(*) as count'))
-            ->where('import_batch_id', $batchId)
-            ->groupBy('error_type')
-            ->get();
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'batch' => $batch,
-                'error_summary' => $errorSummary,
-                'success_rate' => $batch->total_rows > 0
-                    ? round((($batch->processed_rows - $batch->failed_rows) / $batch->total_rows) * 100, 2)
-                    : 0
-            ]
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch batch status: ' . $e->getMessage()
-        ], 500);
     }
-}
-/**
- * Get import errors for a batch
- * GET /api/v1/connections/import/batch/{batchId}/errors
- */
-public function getImportErrors(Request $request, $batchId)
-{
-    try {
-        $perPage = $request->input('per_page', 50);
-        $errorType = $request->input('error_type');
-        $resolved = $request->input('resolved'); // true/false
-        $query = DB::table('import_error_logs')
-            ->where('import_batch_id', $batchId)
-            ->orderBy('row_number', 'asc');
-        if ($errorType) {
-            $query->where('error_type', $errorType);
+    /**
+     * Get import batch status and statistics
+     * GET /api/v1/connections/import/batch/{batchId}
+     */
+    public function getImportBatchStatus($batchId)
+    {
+        try {
+            $batch = DB::table('import_batches')
+                ->where('id', $batchId)
+                ->first();
+            if (!$batch) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Import batch not found'
+                ], 404);
+            }
+            // Get error summary by type
+            $errorSummary = DB::table('import_error_logs')
+                ->select('error_type', DB::raw('count(*) as count'))
+                ->where('import_batch_id', $batchId)
+                ->groupBy('error_type')
+                ->get();
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'batch' => $batch,
+                    'error_summary' => $errorSummary,
+                    'success_rate' => $batch->total_rows > 0
+                        ? round((($batch->processed_rows - $batch->failed_rows) / $batch->total_rows) * 100, 2)
+                        : 0
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch batch status: ' . $e->getMessage()
+            ], 500);
         }
-        if ($resolved !== null) {
-            $query->where('is_resolved', $resolved === 'true' ? 1 : 0);
-        }
-        $errors = $query->paginate($perPage);
-        return response()->json([
-            'success' => true,
-            'data' => $errors
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to fetch errors: ' . $e->getMessage()
-        ], 500);
     }
-}
-/**
- * Delete import batch and its error logs
- * DELETE /api/v1/connections/import/batch/{batchId}
- */
-public function deleteImportBatch($batchId)
-{
-    try {
-        DB::beginTransaction();
-        // Delete error logs first
-        DB::table('import_error_logs')
-            ->where('import_batch_id', $batchId)
-            ->delete();
-        // Delete batch record
-        $deleted = DB::table('import_batches')
-            ->where('id', $batchId)
-            ->delete();
-        if (!$deleted) {
+    /**
+     * Get import errors for a batch
+     * GET /api/v1/connections/import/batch/{batchId}/errors
+     */
+    public function getImportErrors(Request $request, $batchId)
+    {
+        try {
+            $perPage = $request->input('per_page', 50);
+            $errorType = $request->input('error_type');
+            $resolved = $request->input('resolved'); // true/false
+            $query = DB::table('import_error_logs')
+                ->where('import_batch_id', $batchId)
+                ->orderBy('row_number', 'asc');
+            if ($errorType) {
+                $query->where('error_type', $errorType);
+            }
+            if ($resolved !== null) {
+                $query->where('is_resolved', $resolved === 'true' ? 1 : 0);
+            }
+            $errors = $query->paginate($perPage);
+            return response()->json([
+                'success' => true,
+                'data' => $errors
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch errors: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    /**
+     * Delete import batch and its error logs
+     * DELETE /api/v1/connections/import/batch/{batchId}
+     */
+    public function deleteImportBatch($batchId)
+    {
+        try {
+            DB::beginTransaction();
+            // Delete error logs first
+            DB::table('import_error_logs')
+                ->where('import_batch_id', $batchId)
+                ->delete();
+            // Delete batch record
+            $deleted = DB::table('import_batches')
+                ->where('id', $batchId)
+                ->delete();
+            if (!$deleted) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Import batch not found'
+                ], 404);
+            }
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Import batch deleted successfully'
+            ], 200);
+        } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
                 'success' => false,
-                'message' => 'Import batch not found'
-            ], 404);
+                'message' => 'Failed to delete batch: ' . $e->getMessage()
+            ], 500);
         }
-        DB::commit();
-        return response()->json([
-            'success' => true,
-            'message' => 'Import batch deleted successfully'
-        ], 200);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to delete batch: ' . $e->getMessage()
-        ], 500);
     }
-}
-
 }
