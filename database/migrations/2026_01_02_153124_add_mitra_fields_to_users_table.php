@@ -31,18 +31,19 @@ return new class extends Migration
     }
 
     public function down(): void
-    {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropForeign(['area_id']);
-            $table->dropColumn([
-                'nik',
-                'npwp',
-                'nip',
-                'customer_number',
-                'area_id',
-                'register',
-                'payment'
-            ]);
-        });
-    }
+{
+    Schema::table('users', function (Blueprint $table) {
+        // Tidak ada FK area_id di DB, jadi jangan dropForeign area_id.
+
+        // Drop kolom yang memang kamu tambahkan (jangan drop nik/npwp karena tidak dibuat di up)
+        $cols = ['nip', 'customer_number', 'area_id', 'register', 'payment'];
+
+        foreach ($cols as $col) {
+            if (Schema::hasColumn('users', $col)) {
+                $table->dropColumn($col);
+            }
+        }
+    });
+}
+
 };
