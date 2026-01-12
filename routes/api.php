@@ -26,6 +26,7 @@ Route::post('/whatsapp/webhook/{groupId?}', [WhatsAppApiController::class, 'webh
 
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);
+Route::post('/v1/send-token', [AuthController::class, 'sendToken']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1')->group(function () {

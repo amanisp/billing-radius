@@ -462,15 +462,13 @@ class FakturController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $invoices = InvoiceHomepass::with('payer')->where('member_id', $id)
+            $invoices = InvoiceHomepass::with('payer')
+                ->where('member_id', $id)
                 ->where('group_id', $user->group_id)
                 ->orderByDesc('created_at')
                 ->paginate(5);
 
-            if ($invoices->isEmpty()) {
-                return ResponseFormatter::error(null, 'Invoice tidak ditemukan', 404);
-            }
-
+            // Jangan return error meskipun kosong, return data pagination saja
             return ResponseFormatter::success([
                 'items' => $invoices->items(),
                 'meta' => [
