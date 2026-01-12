@@ -6,11 +6,14 @@ use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Models\GlobalSettings;
 use App\Models\Groups;
+use App\Models\ResetTokens;
 use App\Models\User;
 use App\Services\WhatsappService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 class AuthController extends Controller
@@ -115,57 +118,6 @@ class AuthController extends Controller
     }
 
 
-    // public function login(Request $request)
-    // {
-    //     try {
-    //         $request->validate([
-    //             'username' => 'required',
-    //             'password' => 'required|min:8',
-    //         ]);
-
-    //         $loginType = filter_var($request->username, FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
-
-    //         $credentials = [
-    //             $loginType => $request->username,
-    //             'password' => $request->password,
-    //         ];
-
-    //         if (Auth::attempt($credentials)) {
-    //             /** @var User $user */
-    //             $user = Auth::user();
-
-    //             if (!$user instanceof User) {
-    //                 return ResponseFormatter::error(null, 'User tidak ditemukan.', 401);
-    //             }
-
-    //             // Create token
-    //             $token = $user->createToken('auth_token')->plainTextToken;
-
-    //             $data = [
-    //                 'user' => [
-    //                     'id' => $user->id,
-    //                     'username' => $user->username,
-    //                     'name' => $user->name,
-    //                     'email' => $user->email,
-    //                     'role' => $user->role,
-    //                     'group_id' => $user->group_id,
-    //                     'phone_number' => $user->phone_number,
-    //                 ],
-    //                 'token' => $token,
-    //                 'token_type' => 'Bearer'
-    //             ];
-
-    //             return ResponseFormatter::success($data, 'Login berhasil', 200);
-    //         } else {
-    //             return ResponseFormatter::error(null, 'Email atau Username atau Password salah.', 401);
-    //         }
-    //     } catch (\Throwable $th) {
-    //         return ResponseFormatter::error(null, $th->getMessage(), 200);
-    //     }
-    // }
-
-
-
     public function logout(Request $request)
     {
         try {
@@ -207,6 +159,109 @@ class AuthController extends Controller
             return ResponseFormatter::success($data, 'User data berhasil dimuat', 200);
         } catch (\Throwable $th) {
             return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
+
+    public function sendToken(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        try {
+            $email = $request->email;
+
+            // Cek user secara silent
+            $user = User::where('email', $email)->first();
+
+            if ($user) {
+                // Generate 6 digit token
+                $token = random_int(100000, 999999);
+
+                // Hapus token lama
+                ResetTokens::where('email', $email)->delete();
+
+                // Simpan token baru
+                ResetTokens::create([
+                    'email'      => $email,
+                    'token' => Hash::make($token),
+                    'expired_at' => now()->addMinutes(10),
+                ]);
+
+                // Kirim email
+                Mail::raw(
+                    "Kode reset password Anda adalah: $token\nBerlaku selama 10 menit.",
+                    function ($message) use ($email) {
+                        $message->to($email)
+                            ->subject('Kode Reset Password');
+                    }
+                );
+            }
+
+            // RESPONSE SELALU SAMA
+            return ResponseFormatter::success(
+                null,
+                'Kode reset password telah dikirim'
+            );
+        } catch (\Throwable $e) {
+
+            // Response aman
+            return ResponseFormatter::error(
+                null,
+                'Terjadi kesalahan, silakan coba lagi'
+            );
+        }
+    }
+
+    public function verifyToken(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'token' => 'required|digits:6',
+        ]);
+
+        try {
+            $reset = ResetTokens::where('email', $request->email)->first();
+
+            if (! $reset) {
+                return ResponseFormatter::error(
+                    null,
+                    'Token tidak valid atau sudah kadaluarsa'
+                );
+            }
+
+            // Cek expired
+            if ($reset->isExpired()) {
+                $reset->delete();
+
+                return ResponseFormatter::error(
+                    null,
+                    'Token tidak valid atau sudah kadaluarsa'
+                );
+            }
+
+            // Cocokkan token dengan hash
+            if (! Hash::check($request->token, $reset->token)) {
+                return ResponseFormatter::error(
+                    null,
+                    'Token tidak valid atau sudah kadaluarsa'
+                );
+            }
+
+            // Token VALID → hapus agar tidak bisa dipakai ulang
+            $reset->delete();
+
+            return ResponseFormatter::success(
+                null,
+                'Token valid'
+            );
+        } catch (\Throwable $e) {
+
+
+            return ResponseFormatter::error(
+                null,
+                'Terjadi kesalahan, silakan coba lagi'
+            );
         }
     }
 }
