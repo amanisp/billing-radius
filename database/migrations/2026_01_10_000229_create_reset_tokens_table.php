@@ -11,12 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::dropIfExists('whatsapp_templates');
-        Schema::create('whatsapp_templates', function (Blueprint $table) {
+        Schema::create('reset_tokens', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('group_id')->nullable();
-            $table->text('template_type');
-            $table->text('content');
+            $table->string('email')->index();
+            $table->string('token', 255);
+            $table->timestamp('expired_at');
             $table->timestamps();
         });
     }
@@ -26,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('whatsapp_templates');
+        Schema::dropIfExists('reset_tokens');
     }
 };

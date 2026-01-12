@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConnectionController;
+use App\Http\Controllers\Api\Dashboard;
+use App\Http\Controllers\Api\FakturController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LogsController;
 use App\Http\Controllers\Api\MemberController;
@@ -13,6 +15,7 @@ use App\Http\Controllers\Api\PayoutController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\VpnController;
+use App\Http\Controllers\Api\WhastappApi;
 use App\Http\Controllers\Api\WhatsAppApiController;
 use App\Http\Controllers\WhatsappController;
 use Illuminate\Support\Facades\Route;
@@ -21,31 +24,26 @@ use Illuminate\Support\Facades\Route;
 Route::post('/coba/send-message', [WhatsappController::class, 'testConnection']);
 Route::post('/whatsapp/webhook/{groupId?}', [WhatsAppApiController::class, 'webhook']);
 
-// Public Routes (No Auth Required)
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);
-
-// superadmin areas for signup dropdown (public access)
-Route::get('/v1/areas/superadmin-areas', [AreaController::class, 'getSuperadminAreas']);
+Route::post('/v1/send-token', [AuthController::class, 'sendToken']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
 
-        // ======Admin/Mitra Management (superadmin only)======
-        Route::middleware('role:superadmin')->group(function () {
-            Route::get('/admin/mitras', [AdminController::class, 'index']);
-            Route::post('/admin/mitras', [AdminController::class, 'store']);
-            Route::put('/admin/mitras/{id}', [AdminController::class, 'update']);
-            Route::delete('/admin/mitras/{id}', [AdminController::class, 'destroy']);
-        });
+        Route::get('/dashboard/stats', [Dashboard::class, 'stats']);
+        Route::get('/dashboard/stats/ppp', [Dashboard::class, 'statsPppoe']);
+
+        // ======Admin======
+        Route::get('/admin', [AdminController::class, 'index']);
+        Route::post('/admin', [AdminController::class, 'store']);
 
         //======Start Master Data======
         // Area
         Route::get('/areas', [AreaController::class, 'index']);
         Route::post('/areas', [AreaController::class, 'store']);
-        Route::put('/areas/{id}', [AreaController::class, 'update']);
         Route::post('/areas/assign', [AreaController::class, 'assignTechnician']);
         Route::delete('/areas/{id}', [AreaController::class, 'destroy']);
 
@@ -110,15 +108,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/profiles/{id}', [ProfileController::class, 'destroy']);
         // ==========End PPP-DHCP=========
 
+        // Faktur
+        Route::get('/invoices', [FakturController::class, 'index']);
+        Route::get('/invoices/member/{id}', [FakturController::class, 'invoiceByMemberId']);
+        Route::post('/invoices', [FakturController::class, 'manualPayment']);
+        Route::get('/invoices/details/{id}', [FakturController::class, 'fakturDetail']);
+        Route::get('/invoices/stats', [FakturController::class, 'stats']);
+        // Route::get('/faktur/mandiri', [FakturController::class, 'index']);
+
+
         //=== Invoices ===
-        Route::get('/invoices', [InvoiceController::class, 'index']);
-        Route::get('/invoices/stats', [InvoiceController::class, 'stats']);
-        Route::get('/invoices/date-range-stats', [InvoiceController::class, 'getDateRangeStats']);
-        Route::post('/invoices/create', [InvoiceController::class, 'createInv']);
-        Route::post('/invoices/generate-all', [InvoiceController::class, 'generateAll']);
-        Route::post('/invoices/{id}/pay-manual', [InvoiceController::class, 'payManual']);
-        Route::post('/invoices/{id}/cancel-payment', [InvoiceController::class, 'payCancel']);
-        Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy']);
+        // Route::get('/invoices', [InvoiceController::class, 'index']);
+        // Route::get('/invoices/date-range-stats', [InvoiceController::class, 'getDateRangeStats']);
+        // Route::post('/invoices/create', [InvoiceController::class, 'createInv']);
+        // Route::post('/invoices/generate-all', [InvoiceController::class, 'generateAll']);
+        // Route::post('/invoices/{id}/pay-manual', [InvoiceController::class, 'payManual']);
+        // Route::post('/invoices/{id}/cancel-payment', [InvoiceController::class, 'payCancel']);
+        // Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy']);
 
         // ========== Payouts ==========
         Route::get('/payouts', [PayoutController::class, 'index']);
@@ -127,6 +133,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payouts', [PayoutController::class, 'createPayout']);
         Route::post('/payouts/{id}/check-status', [PayoutController::class, 'checkStatus']);
         Route::delete('/payouts/{id}', [PayoutController::class, 'destroy']);
+
 
         // Logs
         Route::get('/logs', [LogsController::class, 'index']);
