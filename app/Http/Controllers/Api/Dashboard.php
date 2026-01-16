@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Models\Area;
 use App\Models\Connection;
 use App\Models\OpticalDist;
@@ -35,7 +36,6 @@ class Dashboard extends Controller
             $queryArea = Area::where('group_id', $user->group_id);
             $queryConn = Connection::where('group_id', $user->group_id);
 
-
             $stats = [
                 'odp' => (clone $queryOdp)->where('type', 'ODP')->count(),
                 'odc' => (clone $queryOdp)->where('type', 'ODC')->count(),
@@ -43,8 +43,18 @@ class Dashboard extends Controller
                 'homepass' => (clone $queryConn)->count(),
             ];
 
+            ActivityLogController::logCreate([
+                'action' => 'view_dashboard_stats',
+                'stats' => $stats,
+                'status' => 'success'
+            ], 'dashboard');
+
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'action' => 'view_dashboard_stats',
+                'error' => $th->getMessage()
+            ], 'dashboard');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -87,15 +97,25 @@ class Dashboard extends Controller
              */
             $totalOffline = max($totalPppoe - $totalActive, 0);
 
-
             $data = [
                 'total_pppoe' => $totalPppoe,
                 'total_active' => $totalActive,
                 'total_offline' => $totalOffline,
             ];
 
+            ActivityLogController::logCreate([
+                'action' => 'view_pppoe_stats',
+                'group_name' => $groupName,
+                'stats' => $data,
+                'status' => 'success'
+            ], 'dashboard');
+
             return ResponseFormatter::success($data, 'PPPoE STatus berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'action' => 'view_pppoe_stats',
+                'error' => $th->getMessage()
+            ], 'dashboard');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

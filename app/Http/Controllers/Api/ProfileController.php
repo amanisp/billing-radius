@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\Profiles;
@@ -51,8 +52,15 @@ class ProfileController extends Controller
             $perPage = $request->get('per_page', 15);
             $profiles = $query->paginate($perPage);
 
+            ActivityLogController::logCreate([
+                'action' => 'view_profiles_list',
+                'total_records' => $profiles->total(),
+                'status' => 'success'
+            ], 'profiles');
+
             return ResponseFormatter::success($profiles, 'Data profiles berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_profiles_list', 'error' => $th->getMessage()], 'profiles');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -114,11 +122,11 @@ class ProfileController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('CREATE', null, $profile);
-
+            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'profiles');
             return ResponseFormatter::success($profile, 'Profile berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'store', 'error' => $th->getMessage()], 'profiles');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -185,11 +193,11 @@ class ProfileController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('UPDATE', $oldData, $profile);
-
+            ActivityLogController::logCreate(['action' => 'update', 'status' => 'success'], 'profiles');
             return ResponseFormatter::success($profile, 'Profile berhasil diperbarui', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'update', 'error' => $th->getMessage()], 'profiles');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -221,11 +229,11 @@ class ProfileController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('DELETE', null, $deletedData);
-
+            ActivityLogController::logCreate(['action' => 'destroy', 'status' => 'success'], 'profiles');
             return ResponseFormatter::success($deletedData, 'Profile berhasil dihapus', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'destroy', 'error' => $th->getMessage()], 'profiles');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

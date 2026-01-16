@@ -35,9 +35,10 @@ return [
         ],
     ],
 
-    'wisender' => [
-        'url' => env('WISENDER_URL', 'http://localhost:5570'),
-        'api_key' => env('4fc00a3700d44525b5eb7f56ea61ccc2f6f9405c'),
+     'mpwa' => [
+        'api_key' => env('qnARDI9SJswXG7Vl6e3EFyMUCrq1v4'),
+        'base_url' => env('MPWA_BASE_URL', 'https://mpwa.amanisp.net.id'),
+        'default_sender' => env('MPWA_DEFAULT_SENDER', '62895380015903'),
     ],
 
     'freeradius' => [

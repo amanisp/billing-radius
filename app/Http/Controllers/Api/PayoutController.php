@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\GlobalSettings;
@@ -82,8 +83,14 @@ class PayoutController extends Controller
                 return $payout;
             });
 
+            ActivityLogController::logCreate([
+                'action' => 'view_payouts_list',
+                'total_records' => $payouts->total(),
+                'status' => 'success'
+            ], 'payouts');
             return ResponseFormatter::success($payouts, 'Data payouts berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_payouts_list', 'error' => $th->getMessage()], 'payouts');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -111,8 +118,14 @@ class PayoutController extends Controller
                 'failed_amount' => (clone $query)->where('status', 'FAILED')->sum('amount'),
             ];
 
+            ActivityLogController::logCreate([
+                'action' => 'view_payouts_stats',
+                'stats' => $stats,
+                'status' => 'success'
+            ], 'payouts');
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_payouts_stats', 'error' => $th->getMessage()], 'payouts');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -142,8 +155,14 @@ class PayoutController extends Controller
                 }
             }
 
+            ActivityLogController::logCreate([
+                'payout_id' => $id,
+                'action' => 'view_payout_detail',
+                'status' => 'success'
+            ], 'payouts');
             return ResponseFormatter::success($payout, 'Data payout berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['payout_id' => $id ?? null, 'action' => 'view_payout_detail', 'error' => $th->getMessage()], 'payouts');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -197,36 +216,32 @@ class PayoutController extends Controller
                     'group_id' => $user->group_id,
                 ]);
 
-                ActivityLogged::dispatch('CREATE', null, $payout);
-
-                Log::info('Payout created successfully', [
-                    'payout_id' => $payout->id,
-                    'external_id' => $payout->external_id,
-                ]);
-
-                return ResponseFormatter::success([
-                    'payout' => $payout,
-                    'xendit_response' => $data,
-                ], 'Payout berhasil dibuat', 201);
-            } else {
-                $errorBody = $response->body();
-                Log::error('Xendit payout creation failed', [
-                    'status' => $response->status(),
-                    'error' => $errorBody,
-                ]);
-
-                return ResponseFormatter::error(
-                    ['xendit_error' => $errorBody],
-                    'Gagal membuat payout di Xendit',
-                    $response->status()
-                );
-            }
-        } catch (\Throwable $th) {
-            Log::error('Payout creation error', [
-                'error' => $th->getMessage(),
-                'trace' => $th->getTraceAsString(),
+            ActivityLogController::logCreate(['action' => 'createPayout', 'status' => 'success'], 'payouts');
+            Log::info('Payout created successfully', [
+                'payout_id' => $payout->id,
+                'external_id' => $payout->external_id,
             ]);
 
+            return ResponseFormatter::success([
+                'payout' => $payout,
+                'xendit_response' => $data,
+            ], 'Payout berhasil dibuat', 201);
+        } else {
+            $errorBody = $response->body();
+            ActivityLogController::logCreateF(['action' => 'createPayout', 'error' => $errorBody], 'payouts');
+            Log::error('Xendit payout creation failed', [
+                'status' => $response->status(),
+                'error' => $errorBody,
+            ]);
+
+            return ResponseFormatter::error(
+                ['xendit_error' => $errorBody],
+                'Gagal membuat payout di Xendit',
+                $response->status()
+            );
+        }
+        } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'createPayout', 'error' => $th->getMessage()], 'payouts');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -255,15 +270,16 @@ class PayoutController extends Controller
                 // Update local status if changed
                 if ($payout->status !== $data['status']) {
                     $payout->update(['status' => $data['status']]);
-
-                    ActivityLogged::dispatch('UPDATE', null, $payout);
                 }
+
+                ActivityLogController::logCreate(['payout_id' => $id, 'action' => 'check_payout_status', 'new_status' => $data['status'], 'status' => 'success'], 'payouts');
 
                 return ResponseFormatter::success([
                     'payout' => $payout->fresh(),
                     'xendit_data' => $data,
                 ], 'Status payout berhasil diupdate');
             } else {
+                ActivityLogController::logCreateF(['action' => 'checkStatus', 'error' => $response->body()], 'payouts');
                 return ResponseFormatter::error(
                     ['xendit_error' => $response->body()],
                     'Gagal mengecek status payout',
@@ -271,6 +287,7 @@ class PayoutController extends Controller
                 );
             }
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'checkStatus', 'error' => $th->getMessage()], 'payouts');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -297,10 +314,15 @@ class PayoutController extends Controller
             $deletedData = $payout->toArray();
             $payout->delete();
 
-            ActivityLogged::dispatch('DELETE', null, $deletedData);
-
+            ActivityLogController::logCreate([
+                'action' => 'delete_payout',
+                'payout_id' => $id,
+                'external_id' => $deletedData['external_id'],
+                'status' => 'success'
+            ], 'payouts');
             return ResponseFormatter::success($deletedData, 'Payout berhasil dihapus', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'destroy', 'error' => $th->getMessage()], 'payouts');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -344,8 +366,10 @@ class PayoutController extends Controller
                 'new_status' => $status,
             ]);
 
+            ActivityLogController::logCreate(['action' => 'xenditCallback', 'status' => 'success'], 'payouts');
             return response()->json(['message' => 'Callback processed'], 200);
         } catch (\Exception $e) {
+            ActivityLogController::logCreateF(['action' => 'xenditCallback', 'error' => $e->getMessage()], 'payouts');
             Log::error('Xendit payout callback error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),

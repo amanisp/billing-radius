@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -87,8 +88,18 @@ class SessionController extends Controller
                 ];
             });
 
+            ActivityLogController::logCreate([
+                'action' => 'view_pppoe_sessions',
+                'total_records' => $data->total(),
+                'status' => 'success'
+            ], 'pppoe_sessions');
+
             return ResponseFormatter::success($data, 'Data PPPoE Online berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'action' => 'view_pppoe_sessions',
+                'error' => $th->getMessage()
+            ], 'pppoe_sessions');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
