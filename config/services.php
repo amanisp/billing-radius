@@ -35,8 +35,8 @@ return [
         ],
     ],
 
-     'mpwa' => [
-        'api_key' => env('qnARDI9SJswXG7Vl6e3EFyMUCrq1v4'),
+    'mpwa' => [
+        'api_key' => env('MPWA_API_KEY', 'qnARDI9SJswXG7Vl6e3EFyMUCrq1v4'),
         'base_url' => env('MPWA_BASE_URL', 'https://mpwa.amanisp.net.id'),
         'default_sender' => env('MPWA_DEFAULT_SENDER', '62895380015903'),
     ],
