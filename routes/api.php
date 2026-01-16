@@ -16,13 +16,24 @@ use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\VpnController;
 use App\Http\Controllers\Api\WhastappApi;
-use App\Http\Controllers\Api\WhatsAppApiController;
 use App\Http\Controllers\WhatsappController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\WhatsappController as ApiWhatsappController;
+
+Route::prefix('whatsapp')->group(function () {
+
+    // Device Management
+    Route::post('/generate-qr', [ApiWhatsappController::class, 'generateQR']);
+    Route::get('/device-info', [ApiWhatsappController::class, 'deviceInfo']);
+
+    // Messaging
+    Route::post('/send-message', [ApiWhatsappController::class, 'sendMessage']);
+    Route::post('/send-media', [ApiWhatsappController::class, 'sendMedia']);
+    Route::post('/check-number', [ApiWhatsappController::class, 'checkNumber']);
+});
 
 // WhatsApp API Routes
-Route::post('/coba/send-message', [WhatsappController::class, 'testConnection']);
-Route::post('/whatsapp/webhook/{groupId?}', [WhatsAppApiController::class, 'webhook']);
+Route::post('/coba/send-message', [ApiWhatsappController::class, 'testConnection']);
 
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);

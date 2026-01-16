@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\OpticalDist;
@@ -62,8 +63,15 @@ class OpticalController extends Controller
             $perPage = $request->get('per_page', 5);
             $opticals = $query->paginate($perPage);
 
+            ActivityLogController::logCreate([
+                'action' => 'view_optical_list',
+                'total_records' => $opticals->total(),
+                'status' => 'success'
+            ], 'optical');
+
             return ResponseFormatter::success($opticals, 'Data optical berhasil dimuat', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_optical_list', 'error' => $th->getMessage()], 'optical');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -104,10 +112,10 @@ class OpticalController extends Controller
                 'type' => $validate['type']
             ]);
 
-            ActivityLogged::dispatch('CREATE', null, $newArea);
-
+            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'optical');
             return ResponseFormatter::success($newArea, 'Data berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'store', 'error' => $th->getMessage()], 'optical');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -139,10 +147,10 @@ class OpticalController extends Controller
 
             $optical->update($validated);
 
-            ActivityLogged::dispatch('UPDATE', null, $optical);
-
+            ActivityLogController::logCreate(['action' => 'update', 'status' => 'success'], 'optical');
             return ResponseFormatter::success($optical, 'Data optical berhasil diperbarui', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'update', 'error' => $th->getMessage()], 'optical');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -164,10 +172,10 @@ class OpticalController extends Controller
             $deletedData = $optical;
             $optical->delete();
 
-            ActivityLogged::dispatch('DELETE', null, $deletedData);
-
+            ActivityLogController::logCreate(['action' => 'destroy', 'status' => 'success'], 'optical');
             return ResponseFormatter::success($deletedData, 'Data optical berhasil dihapus', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'destroy', 'error' => $th->getMessage()], 'optical');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
