@@ -22,18 +22,31 @@ use App\Http\Controllers\Api\WhatsappController as ApiWhatsappController;
 
 Route::prefix('whatsapp')->group(function () {
 
-    // Device Management
+    // ========== Device Management ==========
     Route::post('/generate-qr', [ApiWhatsappController::class, 'generateQR']);
     Route::get('/device-info', [ApiWhatsappController::class, 'deviceInfo']);
+    Route::post('/logout-device', [ApiWhatsappController::class, 'logoutDevice']);
+    Route::post('/delete-device', [ApiWhatsappController::class, 'deleteDevice']);
 
-    // Messaging
+    // ========== Messaging ==========
     Route::post('/send-message', [ApiWhatsappController::class, 'sendMessage']);
     Route::post('/send-media', [ApiWhatsappController::class, 'sendMedia']);
-    Route::post('/check-number', [ApiWhatsappController::class, 'checkNumber']);
-});
+    Route::post('/send-sticker', [ApiWhatsappController::class, 'sendSticker']);
+    Route::post('/send-button', [ApiWhatsappController::class, 'sendButton']);
+    Route::post('/send-list', [ApiWhatsappController::class, 'sendList']);
+    Route::post('/send-poll', [ApiWhatsappController::class, 'sendPoll']);
+    Route::post('/send-location', [ApiWhatsappController::class, 'sendLocation']);
+    Route::post('/send-vcard', [ApiWhatsappController::class, 'sendVCard']);
+    Route::post('/send-product', [ApiWhatsappController::class, 'sendProduct']);
+    Route::post('/send-text-channel', [ApiWhatsappController::class, 'sendTextChannel']);
 
-// WhatsApp API Routes
-Route::post('/coba/send-message', [ApiWhatsappController::class, 'testConnection']);
+    // ========== Number & User Info ==========
+    Route::post('/check-number', [ApiWhatsappController::class, 'checkNumber']);
+    Route::get('/user-info', [ApiWhatsappController::class, 'getUserInfo']);
+
+    // ========== Legacy/Test Endpoints ==========
+    Route::post('/coba/send-message', [ApiWhatsappController::class, 'testConnection']);
+});
 
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);
