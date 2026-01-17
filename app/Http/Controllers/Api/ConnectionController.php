@@ -7,6 +7,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\Connection;
@@ -114,8 +115,14 @@ class ConnectionController extends Controller
                 return $connection;
             });
 
+            ActivityLogController::logCreate([
+                'action' => 'view_connections_list',
+                'total_records' => $connections->total(),
+                'status' => 'success'
+            ], 'connections');
             return ResponseFormatter::success($connections, 'Data connections berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_connections_list', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -140,8 +147,14 @@ class ConnectionController extends Controller
                 'dhcp' => (clone $query)->where('type', 'dhcp')->count(),
             ];
 
+            ActivityLogController::logCreate([
+                'action' => 'view_connections_stats',
+                'stats' => $stats,
+                'status' => 'success'
+            ], 'connections');
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_connections_stats', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -206,11 +219,11 @@ class ConnectionController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('CREATE', null, $connection);
-
+            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'connections');
             return ResponseFormatter::success($connection, 'Connection berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'store', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -339,12 +352,7 @@ class ConnectionController extends Controller
             // Load relationships for response
             $connection->load(['member.paymentDetail', 'profile', 'area', 'optical', 'nas']);
 
-            ActivityLogged::dispatch('CREATE', null, [
-                'connection' => $connection->toArray(),
-                'member' => $member->toArray(),
-                'payment_detail' => $paymentDetail ? $paymentDetail->toArray() : null,
-            ]);
-
+            ActivityLogController::logCreate(['action' => 'storeWithMember', 'status' => 'success'], 'connections');
             return ResponseFormatter::success([
                 'connection' => $connection,
                 'member' => $member,
@@ -352,6 +360,7 @@ class ConnectionController extends Controller
             ], 'Connection with member berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'storeWithMember', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -463,11 +472,11 @@ class ConnectionController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('UPDATE', $oldData, $connection);
-
+            ActivityLogController::logCreate(['action' => 'update', 'status' => 'success'], 'connections');
             return ResponseFormatter::success($connection, 'Connection berhasil diperbarui', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'update', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -497,13 +506,13 @@ class ConnectionController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('UPDATE', $oldData, $connection);
-
+            ActivityLogController::logCreate(['action' => 'toggleIsolir', 'status' => 'success'], 'connections');
             return ResponseFormatter::success([
                 'isolir' => $newIsolirStatus
             ], 'Status isolir berhasil diubah', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'toggleIsolir', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -549,11 +558,11 @@ class ConnectionController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('DELETE', null, $deletedData);
-
+            ActivityLogController::logCreate(['action' => 'destroy', 'status' => 'success'], 'connections');
             return ResponseFormatter::success($deletedData, 'Connection berhasil dihapus', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'destroy', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -594,6 +603,12 @@ class ConnectionController extends Controller
                 ->selectRaw('SUM(acctinputoctets) as total_upload, SUM(acctoutputoctets) as total_download')
                 ->first();
 
+            ActivityLogController::logCreate([
+                'action' => 'view_connection_sessions',
+                'username' => $username,
+                'total_sessions' => $sessions->count(),
+                'status' => 'success'
+            ], 'connections');
             return ResponseFormatter::success([
                 'sessions' => $sessions,
                 'monthly_usage' => [
@@ -603,6 +618,7 @@ class ConnectionController extends Controller
                 ]
             ], 'Session data berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_connection_sessions', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -665,8 +681,10 @@ class ConnectionController extends Controller
             $data = [
                 'batch_id' => $import->getImportBatchId()
             ];
+            ActivityLogController::logCreate(['action' => 'importConnections', 'status' => 'success'], 'connections');
             return ResponseFormatter::success($data, 'Import started successfully', 200);
         } catch (\Exception $e) {
+            ActivityLogController::logCreateF(['action' => 'importConnections', 'error' => $e->getMessage()], 'connections');
             Log::error('Import failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -690,11 +708,13 @@ class ConnectionController extends Controller
                 $query->where('status', $status);
             }
             $batches = $query->paginate($perPage);
+            ActivityLogController::logCreate(['action' => 'getImportBatches', 'status' => 'success'], 'connections');
             return response()->json([
                 'success' => true,
                 'data' => $batches
             ], 200);
         } catch (\Exception $e) {
+            ActivityLogController::logCreateF(['action' => 'getImportBatches', 'error' => $e->getMessage()], 'connections');
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch import batches: ' . $e->getMessage()
@@ -723,6 +743,7 @@ class ConnectionController extends Controller
                 ->where('import_batch_id', $batchId)
                 ->groupBy('error_type')
                 ->get();
+            ActivityLogController::logCreate(['action' => 'getImportBatchStatus', 'status' => 'success'], 'connections');
             return response()->json([
                 'success' => true,
                 'data' => [
@@ -734,6 +755,7 @@ class ConnectionController extends Controller
                 ]
             ], 200);
         } catch (\Exception $e) {
+            ActivityLogController::logCreateF(['action' => 'getImportBatchStatus', 'error' => $e->getMessage()], 'connections');
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch batch status: ' . $e->getMessage()
@@ -760,11 +782,13 @@ class ConnectionController extends Controller
                 $query->where('is_resolved', $resolved === 'true' ? 1 : 0);
             }
             $errors = $query->paginate($perPage);
+            ActivityLogController::logCreate(['action' => 'getImportErrors', 'status' => 'success'], 'connections');
             return response()->json([
                 'success' => true,
                 'data' => $errors
             ], 200);
         } catch (\Exception $e) {
+            ActivityLogController::logCreateF(['action' => 'getImportErrors', 'error' => $e->getMessage()], 'connections');
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch errors: ' . $e->getMessage()
@@ -795,12 +819,14 @@ class ConnectionController extends Controller
                 ], 404);
             }
             DB::commit();
+            ActivityLogController::logCreate(['action' => 'deleteImportBatch', 'status' => 'success'], 'connections');
             return response()->json([
                 'success' => true,
                 'message' => 'Import batch deleted successfully'
             ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'deleteImportBatch', 'error' => $e->getMessage()], 'connections');
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete batch: ' . $e->getMessage()

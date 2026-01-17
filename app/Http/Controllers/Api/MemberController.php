@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\Member;
@@ -89,8 +90,15 @@ class MemberController extends Controller
             $perPage = $request->get('per_page', 15);
             $members = $query->paginate($perPage);
 
+            ActivityLogController::logCreate([
+                'action' => 'view_members_list',
+                'total_records' => $members->total(),
+                'status' => 'success'
+            ], 'members');
+
             return ResponseFormatter::success($members, 'Data members berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_members_list', 'error' => $th->getMessage()], 'members');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -120,8 +128,15 @@ class MemberController extends Controller
                 return response()->json(['message' => 'Member tidak ditemukan!'], 403);
             }
 
+            ActivityLogController::logCreate([
+                'member_id' => $id,
+                'action' => 'view_member_detail',
+                'status' => 'success'
+            ], 'members');
+
             return ResponseFormatter::success($member, 'Data member berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['member_id' => $id ?? null, 'action' => 'view_member_detail', 'error' => $th->getMessage()], 'members');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -152,10 +167,10 @@ class MemberController extends Controller
 
             $member->update($validated);
 
-            ActivityLogged::dispatch('UPDATE', $oldData, $member);
-
+            ActivityLogController::logCreate(['action' => 'update', 'status' => 'success'], 'members');
             return ResponseFormatter::success($member, 'Member berhasil diperbarui', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'update', 'error' => $th->getMessage()], 'members');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -193,12 +208,12 @@ class MemberController extends Controller
                 $oldData = $member->paymentDetail->toArray();
                 $member->paymentDetail->update($payload);
 
-                ActivityLogged::dispatch('UPDATE', $oldData, $member->paymentDetail);
+                ActivityLogController::logCreate(['action' => 'updatePaymentDetail', 'status' => 'success'], 'members');
             } else {
                 $paymentDetail = PaymentDetail::create($payload);
                 $member->update(['payment_detail_id' => $paymentDetail->id]);
 
-                ActivityLogged::dispatch('CREATE', null, $paymentDetail);
+                ActivityLogController::logCreate(['action' => 'updatePaymentDetail', 'status' => 'success'], 'members');
             }
 
             DB::commit();
@@ -210,6 +225,7 @@ class MemberController extends Controller
             );
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'updatePaymentDetail', 'error' => $th->getMessage()], 'members');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -233,8 +249,16 @@ class MemberController extends Controller
                 ->orderBy('created_at', 'desc')
                 ->paginate(15);
 
+            ActivityLogController::logCreate([
+                'member_id' => $id,
+                'action' => 'view_member_invoices',
+                'total_invoices' => $invoices->total(),
+                'status' => 'success'
+            ], 'members');
+
             return ResponseFormatter::success($invoices, 'Invoices berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['member_id' => $id ?? null, 'action' => 'view_member_invoices', 'error' => $th->getMessage()], 'members');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -257,8 +281,15 @@ class MemberController extends Controller
                 'without_billing' => (clone $query)->where('billing', false)->count(),
             ];
 
+            ActivityLogController::logCreate([
+                'action' => 'view_members_stats',
+                'stats' => $stats,
+                'status' => 'success'
+            ], 'members');
+
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_members_stats', 'error' => $th->getMessage()], 'members');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

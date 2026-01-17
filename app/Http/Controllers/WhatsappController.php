@@ -8,7 +8,6 @@ use App\Models\Groups;
 use App\Models\Member;
 use App\Models\GlobalSettings;
 use App\Models\WhatsappMessageLog;
-use App\Models\WhatsappTemplate;
 use App\Services\WhatsappService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -121,36 +120,6 @@ class WhatsappController extends Controller
                 ['group_id' => $user->group_id],
                 ['whatsapp_api_key' => $request->apikey]
             );
-
-            // Cek apakah sudah ada template untuk group ini
-            $existingTemplates = WhatsappTemplate::where('group_id', $user->group_id)->count();
-
-            if ($existingTemplates === 0) {
-                // Default templates
-                $defaultTemplates = [
-                    'invoice_terbit' => "Salam [full_name]\n\nKami informasikan bahwa invoice Anda telah terbit dan dapat segera dibayarkan. Berikut rinciannya:\n\nID Pelanggan: [uid]\nNomor Invoice: [no_invoice]\nJumlah: Rp [amount]\nPPN: [ppn]\nDiskon: [discount]\nTotal: Rp [total]\nLayanan: Internet [pppoe_user] - [pppoe_profile]\nJatuh Tempo: [due_date]\nPeriode: [period]\n\nPembayaran Otomatis: [payment_url]\n\nMohon segera lakukan pembayaran sebelum jatuh tempo.\n\nTerima kasih.\n[footer]\n\n_Ini adalah pesan otomatis - mohon untuk tidak membalas langsung ke pesan ini_",
-
-                    'payment_paid' => "Halo [full_name],\n\nPembayaran Anda untuk invoice #[no_invoice] telah berhasil diproses.\n\nJumlah: [total]\nLayanan: [pppoe_user] - [pppoe_profile]\nPeriode: [period]\nMetode Pembayaran: [payment_gateway]\n\nTerima kasih atas pembayaran Anda.\n\n[footer]",
-
-                    'payment_cancel' => "Halo [full_name],\n\nPembayaran Anda untuk invoice #[no_invoice] telah dibatalkan.\nJumlah Tagihan: [total]\nTanggal Invoice: [invoice_date]\nJatuh Tempo: [due_date]\nPeriode: [period]\n\nSilakan lakukan pembayaran untuk menghindari gangguan layanan.\n\n_Ini adalah pesan otomatis - mohon untuk tidak membalas langsung ke pesan ini_",
-
-                    'account_suspend' => "Pelanggan yang Terhormat,\n\nLayanan internet Anda sementara ditangguhkan karena invoice belum dibayarkan.\n\nSilakan hubungi layanan pelanggan kami untuk bantuan.\n\n[footer]",
-
-                    'account_active' => "Pelanggan yang Terhormat,\n\nLayanan internet Anda telah diaktifkan.\nUsername: [pppoe_user]\nProfil: [pppoe_profile]\n\nNikmati layanan kami!\n\n_Ini adalah pesan otomatis - mohon untuk tidak membalas langsung ke pesan ini_",
-
-                    'invoice_reminder' => "Halo [full_name],\n\nIni adalah pengingat untuk pembayaran Anda yang akan datang.\nID Pelanggan: [uid]\nNomor Invoice: #[no_invoice]\nJumlah: [total]\nJatuh Tempo: [due_date]\n\nSilakan lakukan pembayaran sebelum jatuh tempo.\n\n[payment_gateway]\n\n[footer]",
-
-                    'invoice_overdue' => "Halo [full_name],\n\nInvoice Anda #[no_invoice] telah melewati jatuh tempo.\nID Pelanggan: [uid]\nJumlah: [total]\nJatuh Tempo: [due_date]\n\nSegera lakukan pembayaran untuk menghindari suspend layanan.\n\n[payment_gateway]\n\n[footer]",
-                ];
-
-                foreach ($defaultTemplates as $type => $content) {
-                    WhatsappTemplate::create([
-                        'group_id'      => $user->group_id,
-                        'template_type' => $type,
-                        'content'       => $content,
-                    ]);
-                }
-            }
 
             return back()->with('success', "API Key berhasil disimpan");
         } catch (\Exception $th) {
@@ -458,77 +427,7 @@ class WhatsappController extends Controller
             return $date;
         }
     }
+    
 
-    public function saveTemplate(Request $request)
-    {
-        $request->validate([
-            'type'    => 'required|string',
-            'content' => 'required|string',
-        ]);
 
-        $template = WhatsappTemplate::updateOrCreate(
-            [
-                'group_id'      => Auth::user()->group_id,
-                'template_type' => $request->type,
-            ],
-            [
-                'content'       => $request->content,
-            ]
-        );
-
-        return response()->json([
-            'status'  => 'success',
-            'message' => 'Template berhasil disimpan',
-            'data'    => $template,
-        ]);
-    }
-
-    /**
-     * Get templates from database with fallback to defaults
-     */
-    public function getTemplates(Request $request)
-    {
-        $user = Auth::user();
-
-        $request->validate(['type' => 'required|string']);
-
-        $template = WhatsappTemplate::where('group_id', $user->group_id)
-            ->where('template_type', $request->type)
-            ->first();
-
-        return response()->json([
-            'status'  => $template ? 'success' : 'not_found',
-            'content' => $template?->content ?? '',
-        ]);
-    }
-
-    public function resetTemplate(Request $request)
-    {
-        $request->validate(['type' => 'required|string']);
-
-        $defaults = config('whatsapp_templates');
-
-        if (!isset($defaults[$request->type])) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Template default tidak ditemukan'
-            ]);
-        }
-
-        $template = WhatsappTemplate::updateOrCreate(
-            [
-                'group_id'      => Auth::user()->group_id,
-                'template_type' => $request->type,
-            ],
-            [
-                'content'       => $defaults[$request->type],
-            ]
-        );
-
-        return response()->json([
-            'status'  => 'success',
-            'message' => 'Template berhasil direset ke default',
-            'data'    => $template,
-        ]);
-    }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Helpers\InvoiceHelper;
@@ -143,8 +144,14 @@ class InvoiceController extends Controller
             $perPage = $request->get('per_page', 15);
             $invoices = $query->paginate($perPage);
 
+            ActivityLogController::logCreate([
+                'action' => 'view_invoices_list',
+                'total_records' => $invoices->total(),
+                'status' => 'success'
+            ], 'invoices');
             return ResponseFormatter::success($invoices, 'Data invoices berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_invoices_list', 'error' => $th->getMessage()], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -225,9 +232,14 @@ class InvoiceController extends Controller
                 ],
             ];
 
+            ActivityLogController::logCreate([
+                'action' => 'view_invoices_stats',
+                'stats' => $stats,
+                'status' => 'success'
+            ], 'invoices');
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            ActivityLogController::logCreateF(['action' => 'view_invoices_stats', 'error' => $th->getMessage()], 'invoices');
         }
     }
 
@@ -289,9 +301,15 @@ class InvoiceController extends Controller
                     ->sum('amount'),
             ];
 
+            ActivityLogController::logCreate([
+                'action' => 'view_invoices_date_range_stats',
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'status' => 'success'
+            ], 'invoices');
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            ActivityLogController::logCreateF(['action' => 'view_invoices_date_range_stats', 'error' => $th->getMessage()], 'invoices');
         }
     }
 
@@ -386,11 +404,11 @@ class InvoiceController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('CREATE', null, $invoice);
-
+            ActivityLogController::logCreate(['action' => 'createInv', 'status' => 'success'], 'invoices');
             return ResponseFormatter::success($invoice, 'Invoice berhasil dibuat', 201);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'createInv', 'error' => $th->getMessage()], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -454,10 +472,12 @@ class InvoiceController extends Controller
                 GenerateAllInvoiceJob::dispatch($member)->onQueue('invoices');
             }
 
+            ActivityLogController::logCreate(['action' => 'generateAll', 'status' => 'success'], 'invoices');
             return ResponseFormatter::success([
                 'count' => $membersToGenerate->count()
             ], 'Proses generate invoice sedang berjalan di background', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'generateAll', 'error' => $th->getMessage()], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -558,6 +578,7 @@ class InvoiceController extends Controller
             return ResponseFormatter::success($invoice, 'Pembayaran berhasil!', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'payManual', 'error' => $th->getMessage()], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -608,6 +629,14 @@ class InvoiceController extends Controller
 
             DB::commit();
 
+            ActivityLogController::logCreate([
+                'action' => 'cancel_payment',
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->inv_number,
+                'amount' => $invoice->amount,
+                'status' => 'success'
+            ], 'invoices');
+
             ActivityLogged::dispatch('UPDATE', null, $invoice);
 
             // Send WhatsApp notification
@@ -632,6 +661,7 @@ class InvoiceController extends Controller
             return ResponseFormatter::success($invoice, 'Cancel berhasil!', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'payCancel', 'error' => $th->getMessage()], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -668,11 +698,11 @@ class InvoiceController extends Controller
 
             DB::commit();
 
-            ActivityLogged::dispatch('DELETE', null, $deletedData);
-
+            ActivityLogController::logCreate(['action' => 'destroy', 'status' => 'success'], 'invoices');
             return ResponseFormatter::success($deletedData, 'Invoice berhasil dihapus', 200);
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'destroy', 'error' => $th->getMessage()], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -767,9 +797,11 @@ class InvoiceController extends Controller
                 Log::info('Xendit Callback Processed Successfully', ['invoice' => $externalId]);
             }
 
+            ActivityLogController::logCreate(['action' => 'xenditCallback', 'status' => 'success'], 'invoices');
             return response()->json(['message' => 'Callback processed'], 200);
         } catch (\Exception $e) {
             DB::rollBack();
+            ActivityLogController::logCreateF(['action' => 'xenditCallback', 'error' => $e->getMessage()], 'invoices');
             Log::error('Xendit callback error: ' . $e->getMessage());
             return response()->json(['message' => 'Error processing callback'], 500);
         }
