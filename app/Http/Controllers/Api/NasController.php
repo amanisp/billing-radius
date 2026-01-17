@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
+use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Controller;
 use App\Models\Nas;
 use App\Models\Radius\RadGroupCheck;
@@ -63,8 +64,15 @@ class NasController extends Controller
             $perPage = $request->get('per_page', 10);
             $vpnUsers = $query->paginate($perPage);
 
+            ActivityLogController::logCreate([
+                'action' => 'view_nas_list',
+                'total_records' => $vpnUsers->total(),
+                'status' => 'success'
+            ], 'nas');
+
             return ResponseFormatter::success($vpnUsers, 'Data NAS berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_nas_list', 'error' => $th->getMessage()], 'nas');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -116,11 +124,10 @@ class NasController extends Controller
                 'group_id' => $groupId
             ]);
 
-
-            ActivityLogged::dispatch('CREATE', null, $data);
-
+            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'nas');
             return ResponseFormatter::success($data, 'Data NAS berhasil disimpan', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'store', 'error' => $th->getMessage()], 'nas');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -139,11 +146,10 @@ class NasController extends Controller
             RadGroupCheck::where('group_id', $data->group_id)->delete();
             $data->delete();
 
-            ActivityLogged::dispatch('DELETE', null, $data);
-
-
+            ActivityLogController::logCreate(['action' => 'destroy', 'status' => 'success'], 'nas');
             return ResponseFormatter::success($data, 'Data berhasil dihapus', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'destroy', 'error' => $th->getMessage()], 'nas');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

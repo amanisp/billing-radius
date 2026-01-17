@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Helpers\ResponseFormatter;
+use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Controller;
 use App\Models\GlobalSettings;
 use App\Models\Groups;
@@ -69,8 +70,10 @@ class AuthController extends Controller
                 'user' => $newUser,
                 'group' => $group
             ];
+            ActivityLogController::logCreate(['action' => 'signup', 'status' => 'success'], 'users');
             return ResponseFormatter::success($data, 'Signup Berhasil', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'signup', 'error' => $th->getMessage()], 'users');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -99,6 +102,7 @@ class AuthController extends Controller
 
             $token = $user->createToken('auth_token')->plainTextToken;
 
+            ActivityLogController::logCreate(['action' => 'login', 'status' => 'success'], 'users');
             return ResponseFormatter::success([
                 'user' => [
                     'id' => $user->id,
@@ -113,6 +117,7 @@ class AuthController extends Controller
                 'token_type' => 'Bearer'
             ], 'Login berhasil');
         } catch (\Throwable $e) {
+            ActivityLogController::logCreateF(['action' => 'login', 'error' => $e->getMessage()], 'users');
             return ResponseFormatter::error(null, $e->getMessage(), 500);
         }
     }
@@ -129,8 +134,10 @@ class AuthController extends Controller
             // Hapus token saat logout
             $request->user()->currentAccessToken()->delete();
 
+            ActivityLogController::logCreate(['action' => 'logout', 'status' => 'success'], 'users');
             return ResponseFormatter::success(null, 'Logout berhasil', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'logout', 'error' => $th->getMessage()], 'users');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -156,8 +163,10 @@ class AuthController extends Controller
                 'phone_number' => $user->phone_number,
             ];
 
+            ActivityLogController::logCreate(['action' => 'me', 'status' => 'success'], 'users');
             return ResponseFormatter::success($data, 'User data berhasil dimuat', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'me', 'error' => $th->getMessage()], 'users');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -199,12 +208,13 @@ class AuthController extends Controller
             }
 
             // RESPONSE SELALU SAMA
+            ActivityLogController::logCreate(['action' => 'sendToken', 'status' => 'success'], 'users');
             return ResponseFormatter::success(
                 null,
                 'Kode reset password telah dikirim'
             );
         } catch (\Throwable $e) {
-
+            ActivityLogController::logCreateF(['action' => 'sendToken', 'error' => $e->getMessage()], 'users');
             // Response aman
             return ResponseFormatter::error(
                 null,
@@ -251,13 +261,13 @@ class AuthController extends Controller
             // Token VALID → hapus agar tidak bisa dipakai ulang
             $reset->delete();
 
+            ActivityLogController::logCreate(['action' => 'verifyToken', 'status' => 'success'], 'users');
             return ResponseFormatter::success(
                 null,
                 'Token valid'
             );
         } catch (\Throwable $e) {
-
-
+            ActivityLogController::logCreateF(['action' => 'verifyToken', 'error' => $e->getMessage()], 'users');
             return ResponseFormatter::error(
                 null,
                 'Terjadi kesalahan, silakan coba lagi'

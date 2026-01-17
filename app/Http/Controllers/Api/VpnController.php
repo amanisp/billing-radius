@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Events\ActivityLogged;
+use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Controller;
 use App\Helpers\ResponseFormatter;
 use App\Models\Radius\RadCheck;
@@ -80,8 +81,15 @@ class VpnController extends Controller
             $perPage = $request->get('per_page', 10);
             $vpnUsers = $query->paginate($perPage);
 
+            ActivityLogController::logCreate([
+                'action' => 'view_vpn_list',
+                'total_records' => $vpnUsers->total(),
+                'status' => 'success'
+            ], 'vpn_users');
+
             return ResponseFormatter::success($vpnUsers, 'Data VPN berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'view_vpn_list', 'error' => $th->getMessage()], 'vpn_users');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -149,10 +157,10 @@ class VpnController extends Controller
                 'group_id'  => $groupId,
             ]);
 
-            ActivityLogged::dispatch('CREATE', null, $data);
-
+            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'vpn_users');
             return ResponseFormatter::success($data, 'Data VPN berhasil disimpan', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'store', 'error' => $th->getMessage()], 'vpn_users');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -172,10 +180,10 @@ class VpnController extends Controller
             RadReply::where('username', $profile->username)->delete();
             $profile->delete();
 
-            ActivityLogged::dispatch('DELETE', null, $profile);
-
+            ActivityLogController::logCreate(['action' => 'destroy', 'status' => 'success'], 'vpn_users');
             return ResponseFormatter::success(null, 'VPN berhasil dihapus dari sistem.');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'destroy', 'error' => $th->getMessage()], 'vpn_users');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

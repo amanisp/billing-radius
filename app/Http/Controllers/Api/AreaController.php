@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Events\ActivityLogged;
 use App\Helpers\ResponseFormatter;
 use App\Models\Area as ModelArea;
@@ -73,8 +74,10 @@ class AreaController extends Controller
             $perPage = $request->get('per_page', 5);
             $areas = $query->paginate($perPage);
 
+            ActivityLogController::logCreate(['action' => 'index', 'status' => 'success'], 'areas');
             return ResponseFormatter::success($areas, 'Data area berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'index', 'error' => $th->getMessage()], 'areas');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -110,10 +113,10 @@ class AreaController extends Controller
                 'area_code' => $validate['area_code']
             ]);
 
-            ActivityLogged::dispatch('CREATE', null, $newArea);
-
+            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'areas');
             return ResponseFormatter::success($newArea, 'Data berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'store', 'error' => $th->getMessage()], 'areas');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -143,11 +146,7 @@ class AreaController extends Controller
             // 🔹 Update pivot tanpa duplikat & sinkronisasi otomatis
             $area->assignedTechnicians()->sync($newTechnicians);
 
-            ActivityLogged::dispatch('UPDATE', null, [
-                'action' => 'assign_technicians',
-                'area' => $area->name,
-                'assigned' => User::whereIn('id', $newTechnicians)->pluck('name')->toArray(),
-            ]);
+            ActivityLogController::logCreate(['action' => 'assignTechnician', 'status' => 'success'], 'areas');
 
             return ResponseFormatter::success(
                 ['assigned' => $newTechnicians],
@@ -155,6 +154,7 @@ class AreaController extends Controller
                 200
             );
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'assignTechnician', 'error' => $th->getMessage()], 'areas');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -177,11 +177,11 @@ class AreaController extends Controller
             $deletedData = $area;
             $area->delete();
 
-            ActivityLogged::dispatch('DELETE', null, $deletedData);
-
+            ActivityLogController::logCreate(['action' => 'destroy', 'status' => 'success'], 'areas');
 
             return ResponseFormatter::success($area, 'Data berhasil dihapus', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'destroy', 'error' => $th->getMessage()], 'areas');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

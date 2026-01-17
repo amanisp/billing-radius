@@ -54,8 +54,10 @@ class AdminController extends Controller
             $perPage = $request->get('per_page', 5);
             $opticals = $query->paginate($perPage);
 
+            ActivityLogController::logCreate(['action' => 'index', 'status' => 'success'], 'users');
             return ResponseFormatter::success($opticals, 'Data admin berhasil dimuat', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'index', 'error' => $th->getMessage()], 'users');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -89,10 +91,11 @@ class AdminController extends Controller
                 'group_id'     => $user->group_id,
             ]);
 
-            ActivityLogController::logCreate('users', $newUser);
+            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'users');
 
             return ResponseFormatter::success($newUser, 'Data admin berhasil ditambahkan', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF(['action' => 'store', 'error' => $th->getMessage()], 'users');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -193,10 +196,21 @@ class AdminController extends Controller
                 $areaList->delete();
             }
             $user->delete();
+
+            ActivityLogController::logCreate([
+                'user_id' => $id,
+                'action' => 'destroy_admin',
+                'status' => 'success'
+            ], 'users');
             ActivityLogged::dispatch('DELETE', null, $deletedData);
 
             return ResponseFormatter::success(null, 'Data admin berhasil dihapus', 200);
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'user_id' => $id ?? null,
+                'action' => 'destroy_admin',
+                'error' => $th->getMessage()
+            ], 'users');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

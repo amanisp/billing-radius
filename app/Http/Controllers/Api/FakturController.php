@@ -6,6 +6,7 @@ use App\Events\ActivityLogged;
 use App\Helpers\InvoiceHelper;
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\ActivityLogController;
 use App\Models\Invoice;
 use App\Models\InvoiceHomepass;
 use App\Models\Member;
@@ -168,8 +169,18 @@ class FakturController extends Controller
                 // NOTE: jika last_invoice null → jangan masuk overdue
             }
 
+            ActivityLogController::logCreate([
+                'action' => 'view_invoice_stats',
+                'stats' => $stats,
+                'status' => 'success'
+            ], 'invoices');
+
             return ResponseFormatter::success($stats, 'Stats pembayaran berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'action' => 'view_invoice_stats',
+                'error' => $th->getMessage()
+            ], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -256,8 +267,18 @@ class FakturController extends Controller
             $perPage = $request->get('per_page', 15);
             $connections = $query->paginate($perPage);
 
+            ActivityLogController::logCreate([
+                'action' => 'view_faktur_list',
+                'total_records' => $connections->total(),
+                'status' => 'success'
+            ], 'invoices');
+
             return ResponseFormatter::success($connections, 'Data connections berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'action' => 'view_faktur_list',
+                'error' => $th->getMessage()
+            ], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -279,6 +300,11 @@ class FakturController extends Controller
 
             $payment = $member->paymentDetail;
             if (!$payment) {
+                ActivityLogController::logCreateF([
+                    'member_id' => $memberId,
+                    'action' => 'view_faktur_detail',
+                    'error' => 'Payment detail tidak ditemukan'
+                ], 'invoices');
                 return ResponseFormatter::error(null, 'Payment detail tidak ditemukan', 404);
             }
 
@@ -350,6 +376,13 @@ class FakturController extends Controller
                 ];
             }
 
+            ActivityLogController::logCreate([
+                'member_id' => $memberId,
+                'action' => 'view_faktur_detail',
+                'total_invoices' => count($virtualInvoices),
+                'status' => 'success'
+            ], 'invoices');
+
             /* ===============================
          * RESPONSE FINAL
          * =============================== */
@@ -360,6 +393,11 @@ class FakturController extends Controller
                 'invoices'      => $virtualInvoices,
             ], 'Detail faktur berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'member_id' => $memberId ?? null,
+                'action' => 'view_faktur_detail',
+                'error' => $th->getMessage()
+            ], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -391,6 +429,11 @@ class FakturController extends Controller
                 ->firstOrFail();
 
             if ($member->group_id !== $user->group_id) {
+                ActivityLogController::logCreateF([
+                    'member_id' => $validated['member_id'],
+                    'action' => 'manual_payment',
+                    'error' => 'Member tidak ditemukan atau tidak sesuai group'
+                ], 'invoices');
                 return response()->json(['message' => 'Member tidak ditemukan!'], 403);
             }
 
@@ -441,6 +484,16 @@ class FakturController extends Controller
 
             DB::commit();
 
+            ActivityLogController::logCreate([
+                'member_id' => $validated['member_id'],
+                'invoice_id' => $invoice->id,
+                'amount' => $totalAmount,
+                'method' => $validated['payment_method'],
+                'month' => $validated['month'],
+                'action' => 'manual_payment',
+                'status' => 'success'
+            ], 'invoices');
+
             ActivityLogged::dispatch('CREATE', null, $invoice);
 
             return ResponseFormatter::success(
@@ -450,6 +503,11 @@ class FakturController extends Controller
             );
         } catch (\Throwable $th) {
             DB::rollBack();
+            ActivityLogController::logCreateF([
+                'member_id' => $request->input('member_id') ?? null,
+                'action' => 'manual_payment',
+                'error' => $th->getMessage()
+            ], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -468,6 +526,13 @@ class FakturController extends Controller
                 ->orderByDesc('created_at')
                 ->paginate(5);
 
+            ActivityLogController::logCreate([
+                'member_id' => $id,
+                'action' => 'view_member_invoices',
+                'total_invoices' => $invoices->total(),
+                'status' => 'success'
+            ], 'invoices');
+
             // Jangan return error meskipun kosong, return data pagination saja
             return ResponseFormatter::success([
                 'items' => $invoices->items(),
@@ -479,6 +544,11 @@ class FakturController extends Controller
                 ]
             ], 'Detail invoice berhasil dimuat');
         } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'member_id' => $id ?? null,
+                'action' => 'view_member_invoices',
+                'error' => $th->getMessage()
+            ], 'invoices');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
