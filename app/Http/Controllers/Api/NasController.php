@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Nas;
 use App\Models\Radius\RadGroupCheck;
 use App\Models\Radius\RadNas;
+use App\Models\Radius\RadReload;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -114,6 +115,11 @@ class NasController extends Controller
                 'secret' => $data->secret,
                 'description' => $data->group_id,
                 'group_id'    => $groupId,
+            ]);
+
+            RadReload::create([
+                'nasipaddress' => $data->ip_router,
+                'reloadtime' => now()
             ]);
 
             RadGroupCheck::create([
