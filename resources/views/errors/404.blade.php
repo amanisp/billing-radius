@@ -1,28 +1,42 @@
-<html lang="en">
+<!DOCTYPE html>
+<html lang="id">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Oppss...</title>
-    <link rel="stylesheet" href="{{ asset('assets/compiled/css/app.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/compiled/css/error.css') }}">
-    <link rel="shortcut icon" href="{{ asset('images/logo.png') }}" type="image/png">
+    <title>Tidak Tersedia</title>
+    <style>
+        body {
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: system-ui, sans-serif;
+            background: #0f172a;
+            color: #e5e7eb;
+            text-align: center;
+        }
+
+        .box {
+            max-width: 500px;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 12px;
+        }
+
+        p {
+            opacity: 0.8;
+        }
+    </style>
 </head>
 
 <body>
-    <script src="{{ asset('assets/static/js/initTheme.js') }}"></script>
-    <div id="error">
-        <div class="error-page container">
-            <div class="col-md-8 col-12 offset-md-2">
-                <div class="text-center">
-                    <img class="img-error" src="{{ asset('assets/static/images/samples/error-404.svg') }}"
-                        alt="Not Found">
-                    <h1 class="error-title">Not Found</h1>
-                    <p class='fs-5 text-gray-600'>The page you are looking not found.</p>
-                    <a href="https://app.amanisp.net.id" class="btn btn-lg btn-outline-primary mt-3">Go Home</a>
-                </div>
-            </div>
-        </div>
+    <div class="box">
+        <h1>🚧 Oops!......</h1>
+        <p>Maaf, halaman yang Anda cari tidak tersedia atau telah dihapus.</p>
+        <p>Silakan menghubungi pengembang.</p>
     </div>
 </body>
 
