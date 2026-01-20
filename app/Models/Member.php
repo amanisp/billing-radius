@@ -70,6 +70,7 @@ class Member extends Model
         return $this->hasMany(InvoiceHomepass::class, 'member_id');
     }
 
+
     // Relasi ke Group
     public function group()
     {

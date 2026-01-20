@@ -138,17 +138,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/invoices', [FakturController::class, 'manualPayment']);
         Route::get('/invoices/details/{id}', [FakturController::class, 'fakturDetail']);
         Route::get('/invoices/stats', [FakturController::class, 'stats']);
-        // Route::get('/faktur/mandiri', [FakturController::class, 'index']);
+        Route::get('/invoices/pdf/{inv_number}', [FakturController::class, 'single']);
+        Route::get('/invoices/paid/all', [FakturController::class, 'invoicePaid']);
+        Route::delete('/invoices/cancel/{id}', [FakturController::class, 'paymentCancel']);
 
 
-        //=== Invoices ===
-        // Route::get('/invoices', [InvoiceController::class, 'index']);
-        // Route::get('/invoices/date-range-stats', [InvoiceController::class, 'getDateRangeStats']);
-        // Route::post('/invoices/create', [InvoiceController::class, 'createInv']);
-        // Route::post('/invoices/generate-all', [InvoiceController::class, 'generateAll']);
-        // Route::post('/invoices/{id}/pay-manual', [InvoiceController::class, 'payManual']);
-        // Route::post('/invoices/{id}/cancel-payment', [InvoiceController::class, 'payCancel']);
-        // Route::delete('/invoices/{id}', [InvoiceController::class, 'destroy']);
 
         // ========== Payouts ==========
         Route::get('/payouts', [PayoutController::class, 'index']);
