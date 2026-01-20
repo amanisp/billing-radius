@@ -17,6 +17,8 @@ use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
+use Mpdf\Mpdf;
 
 class FakturController extends Controller
 {
@@ -31,62 +33,85 @@ class FakturController extends Controller
         return null;
     }
 
-    private function generateVirtualInvoices($lastInvoiceDate, $payment)
+    private function invoiceData($invoice)
     {
-        $now = Carbon::now()->startOfMonth();
-        $invoices = [];
+        return [
+            'invoice' => $invoice,
+            'moon' => Carbon::parse($invoice->due_date)->translatedFormat('F Y'),
+            'priceBandwith' => 'Rp. ' . number_format($invoice->price, 0, ',', '.'),
+        ];
+    }
 
-        $amount   = $payment->amount ?? 0;
-        $ppnPct   = $payment->ppn ?? 0;
-        $discount = $payment->discount ?? 0;
 
-        $ppnNominal = $amount * ($ppnPct / 100);
-        $totalPerMonth = ($amount + $ppnNominal) - $discount;
+    public function single($inv_number)
+    {
+        try {
+            // 1️⃣ Ambil invoice beserta relasi
+            $invoice = InvoiceHomepass::where('inv_number', $inv_number)
+                ->with([
+                    'payer',
+                    'member.connection.profile',
+                    'member.paymentDetail'
+                ])
+                ->firstOrFail();  // Jika gagal, akan throw exception
 
-        /**
-         * CASE 1: pelanggan baru / belum pernah bayar
-         */
-        if (empty($lastInvoiceDate)) {
-            $invoices[] = [
-                'billing_month' => $now->month,
-                'billing_year'  => $now->year,
-                'period'        => $now->translatedFormat('F Y'),
+            // 2️⃣ Ambil data pembayaran
+            $amount   = $invoice->member->paymentDetail->amount ?? 0;
+            $discount = $invoice->member->paymentDetail->discount ?? 0;
+            $ppn      = $invoice->member->paymentDetail->ppn ?? 0;
+            $otherFee = 0; // Bisa ditambah jika ada biaya lain
 
-                'amount'        => $amount,
-                'ppn_percent'   => $ppnPct,
-                'ppn_amount'    => round($ppnNominal),
-                'discount'      => $discount,
-                'total'         => round($totalPerMonth),
+            // 3️⃣ Hitung subtotal dan total
+            $subtotal  = $amount - $discount + $otherFee;
+            $ppnAmount = $subtotal * ($ppn / 100);
+            $total     = $subtotal + $ppnAmount;
 
-                'status'        => 'UNPAID'
-            ];
-            return $invoices;
+            // 4️⃣ Bulan dari start_date
+            $monthYear = Carbon::parse($invoice->start_date)->translatedFormat('F Y');
+
+            // 5️⃣ Data untuk blade
+            $data = array_merge(
+                $this->invoiceData($invoice), // pastikan fungsi ini return array
+                [
+                    'mode'            => 'pdf', // bisa 'html' kalau mau preview di browser
+                    'monthYear'       => $monthYear,
+                    'amount'          => $amount,
+                    'discount'        => $discount,
+                    'ppn'             => $ppn,
+                    'subtotal'        => $subtotal,
+                    'ppnAmount'       => $ppnAmount,
+                    'total'           => $total,
+                    'nomor_pelanggan' => $invoice->member->connection->internet_number,
+                ]
+            );
+
+            // 6️⃣ Render blade menjadi HTML
+            $html = view('invoice.homepass', $data)->render();
+
+            // 7️⃣ Generate PDF
+            $mpdf = new Mpdf([
+                'mode'    => 'utf-8',               // pastikan UTF-8 agar tidak blank
+                'format'  => 'A4',
+                'tempDir' => storage_path('app/mpdf'), // folder writable
+            ]);
+
+            $mpdf->WriteHTML($html);
+
+            // 8️⃣ Output PDF sebagai string (bukan download langsung)
+            $pdfContent = $mpdf->Output("", "S");  // "S" = return as string
+
+            return response($pdfContent, 200)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Length', strlen($pdfContent))
+                ->header('Content-Disposition', 'inline; filename="invoice-' . $inv_number . '.pdf"'); // 'inline' agar bisa diproses sebagai blob, bukan download otomatis
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            // Jika invoice tidak ditemukan, return error JSON (bukan PDF)
+            return response()->json(['error' => 'Invoice not found'], 404);
+        } catch (\Exception $e) {
+            // Error umum (misalnya, mPDF gagal), return error JSON
+            return response()->json(['error' => 'Failed to generate PDF'], 500);
         }
-
-        /**
-         * CASE 2: sudah pernah bayar
-         */
-        $lastPaid = Carbon::parse($lastInvoiceDate)->startOfMonth();
-        $cursor = $lastPaid->copy()->addMonth();
-
-        while ($cursor <= $now) {
-            $invoices[] = [
-                'billing_month' => $cursor->month,
-                'billing_year'  => $cursor->year,
-                'period'        => $cursor->translatedFormat('F Y'),
-
-                'amount'        => $amount,
-                'ppn_percent'   => $ppnPct,
-                'ppn_amount'    => round($ppnNominal),
-                'discount'      => $discount,
-                'total'         => round($totalPerMonth),
-
-                'status'        => 'UNPAID'
-            ];
-            $cursor->addMonth();
-        }
-
-        return $invoices;
     }
 
     public function stats(Request $request)
@@ -190,99 +215,202 @@ class FakturController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
 
-            $now = Carbon::now();
+            $query = Member::with([
+                'paymentDetail',
+                'connection.area',
+                'invoices' => function ($q) {
+                    $q->where('status', 'paid');
+                }
+            ]);
 
-            // Query awal
-            $query = Member::with(['paymentDetail', 'connection.area']);
-
-            // 🔒 Filter berdasarkan role
+            // ========================
+            // Role filter
+            // ========================
             if ($user->role === 'teknisi') {
-                $assignedAreaIds = DB::table('technician_areas')
+                $areaIds = DB::table('technician_areas')
                     ->where('user_id', $user->id)
-                    ->pluck('area_id')
-                    ->toArray();
+                    ->pluck('area_id');
 
-                if (empty($assignedAreaIds)) {
-                    $query->whereRaw('1 = 0'); // teknisi tanpa area assigned, hasil kosong
+                if ($areaIds->isEmpty()) {
+                    $query->whereRaw('1 = 0');
                 } else {
-                    $query->whereHas('connection', function ($q) use ($assignedAreaIds) {
-                        $q->whereIn('area_id', $assignedAreaIds);
-                    });
+                    $query->whereHas(
+                        'connection',
+                        fn($q) =>
+                        $q->whereIn('area_id', $areaIds)
+                    );
                 }
             } else {
                 $query->where('group_id', $user->group_id);
             }
 
-            // Filter unpaid bulan ini
-            $query->whereHas('paymentDetail', function (Builder $q) use ($now) {
-                $q->where(function ($q2) use ($now) {
-                    $q2->whereNull('last_invoice') // belum bayar sama sekali
-                        ->orWhereRaw('(MONTH(last_invoice) != ? OR YEAR(last_invoice) != ?)', [$now->month, $now->year]);
-                });
-            });
+            // ========================
+            // Target month
+            // ========================
+            $month = $request->get('month', now()->month);
+            $year  = $request->get('year', now()->year);
 
-            // 🔍 Search
+            $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
+            $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
+
+            // ========================
+            // Billing status filter
+            // ========================
+            if ($request->get('billing_status') === 'paid') {
+                $query->whereHas('invoices', function ($q) use ($startOfMonth, $endOfMonth) {
+                    $q->where('status', 'paid')
+                        ->whereDate('start_date', '<=', $endOfMonth)
+                        ->whereDate('due_date', '>=', $startOfMonth);
+                });
+            }
+
+            if ($request->get('billing_status') === 'unpaid') {
+                $query->whereDoesntHave('invoices', function ($q) use ($startOfMonth, $endOfMonth) {
+                    $q->where('status', 'paid')
+                        ->whereDate('start_date', '<=', $endOfMonth)
+                        ->whereDate('due_date', '>=', $startOfMonth);
+                });
+            }
+
+            // ========================
+            // Search
+            // ========================
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->whereHas('connection', function ($q2) use ($search) {
                         $q2->where('username', 'like', "%{$search}%")
                             ->orWhere('internet_number', 'like', "%{$search}%")
                             ->orWhere('mac_address', 'like', "%{$search}%");
-                    })
-                        ->orWhere('fullname', 'like', "%{$search}%");
+                    })->orWhere('fullname', 'like', "%{$search}%");
                 });
             }
 
-            // 🗺 Filter by area_id (optional, override teknisi filter jika ada)
-            if ($request->has('area_id') && $request->area_id) {
-                $query->whereHas('connection', function ($q) use ($request) {
-                    $q->where('area_id', $request->area_id);
-                });
+            // ========================
+            // Area filter
+            // ========================
+            if ($request->filled('area_id')) {
+                $query->whereHas(
+                    'connection',
+                    fn($q) =>
+                    $q->where('area_id', $request->area_id)
+                );
             }
 
-            // 🔒 Filter by isolir
-            if ($request->filled('status')) { // cek kalau status ada dan tidak kosong
-                $statusMap = [
-                    'isolir' => 1,  // suspend
-                    'active' => 0,  // aktif
-                ];
+            // ========================
+            // Isolir filter
+            // ========================
+            if ($request->filled('status')) {
+                $statusMap = ['isolir' => 1, 'active' => 0];
 
-                $statusValue = $statusMap[$request->status] ?? null;
-
-                if (!is_null($statusValue)) {
-                    $query->whereHas('connection', function ($q) use ($statusValue) {
-                        $q->where('isolir', $statusValue);
-                    });
+                if (isset($statusMap[$request->status])) {
+                    $query->whereHas(
+                        'connection',
+                        fn($q) =>
+                        $q->where('isolir', $statusMap[$request->status])
+                    );
                 }
             }
 
-            // 🔄 Sort
-            $sortField = $request->get('sort_field', 'created_at');
-            $sortDirection = $request->get('sort_direction', 'desc');
-            $query->orderBy($sortField, $sortDirection);
+            // ========================
+            // Sort & paginate
+            // ========================
+            $query->orderBy(
+                $request->get('sort_field', 'created_at'),
+                $request->get('sort_direction', 'desc')
+            );
 
-            // 📄 Pagination
-            $perPage = $request->get('per_page', 15);
-            $connections = $query->paginate($perPage);
+            $data = $query->paginate($request->get('per_page', 15));
 
-            ActivityLogController::logCreate([
-                'action' => 'view_faktur_list',
-                'total_records' => $connections->total(),
-                'status' => 'success'
-            ], 'invoices');
-
-            return ResponseFormatter::success($connections, 'Data connections berhasil dimuat');
+            return ResponseFormatter::success($data, 'Data berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF([
-                'action' => 'view_faktur_list',
-                'error' => $th->getMessage()
-            ], 'invoices');
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
 
+    public function invoicePaid(Request $request)
+    {
+        try {
+            $user = $this->getAuthUser();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            // ========================
+            // Base query
+            // ========================
+            $query = InvoiceHomepass::with(['payer', 'member'])
+                ->where('group_id', $user->group_id);
+
+            // ========================
+            // Target month & year filter
+            // ========================
+            if ($request->filled('month') && $request->filled('year')) {
+                $month = $request->month;
+                $year  = $request->year;
+
+                $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
+                $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
+
+                $query->whereDate('start_date', '<=', $endOfMonth)
+                    ->whereDate('due_date', '>=', $startOfMonth);
+            }
+
+            // ========================
+            // Search filter (nama / username / internet_number)
+            // ========================
+            if ($search = $request->get('search')) {
+                $query->whereHas('payer', function ($q) use ($search) {
+                    $q->where('fullname', 'like', "%{$search}%")
+                        ->orWhere('username', 'like', "%{$search}%")
+                        ->orWhere('internet_number', 'like', "%{$search}%");
+                });
+            }
+
+            // ========================
+            // Payer filter
+            // ========================
+            if ($request->filled('payer_id')) {
+                $query->where('payer_id', $request->payer_id);
+            } elseif ($request->filled('payer_name')) {
+                $query->whereHas('payer', fn($q) => $q->where('fullname', 'like', "%{$request->payer_name}%"));
+            }
+
+            // ========================
+            // Sorting & pagination
+            // ========================
+            $query->orderBy(
+                $request->get('sort_field', 'created_at'),
+                $request->get('sort_direction', 'desc')
+            );
+
+            $invoices = $query->paginate($request->get('per_page', 5));
+
+            // ========================
+            // Return response
+            // ========================
+            return ResponseFormatter::success([
+                'items' => $invoices->items(),
+                'meta' => [
+                    'current_page' => $invoices->currentPage(),
+                    'per_page'     => $invoices->perPage(),
+                    'total'        => $invoices->total(),
+                    'last_page'    => $invoices->lastPage(),
+                ]
+            ], 'Detail invoice berhasil dimuat');
+        } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'member_id' => $request->get('member_id') ?? null,
+                'action' => 'view_member_invoices',
+                'error' => $th->getMessage()
+            ], 'invoices');
+
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
 
 
     public function fakturDetail($memberId)
@@ -549,6 +677,38 @@ class FakturController extends Controller
                 'action' => 'view_member_invoices',
                 'error' => $th->getMessage()
             ], 'invoices');
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
+
+    public function paymentCancel(Request $request, $id)
+    {
+        try {
+            $user = $this->getAuthUser();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            // Cari invoice
+            $invoice = InvoiceHomepass::where('id', $id)
+                ->where('group_id', $user->group_id)
+                ->first();
+
+            if (!$invoice) {
+                return ResponseFormatter::error(null, 'Invoice tidak ditemukan', 404);
+            }
+
+            // Hapus invoice
+            $invoice->delete();
+
+            return ResponseFormatter::success(null, 'Invoice berhasil dihapus');
+        } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'member_id' => $invoice->member_id ?? null,
+                'action' => 'cancel_invoice',
+                'error' => $th->getMessage()
+            ], 'invoices');
+
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
