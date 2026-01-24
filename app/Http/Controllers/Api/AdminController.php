@@ -34,7 +34,8 @@ class AdminController extends Controller
             $user = $this->getAuthUser();
             if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
 
-            $query = User::where('group_id', $user->group_id)->where('role', 'teknisi');
+            $query = User::where('group_id', $user->group_id)->whereIn('role', ['teknisi', 'kasir', 'admin']);
+
 
             // 🔍 Search
             if ($search = $request->get('search')) {

@@ -199,7 +199,9 @@ class MemberController extends Controller
             ]);
 
             $payload = array_merge($validated, [
-                'group_id' => $user->group_id
+                'group_id' => $user->group_id,
+                'discount' => $validated['discount'] ?? 0,
+                'ppn'      => $validated['ppn'] ?? 0,
             ]);
 
             DB::beginTransaction();
@@ -290,7 +292,7 @@ class MemberController extends Controller
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
             ActivityLogController::logCreateF(['action' => 'view_members_stats', 'error' => $th->getMessage()], 'members');
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 }

@@ -22,6 +22,21 @@ use Illuminate\Validation\Rule;
 
 class ConnectionController extends Controller
 {
+    private static function findAvailableIsolirIp($usedIps)
+    {
+        $baseIp = ip2long('172.30.0.2');
+        $endIp = ip2long('172.30.255.254');
+
+        for ($ip = $baseIp; $ip <= $endIp; $ip++) {
+            $currentIp = long2ip($ip);
+            if (!in_array($currentIp, $usedIps)) {
+                return $currentIp;
+            }
+        }
+
+        return null;
+    }
+
     private function getAuthUser()
     {
         $user = Auth::user();
@@ -187,7 +202,7 @@ class ConnectionController extends Controller
                     'required',
                     'string',
                     'max:255',
-                    Rule::unique('connections', 'username')->where(fn($q) => $q->where('group_id', $groupId)),
+                    Rule::unique('connections', 'username'),
                 ];
                 $rules['password'] = 'required|string';
             } elseif ($request->type === 'dhcp') {
@@ -256,7 +271,7 @@ class ConnectionController extends Controller
                     'required',
                     'string',
                     'max:255',
-                    Rule::unique('connections', 'username')->where(fn($q) => $q->where('group_id', $groupId)),
+                    Rule::unique('connections', 'username'),
                 ];
                 $connectionRules['password'] = 'required|string';
             } elseif ($request->type === 'dhcp') {
@@ -496,7 +511,7 @@ class ConnectionController extends Controller
                 return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
             }
 
-            $oldData = $connection->toArray();
+            $oldData  = $connection->toArray();
             $username = $connection->username ?? $connection->mac_address;
 
             DB::beginTransaction();
@@ -504,18 +519,111 @@ class ConnectionController extends Controller
             $newIsolirStatus = !$connection->isolir;
             $connection->update(['isolir' => $newIsolirStatus]);
 
+            // ======================
+            // ISOLIR ON
+            // ======================
+            if ($newIsolirStatus) {
+
+
+
+                // Ambil IP yang sudah terpakai
+                $usedIps = DB::connection('radius')->table('radreply')
+                    ->where('attribute', 'Framed-IP-Address')
+                    ->pluck('value')
+                    ->toArray();
+
+                $isolirIp = self::findAvailableIsolirIp($usedIps);
+
+                if (!$isolirIp) {
+                    throw new \Exception('IP isolir habis');
+                }
+
+                // Hapus IP lama (jika ada)
+                DB::connection('radius')->table('radreply')
+                    ->where('username', $username)
+                    ->where('attribute', 'Framed-IP-Address')
+                    ->delete();
+
+                // Insert IP isolir
+                DB::connection('radius')->table('radreply')->insert([
+                    'username'  => $username,
+                    'attribute' => 'Framed-IP-Address',
+                    'op'        => ':=',
+                    'value'     => $isolirIp,
+                    'group_id'  => $user->group_id,
+                ]);
+
+                $message = "Isolir aktif, IP $isolirIp diberikan";
+            }
+            // ======================
+            // ISOLIR OFF
+            // ======================
+            else {
+
+                // Hapus IP isolir
+                DB::connection('radius')->table('radreply')
+                    ->where('username', $username)
+                    ->where('attribute', 'Framed-IP-Address')
+                    ->delete();
+
+                // Hapus Reject
+                DB::connection('radius')->table('radcheck')
+                    ->where('username', $username)
+                    ->where('attribute', 'Auth-Type')
+                    ->where('value', 'Reject')
+                    ->delete();
+
+                $message = "Isolir dinonaktifkan, akun aktif kembali";
+            }
+
             DB::commit();
 
-            ActivityLogController::logCreate(['action' => 'toggleIsolir', 'status' => 'success'], 'connections');
+            ActivityLogController::logUpdate($oldData, 'connections', $connection);
+
             return ResponseFormatter::success([
                 'isolir' => $newIsolirStatus
-            ], 'Status isolir berhasil diubah', 200);
+            ], $message, 200);
         } catch (\Throwable $th) {
             DB::rollBack();
-            ActivityLogController::logCreateF(['action' => 'toggleIsolir', 'error' => $th->getMessage()], 'connections');
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            ActivityLogController::logCreateF(
+                ['action' => 'toggleIsolir', 'error' => $th->getMessage()],
+                'connections'
+            );
+
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
+    // public function toggleIsolir(Request $request, $id)
+    // {
+    //     try {
+    //         $user = $this->getAuthUser();
+    //         $connection = Connection::where('id', $id)->firstOrFail();
+
+    //         if ($connection->group_id !== $user->group_id) {
+    //             return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
+    //         }
+
+    //         $oldData = $connection->toArray();
+    //         $username = $connection->username ?? $connection->mac_address;
+
+    //         DB::beginTransaction();
+
+    //         $newIsolirStatus = !$connection->isolir;
+    //         $connection->update(['isolir' => $newIsolirStatus]);
+
+    //         DB::commit();
+
+    //         ActivityLogController::logCreate(['action' => 'toggleIsolir', 'status' => 'success'], 'connections');
+    //         return ResponseFormatter::success([
+    //             'isolir' => $newIsolirStatus
+    //         ], 'Status isolir berhasil diubah', 200);
+    //     } catch (\Throwable $th) {
+    //         DB::rollBack();
+    //         ActivityLogController::logCreateF(['action' => 'toggleIsolir', 'error' => $th->getMessage()], 'connections');
+    //         return ResponseFormatter::error(null, $th->getMessage(), 200);
+    //     }
+    // }
 
     /**
      * DELETE /api/v1/connections/{id}

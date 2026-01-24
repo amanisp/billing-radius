@@ -110,41 +110,60 @@
             <h3>PELANGGAN</h3>
             <table width="100%" style="border-collapse: collapse;">
                 <tr>
-                    <td style="text-align: left;">Nama</td>
-                    <td style="text-align: left;">: {{ $invoice->member->fullname }}</td>
+                    <!-- KIRI -->
+                    <td width="50%" valign="top">
+                        <table width="100%" style="border-collapse: collapse;">
+                            <tr>
+                                <td width="35%">Nama</td>
+                                <td width="65%">: {{ $invoice->member->fullname }}</td>
+                            </tr>
+                            <tr>
+                                <td>Alamat</td>
+                                <td>: {{ $invoice->member->address }}</td>
+                            </tr>
+                            <tr>
+                                <td>Email</td>
+                                <td>: {{ $invoice->member->email }}</td>
+                            </tr>
+                            <tr>
+                                <td>NIK</td>
+                                <td>: {{ $invoice->member->id_card }}</td>
+                            </tr>
+                            <tr>
+                                <td>No. Telepon</td>
+                                <td>: {{ $invoice->member->phone_number }}</td>
+                            </tr>
+                        </table>
+                    </td>
 
-                    <td style="text-align: left;">No. Invoice</td>
-                    <td style="text-align: left;">: {{ $invoice->inv_number }}</td>
-                </tr>
-                <tr>
-                    <td>Alamat</td>
-                    <td>: {{ $invoice->member->address }}</td>
-
-                    <td>No. Pelanggan/Internet</td>
-                    <td>: {{ $nomor_pelanggan }}</td>
-                </tr>
-                <tr>
-                    <td>Email</td>
-                    <td>: {{ $invoice->member->email }}</td>
-
-                    <td>Tanggal Invoice</td>
-                    <td>: {{ $invoice->start_date }}</td>
-                </tr>
-                <tr>
-                    <td>NIK</td>
-                    <td>: {{ $invoice->member->id_card }}</td>
-
-                    <td>Jatuh Tempo</td>
-                    <td>: {{ $invoice->due_date }}</td>
-                </tr>
-                <tr>
-                    <td>No. Telepon</td>
-                    <td>: {{ $invoice->member->phone_number }}</td>
-
-                    <td>Sistem Bayar</td>
-                    <td>: <strong>PRABAYAR</strong></td>
+                    <!-- KANAN -->
+                    <td width="50%" valign="top">
+                        <table width="100%" style="border-collapse: collapse;">
+                            <tr>
+                                <td width="40%">No. Invoice</td>
+                                <td width="60%">: {{ $invoice->inv_number }}</td>
+                            </tr>
+                            <tr>
+                                <td>No. Pelanggan/Internet</td>
+                                <td>: {{ $nomor_pelanggan }}</td>
+                            </tr>
+                            <tr>
+                                <td>Tanggal Invoice</td>
+                                <td>: {{ $invoice->start_date }}</td>
+                            </tr>
+                            <tr>
+                                <td>Jatuh Tempo</td>
+                                <td>: {{ $invoice->due_date }}</td>
+                            </tr>
+                            <tr>
+                                <td>Sistem Bayar</td>
+                                <td>: <strong>PRABAYAR</strong></td>
+                            </tr>
+                        </table>
+                    </td>
                 </tr>
             </table>
+
         </div>
 
         <table width="100%" style="border-collapse: collapse; border: 1px solid black; margin-top:15px">
@@ -175,11 +194,9 @@
             </tr>
             <tr>
                 <td style="border: 1px solid black; padding: 5px; text-align: center;">3.</td>
-                <td style="border: 1px solid black; padding: 5px;">PPN (11%)</td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
-                <td style="border: 1px solid black; padding: 5px;">Rp.
-                    {{ number_format($ppn ?? 0, 0, ',', '.') }}</td>
-                </td>
+                <td style="border: 1px solid black; padding: 5px;"></td>
+                <td style="border: 1px solid black; padding: 5px;"></td>
             </tr>
             <tr>
                 <td style="border: 1px solid black; padding: 5px; text-align: center;">4.</td>
@@ -187,11 +204,28 @@
                 <td style="border: 1px solid black; padding: 5px;"></td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
             </tr>
+            <tr style="background-color: #dbe5f1;">
+                <td colspan="3"
+                    style="border: 1px solid black; text-align: center; font-weight: bold; padding: 5px;">SUB TOTAL
+                </td>
+                <td style="border: 1px solid black; padding: 5px; font-weight: bold;">Rp.
+                    {{ number_format($subtotal ?? 0, 0, ',', '.') }}</td>
+                </td>
+            </tr>
             <tr>
                 <td style="border: 1px solid black; padding: 5px; text-align: center;">5.</td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
+                </td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid black; padding: 5px; text-align: center;">6.</td>
+                <td style="border: 1px solid black; padding: 5px;">Pajak ({{ $ppn }}%)</td>
+                <td style="border: 1px solid black; padding: 5px;"></td>
+                <td style="border: 1px solid black; padding: 5px;">Rp.
+                    {{ number_format($ppnAmount ?? 0, 0, ',', '.') }}</td>
+                </td>
             </tr>
             <tr style="background-color: #dbe5f1;">
                 <td colspan="3"
