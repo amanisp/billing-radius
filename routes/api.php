@@ -63,6 +63,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // ======Admin======
         Route::get('/admin', [AdminController::class, 'index']);
         Route::post('/admin', [AdminController::class, 'store']);
+        Route::delete('/admin/{id}', [AdminController::class, 'destroy']);
 
         //======Start Master Data======
         // Area
@@ -141,7 +142,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/invoices/pdf/{inv_number}', [FakturController::class, 'single']);
         Route::get('/invoices/paid/all', [FakturController::class, 'invoicePaid']);
         Route::delete('/invoices/cancel/{id}', [FakturController::class, 'paymentCancel']);
-
 
 
         // ========== Payouts ==========
