@@ -147,7 +147,8 @@ class AuthController extends Controller
     {
         try {
             /** @var User $user */
-            $user = $request->user();
+            $user = $request->user()->load('group');
+
 
             if (!$user) {
                 return ResponseFormatter::error(null, 'Unauthorized', 401);
@@ -160,6 +161,7 @@ class AuthController extends Controller
                 'email' => $user->email,
                 'role' => $user->role,
                 'group_id' => $user->group_id,
+                'group' => $user->group,
                 'phone_number' => $user->phone_number,
             ];
 
@@ -271,6 +273,60 @@ class AuthController extends Controller
             return ResponseFormatter::error(
                 null,
                 'Terjadi kesalahan, silakan coba lagi'
+            );
+        }
+    }
+
+    public function updateWhatsappToken(Request $request)
+    {
+        try {
+            $request->validate([
+                'wa_api_token' => 'required|string|min:10',
+            ]);
+
+            $user = Auth::user();
+
+            if (!$user || !$user->group_id) {
+                return ResponseFormatter::error(
+                    null,
+                    'Group tidak ditemukan',
+                    404
+                );
+            }
+
+            $group = Groups::find($user->group_id);
+
+            if (!$group) {
+                return ResponseFormatter::error(
+                    null,
+                    'Group tidak ditemukan',
+                    404
+                );
+            }
+
+            $group->update([
+                'wa_api_token' => $request->wa_api_token,
+            ]);
+
+            ActivityLogController::logCreate([
+                'action' => 'update_whatsapp_token',
+                'group_id' => $group->id,
+                'status' => 'success'
+            ], 'groups');
+
+            return ResponseFormatter::success([
+                'wa_api_token' => $group->wa_api_token,
+            ], 'WhatsApp API Token berhasil diperbarui', 200);
+        } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'action' => 'update_whatsapp_token',
+                'error' => $th->getMessage(),
+            ], 'groups');
+
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
             );
         }
     }
