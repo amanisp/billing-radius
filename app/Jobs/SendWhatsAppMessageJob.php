@@ -2,77 +2,164 @@
 
 namespace App\Jobs;
 
-use App\Models\WhatsappMessageLog;
-use App\Services\WhatsAppService;
-use Illuminate\Support\Facades\Http;
+use App\Models\InvoiceHomepass;
+use App\Models\Member;
+use App\Models\ActivityLog;
+use App\Services\WhatsappNotificationService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Exception;
 
-class SendWhatsAppMessageJob implements ShouldQueue
+class SendWhatsappMessageJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    protected $apiKey;
-    protected $broadcast;
-    protected $apiHost;
+    public InvoiceHomepass $invoice;
+    public Member $member;
+    public string $status;
+    public ?string $paymentMethod;
 
+    /**
+     * The number of times the job may be attempted.
+     */
+    public int $tries = 3;
 
-    public function __construct($apiKey, WhatsappMessageLog $broadcast)
-    {
-        $this->apiKey = $apiKey;
-        $this->broadcast = $broadcast;
-        $this->apiHost = env('WA_API_HOST');
+    /**
+     * The number of seconds to wait before retrying the job.
+     */
+    public int $backoff = 60;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct(
+        InvoiceHomepass $invoice,
+        Member $member,
+        string $status,
+        ?string $paymentMethod = null
+    ) {
+        $this->invoice = $invoice;
+        $this->member = $member;
+        $this->status = $status;
+        $this->paymentMethod = $paymentMethod;
+
+        // Set queue name
+        $this->onQueue('whatsapp');
     }
 
-    public function handle()
+    /**
+     * Execute the job.
+     */
+    public function handle(WhatsappNotificationService $service): void
     {
-
         try {
-            $messageTemplate = "*{$this->broadcast->subject}*\n\n{$this->broadcast->message}";
-
-            $response = Http::post("{$this->apiHost}api/send-message", [
-                'api_key'  => $this->apiKey,
-                'receiver' => $this->broadcast->phone,
-                'data'     => [
-                    'message' => $messageTemplate,
-                ],
+            Log::info('Processing WhatsApp notification job', [
+                'invoice_id' => $this->invoice->id,
+                'member_id' => $this->member->id,
+                'status' => $this->status,
+                'attempt' => $this->attempts()
             ]);
 
-            $responseBody = $response->body();
-            $responseData = json_decode($responseBody, true);
+            // Send WhatsApp notification
+            $result = $service->sendPaymentNotification(
+                $this->invoice,
+                $this->member,
+                $this->status,
+                $this->paymentMethod
+            );
 
-
-            if (!empty($responseData) && isset($responseData['status']) && $responseData['status'] === true) {
-                // Berhasil
-                $this->broadcast->update([
-                    'status'   => 'sent',
-                    'response' => $responseBody,
+            if ($result['success']) {
+                // Log success to activity_logs
+                ActivityLog::create([
+                    'operation' => 'MPWA_MESSAGE_' . strtoupper($this->status),
+                    'table_name' => 'whatsapp_messages',
+                    'username' => 'System',
+                    'role' => 'queue_worker',
+                    'ip_address' => '127.0.0.1',
+                    'details' => json_encode([
+                        'invoice_id' => $this->invoice->id,
+                        'invoice_number' => $this->invoice->inv_number,
+                        'member_id' => $this->member->id,
+                        'member_name' => $this->member->fullname,
+                        'phone' => $this->member->phone_number,
+                        'status' => $this->status,
+                        'message_id' => $result['message_id'] ?? null,
+                        'success' => true
+                    ]),
                 ]);
-                Log::info("Message sent to {$this->broadcast->phone}");
+
+                Log::info('WhatsApp notification sent successfully', [
+                    'invoice_id' => $this->invoice->id,
+                    'message_id' => $result['message_id'] ?? null
+                ]);
             } else {
-                // Gagal
-                $this->broadcast->update([
-                    'status'   => 'failed',
-                    'response' => $responseBody,
-                ]);
-                Log::error("Failed to send message", [
-                    'phone'    => $this->broadcast->phone,
-                    'response' => $responseBody,
-                ]);
+                throw new Exception($result['error'] ?? 'Failed to send WhatsApp message');
             }
-        } catch (\Exception $e) {
-            $this->broadcast->update([
-                'status' => 'failed',
-                'response' => $e->getMessage()
+
+        } catch (Exception $e) {
+            // Log failure
+            Log::error('WhatsApp notification job failed', [
+                'invoice_id' => $this->invoice->id,
+                'member_id' => $this->member->id,
+                'attempt' => $this->attempts(),
+                'error' => $e->getMessage()
             ]);
-            Log::error("Exception sending message", [
-                'phone' => $this->broadcast->phone,
-                'error' => $e->getMessage(),
+
+            // Log to activity_logs
+            ActivityLog::create([
+                'operation' => 'MPWA_MESSAGE_FAILED',
+                'table_name' => 'whatsapp_messages',
+                'username' => 'System',
+                'role' => 'queue_worker',
+                'ip_address' => '127.0.0.1',
+                'details' => json_encode([
+                    'invoice_id' => $this->invoice->id,
+                    'member_id' => $this->member->id,
+                    'phone' => $this->member->phone_number,
+                    'status' => $this->status,
+                    'error' => $e->getMessage(),
+                    'attempt' => $this->attempts()
+                ]),
             ]);
+
+            // Re-throw to trigger retry
+            throw $e;
         }
+    }
+
+    /**
+     * Handle a job failure.
+     */
+    public function failed(Exception $exception): void
+    {
+        Log::critical('WhatsApp notification job permanently failed', [
+            'invoice_id' => $this->invoice->id,
+            'member_id' => $this->member->id,
+            'error' => $exception->getMessage(),
+            'attempts' => $this->attempts()
+        ]);
+
+        // Log permanent failure
+        ActivityLog::create([
+            'operation' => 'MPWA_MESSAGE_PERMANENT_FAILURE',
+            'table_name' => 'whatsapp_messages',
+            'username' => 'System',
+            'role' => 'queue_worker',
+            'ip_address' => '127.0.0.1',
+            'details' => json_encode([
+                'invoice_id' => $this->invoice->id,
+                'invoice_number' => $this->invoice->inv_number,
+                'member_id' => $this->member->id,
+                'member_name' => $this->member->fullname,
+                'phone' => $this->member->phone_number,
+                'status' => $this->status,
+                'error' => $exception->getMessage(),
+                'max_attempts_reached' => true
+            ]),
+        ]);
     }
 }
