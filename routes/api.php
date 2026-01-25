@@ -39,6 +39,8 @@ Route::prefix('whatsapp')->group(function () {
     Route::post('/send-vcard', [ApiWhatsappController::class, 'sendVCard']);
     Route::post('/send-product', [ApiWhatsappController::class, 'sendProduct']);
     Route::post('/send-text-channel', [ApiWhatsappController::class, 'sendTextChannel']);
+    Route::post('/test-send', [ApiWhatsappController::class, 'testSendMessage']);
+
 
     // ========== Number & User Info ==========
     Route::post('/check-number', [ApiWhatsappController::class, 'checkNumber']);
