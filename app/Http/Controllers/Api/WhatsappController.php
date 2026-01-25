@@ -50,7 +50,7 @@ class WhatsappController extends Controller
                     'action' => 'generate_qr',
                     'status' => 'success'
                 ], 'whatsapp_devices');
-                
+
                 return ResponseFormatter::success([
                     'qrcode' => $result['data']['qrcode'] ?? null,
                     'message' => $result['data']['message'] ?? 'QR Code generated',
@@ -63,7 +63,7 @@ class WhatsappController extends Controller
                 'action' => 'generate_qr',
                 'error' => $result['error']
             ], 'whatsapp_devices');
-            
+
             return ResponseFormatter::error(null, $result['error']);
 
         } catch (\Exception $e) {
@@ -960,4 +960,35 @@ class WhatsappController extends Controller
     {
         return $this->sendMessage($request);
     }
+    
+    public function testSendMessage(Request $request)
+{
+    $request->validate([
+        'number' => 'required|string',
+        'message' => 'nullable|string',
+    ]);
+
+    try {
+        $message = $request->message ?? "Test message dari AMAN ISP\nWaktu: " . now()->format('d/m/Y H:i:s');
+
+        $result = $this->whatsappService->sendMpwaTextMessage(
+            $this->apiKey,
+            config('services.mpwa.sender'),
+            $request->number,
+            $message
+        );
+
+        if ($result['success']) {
+            return ResponseFormatter::success(
+                $result['data'],
+                'Test message berhasil dikirim'
+            );
+        }
+
+        return ResponseFormatter::error(null, $result['error'], 500);
+
+    } catch (\Exception $e) {
+        return ResponseFormatter::error(null, $e->getMessage(), 500);
+    }
+}
 }

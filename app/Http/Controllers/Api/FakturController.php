@@ -12,13 +12,17 @@ use App\Models\InvoiceHomepass;
 use App\Models\Member;
 use App\Models\PaymentDetail;
 use App\Models\User;
+use App\Services\WhatsappService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\View;
 use Mpdf\Mpdf;
+use App\Services\WhatsappNotificationService;
+use App\Jobs\SendWhatsappMessageJob;
 
 class FakturController extends Controller
 {
@@ -534,47 +538,49 @@ class FakturController extends Controller
     public function manualPayment(Request $request)
     {
         DB::beginTransaction();
-
         try {
             $user = $this->getAuthUser();
             if (!$user) {
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
+            // Validasi input
             $validated = $request->validate([
-                'member_id'       => 'required|exists:members,id',
-                'payment_method'  => 'required|in:bank_transfer,cash',
-                'month'           => 'required|date_format:Y-m',
+                'member_id' => 'required|exists:members,id',
+                'payment_method' => 'required|in:bank_transfer,cash',
+                'month' => 'required|date_format:Y-m',
             ]);
 
             // Parse month (contoh: 2025-10)
-            $startDate = \Carbon\Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
-            $endDate   = $startDate->copy()->endOfMonth();
+            $startDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth();
+            $endDate = $startDate->copy()->endOfMonth();
 
-            $member = Member::with(['paymentDetail', 'connection.profile'])
+            // Ambil member
+            $member = Member::with('paymentDetail', 'connection.profile')
                 ->where('id', $validated['member_id'])
                 ->where('billing', 1)
                 ->firstOrFail();
 
-            if ($member->group_id !== $user->group_id) {
+            // Validasi group
+            if ($member->group_id != $user->group_id) {
                 ActivityLogController::logCreateF([
                     'member_id' => $validated['member_id'],
                     'action' => 'manual_payment',
                     'error' => 'Member tidak ditemukan atau tidak sesuai group'
                 ], 'invoices');
+
                 return response()->json(['message' => 'Member tidak ditemukan!'], 403);
             }
 
+            // Ambil payment detail
             $pd = $member->paymentDetail;
-
-            $price    = $pd->amount;
-            $vat      = $pd->ppn;
+            $price = $pd->amount;
+            $vat = $pd->ppn;
             $discount = $pd->discount;
 
-            // Total 1 bulan
-            $vatAmount  = ($price - $discount) * ($vat / 100);
-            $totalAmount = ($price - $discount) + $vatAmount;
-
+            // Hitung total (1 bulan)
+            $vatAmount = ($price - $discount) * ($vat / 100);
+            $totalAmount = $price - $discount + $vatAmount;
 
             $connection = $member->connection;
             $connectionId = $connection?->id;
@@ -583,35 +589,60 @@ class FakturController extends Controller
             // Generate invoice number
             $invNumber = InvoiceHelper::generateInvoiceNumber($areaId, 'H');
 
-            // =============================
-            // CREATE INVOICE (PAID MANUAL)
-            // =============================
+            // CREATE INVOICE (PAID - MANUAL)
             $invoice = InvoiceHomepass::create([
-                'connection_id'       => $connectionId,
-                'payer_id'            => $user->id,
-                'member_id'           => $member->id,
-                'invoice_type'        => 'H',
-                'start_date'          => $startDate->toDateString(),
-                'due_date'            => $endDate->toDateString(),
+                'connection_id' => $connectionId,
+                'payer_id' => $user->id,
+                'member_id' => $member->id,
+                'invoice_type' => 'H',
+                'start_date' => $startDate->toDateString(),
+                'due_date' => $endDate->toDateString(),
                 'subscription_period' => $startDate->translatedFormat('F Y'),
-                'inv_number'          => $invNumber,
-                'amount'              => $totalAmount,
-                'payment_method'      => $validated['payment_method'],
-                'status'              => 'paid',
-                'paid_at'             => now(),
-                'group_id'            => $member->group_id,
-                'payment_url'         => 'https://bayar.amanisp.net.id'
+                'inv_number' => $invNumber,
+                'amount' => $totalAmount,
+                'payment_method' => $validated['payment_method'],
+                'status' => 'paid',
+                'paid_at' => now(),
+                'group_id' => $member->group_id,
+                'payment_url' => 'https://bayar.amanisp.net.id', // UPDATE
             ]);
 
-            // =============================
             // UPDATE LAST INVOICE (BULAN SAMA)
-            // =============================
             PaymentDetail::where('id', $member->payment_detail_id)->update([
                 'last_invoice' => $startDate->toDateString(),
             ]);
 
             DB::commit();
 
+            // ========== KIRIM WHATSAPP NOTIFIKASI (BARU) ==========
+            try {
+                Log::info('Dispatching WhatsApp for manual payment', [
+                    'invoice_id' => $invoice->id,
+                    'member_id' => $member->id,
+                    'phone' => $member->phone_number,
+                ]);
+
+                // Dispatch job untuk kirim WhatsApp
+                SendWhatsappMessageJob::dispatch(
+                    $invoice,
+                    $member,
+                    'paid',
+                    $validated['payment_method']
+                )->delay(now()->addSeconds(2));
+
+                Log::info('WhatsApp job dispatched successfully', [
+                    'invoice_id' => $invoice->id,
+                ]);
+            } catch (\Exception $e) {
+                // Jangan gagalkan payment kalau WhatsApp error
+                Log::error('Failed to dispatch WhatsApp job', [
+                    'invoice_id' => $invoice->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+            // ========== END WHATSAPP ==========
+
+            // Log sukses
             ActivityLogController::logCreate([
                 'member_id' => $validated['member_id'],
                 'invoice_id' => $invoice->id,
@@ -622,23 +653,21 @@ class FakturController extends Controller
                 'status' => 'success'
             ], 'invoices');
 
-            ActivityLogged::dispatch('CREATE', null, $invoice);
-
-            return ResponseFormatter::success(
-                $invoice,
-                'Invoice manual berhasil dibuat & dibayar',
-                201
-            );
+            return ResponseFormatter::success($invoice, 'Invoice manual berhasil dibuat & dibayar', 201);
         } catch (\Throwable $th) {
             DB::rollBack();
+
             ActivityLogController::logCreateF([
                 'member_id' => $request->input('member_id') ?? null,
                 'action' => 'manual_payment',
                 'error' => $th->getMessage()
             ], 'invoices');
+
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
+
 
     public function invoiceByMemberId(Request $request, $id)
     {
