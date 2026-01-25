@@ -40,9 +40,9 @@ class User extends Authenticatable
     /**
      * Relasi ke mitra
      */
-    public function mitra()
+    public function group()
     {
-        return $this->belongsTo(Mitra::class, 'group_id');
+        return $this->belongsTo(Groups::class, 'group_id');
     }
 
     /**
