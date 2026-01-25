@@ -133,8 +133,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/profiles/{id}', [ProfileController::class, 'destroy']);
         // ==========End PPP-DHCP=========
 
-
-        // ========== INVOICES (Faktur) ==========
+        // Faktur
         Route::get('/invoices', [FakturController::class, 'index']);
         Route::get('/invoices/member/{id}', [FakturController::class, 'invoiceByMemberId']);
         Route::post('/invoices', [FakturController::class, 'manualPayment']);
@@ -143,16 +142,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/invoices/pdf/{inv_number}', [FakturController::class, 'single']);
         Route::get('/invoices/paid/all', [FakturController::class, 'invoicePaid']);
         Route::delete('/invoices/cancel/{id}', [FakturController::class, 'paymentCancel']);
-        // ========== End INVOICES (Faktur) ==========
-        // ========== INVOICES - WhatsApp AUTO NOTIFICATION ==========
-        Route::prefix('invoice')->group(function () {
-            Route::get('/', [InvoiceController::class, 'index']);
-            Route::get('/stats', [InvoiceController::class, 'stats']);
-            Route::get('/{id}', [InvoiceController::class, 'show']);
-            Route::post('/pay', [InvoiceController::class, 'payInvoice']);
-            Route::post('/{id}/resend-wa', [InvoiceController::class, 'resendWhatsappNotification']);
-            Route::get('/{id}/wa-status', [InvoiceController::class, 'checkWhatsappStatus']);
-        });
+
 
         // ========== Payouts ==========
         Route::get('/payouts', [PayoutController::class, 'index']);
