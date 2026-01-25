@@ -20,34 +20,6 @@ use App\Http\Controllers\WhatsappController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\WhatsappController as ApiWhatsappController;
 
-Route::prefix('whatsapp')->group(function () {
-
-    // ========== Device Management ==========
-    Route::post('/generate-qr', [ApiWhatsappController::class, 'generateQR']);
-    Route::get('/device-info', [ApiWhatsappController::class, 'deviceInfo']);
-    Route::post('/logout-device', [ApiWhatsappController::class, 'logoutDevice']);
-    Route::post('/delete-device', [ApiWhatsappController::class, 'deleteDevice']);
-
-    // ========== Messaging ==========
-    Route::post('/send-message', [ApiWhatsappController::class, 'sendMessage']);
-    Route::post('/send-media', [ApiWhatsappController::class, 'sendMedia']);
-    Route::post('/send-sticker', [ApiWhatsappController::class, 'sendSticker']);
-    Route::post('/send-button', [ApiWhatsappController::class, 'sendButton']);
-    Route::post('/send-list', [ApiWhatsappController::class, 'sendList']);
-    Route::post('/send-poll', [ApiWhatsappController::class, 'sendPoll']);
-    Route::post('/send-location', [ApiWhatsappController::class, 'sendLocation']);
-    Route::post('/send-vcard', [ApiWhatsappController::class, 'sendVCard']);
-    Route::post('/send-product', [ApiWhatsappController::class, 'sendProduct']);
-    Route::post('/send-text-channel', [ApiWhatsappController::class, 'sendTextChannel']);
-
-    // ========== Number & User Info ==========
-    Route::post('/check-number', [ApiWhatsappController::class, 'checkNumber']);
-    Route::get('/user-info', [ApiWhatsappController::class, 'getUserInfo']);
-
-    // ========== Legacy/Test Endpoints ==========
-    Route::post('/coba/send-message', [ApiWhatsappController::class, 'testConnection']);
-});
-
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);
 Route::post('/v1/send-token', [AuthController::class, 'sendToken']);
@@ -56,6 +28,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
+        Route::put('/me/whatsapp-token', [AuthController::class, 'updateWhatsappToken']);
+
 
         Route::get('/dashboard/stats', [Dashboard::class, 'stats']);
         Route::get('/dashboard/stats/ppp', [Dashboard::class, 'statsPppoe']);
@@ -161,6 +135,34 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payouts', [PayoutController::class, 'createPayout']);
         Route::post('/payouts/{id}/check-status', [PayoutController::class, 'checkStatus']);
         Route::delete('/payouts/{id}', [PayoutController::class, 'destroy']);
+
+        Route::prefix('whatsapp')->group(function () {
+
+            // ========== Device Management ==========
+            Route::post('/generate-qr', [ApiWhatsappController::class, 'generateQR']);
+            Route::get('/device-info', [ApiWhatsappController::class, 'deviceInfo']);
+            Route::post('/logout-device', [ApiWhatsappController::class, 'logoutDevice']);
+            Route::post('/delete-device', [ApiWhatsappController::class, 'deleteDevice']);
+
+            // ========== Messaging ==========
+            Route::post('/send-message', [ApiWhatsappController::class, 'sendMessage']);
+            Route::post('/send-media', [ApiWhatsappController::class, 'sendMedia']);
+            Route::post('/send-sticker', [ApiWhatsappController::class, 'sendSticker']);
+            Route::post('/send-button', [ApiWhatsappController::class, 'sendButton']);
+            Route::post('/send-list', [ApiWhatsappController::class, 'sendList']);
+            Route::post('/send-poll', [ApiWhatsappController::class, 'sendPoll']);
+            Route::post('/send-location', [ApiWhatsappController::class, 'sendLocation']);
+            Route::post('/send-vcard', [ApiWhatsappController::class, 'sendVCard']);
+            Route::post('/send-product', [ApiWhatsappController::class, 'sendProduct']);
+            Route::post('/send-text-channel', [ApiWhatsappController::class, 'sendTextChannel']);
+
+            // ========== Number & User Info ==========
+            Route::post('/check-number', [ApiWhatsappController::class, 'checkNumber']);
+            Route::get('/user-info', [ApiWhatsappController::class, 'getUserInfo']);
+
+            // ========== Legacy/Test Endpoints ==========
+            Route::post('/coba/send-message', [ApiWhatsappController::class, 'testConnection']);
+        });
 
 
         // Logs

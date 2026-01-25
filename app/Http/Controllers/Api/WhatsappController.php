@@ -32,16 +32,14 @@ class WhatsappController extends Controller
     {
         $request->validate([
             'device' => 'required|string',
-            'api_key' => 'nullable|string',
-            'force' => 'nullable|boolean',
         ]);
 
         try {
-            $apiKey = $request->api_key ?? $this->apiKey;
+            $apiKey = $this->apiKey;
             $result = $this->whatsappService->generateMpwaQR(
                 $request->device,
                 $apiKey,
-                $request->force ?? true
+                true
             );
 
             if ($result['success']) {
@@ -50,7 +48,7 @@ class WhatsappController extends Controller
                     'action' => 'generate_qr',
                     'status' => 'success'
                 ], 'whatsapp_devices');
-                
+
                 return ResponseFormatter::success([
                     'qrcode' => $result['data']['qrcode'] ?? null,
                     'message' => $result['data']['message'] ?? 'QR Code generated',
@@ -63,9 +61,8 @@ class WhatsappController extends Controller
                 'action' => 'generate_qr',
                 'error' => $result['error']
             ], 'whatsapp_devices');
-            
-            return ResponseFormatter::error(null, $result['error']);
 
+            return ResponseFormatter::error(null, $result['error']);
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'device' => $request->device,
@@ -111,7 +108,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_devices');
 
             return ResponseFormatter::error(null, $result['error']);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'number' => $request->number,
@@ -154,7 +150,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_devices');
 
             return ResponseFormatter::error(null, $result['error']);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -197,7 +192,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_devices');
 
             return ResponseFormatter::error(null, $result['error']);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -260,7 +254,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -328,7 +321,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -388,7 +380,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -452,7 +443,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -526,7 +516,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -590,7 +579,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -652,7 +640,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -714,7 +701,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -776,7 +762,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -836,7 +821,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_messages');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -892,7 +876,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_devices');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'sender' => $request->sender,
@@ -939,7 +922,6 @@ class WhatsappController extends Controller
             ], 'whatsapp_users');
 
             return ResponseFormatter::error(null, $result['error'], 500);
-
         } catch (\Exception $e) {
             ActivityLogController::logCreateF([
                 'username' => $request->username,
