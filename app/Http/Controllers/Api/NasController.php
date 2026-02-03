@@ -65,15 +65,9 @@ class NasController extends Controller
             $perPage = $request->get('per_page', 10);
             $vpnUsers = $query->paginate($perPage);
 
-            ActivityLogController::logCreate([
-                'action' => 'view_nas_list',
-                'total_records' => $vpnUsers->total(),
-                'status' => 'success'
-            ], 'nas');
 
             return ResponseFormatter::success($vpnUsers, 'Data NAS berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'view_nas_list', 'error' => $th->getMessage()], 'nas');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

@@ -43,18 +43,11 @@ class Dashboard extends Controller
                 'homepass' => (clone $queryConn)->count(),
             ];
 
-            ActivityLogController::logCreate([
-                'action' => 'view_dashboard_stats',
-                'stats' => $stats,
-                'status' => 'success'
-            ], 'dashboard');
+
 
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF([
-                'action' => 'view_dashboard_stats',
-                'error' => $th->getMessage()
-            ], 'dashboard');
+
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -103,19 +96,11 @@ class Dashboard extends Controller
                 'total_offline' => $totalOffline,
             ];
 
-            ActivityLogController::logCreate([
-                'action' => 'view_pppoe_stats',
-                'group_name' => $groupName,
-                'stats' => $data,
-                'status' => 'success'
-            ], 'dashboard');
+
 
             return ResponseFormatter::success($data, 'PPPoE STatus berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF([
-                'action' => 'view_pppoe_stats',
-                'error' => $th->getMessage()
-            ], 'dashboard');
+
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

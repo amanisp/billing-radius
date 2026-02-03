@@ -81,15 +81,9 @@ class VpnController extends Controller
             $perPage = $request->get('per_page', 10);
             $vpnUsers = $query->paginate($perPage);
 
-            ActivityLogController::logCreate([
-                'action' => 'view_vpn_list',
-                'total_records' => $vpnUsers->total(),
-                'status' => 'success'
-            ], 'vpn_users');
 
             return ResponseFormatter::success($vpnUsers, 'Data VPN berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'view_vpn_list', 'error' => $th->getMessage()], 'vpn_users');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

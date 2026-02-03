@@ -165,10 +165,8 @@ class AuthController extends Controller
                 'phone_number' => $user->phone_number,
             ];
 
-            ActivityLogController::logCreate(['action' => 'me', 'status' => 'success'], 'users');
             return ResponseFormatter::success($data, 'User data berhasil dimuat', 200);
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'me', 'error' => $th->getMessage()], 'users');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

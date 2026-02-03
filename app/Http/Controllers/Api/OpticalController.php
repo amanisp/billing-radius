@@ -63,15 +63,9 @@ class OpticalController extends Controller
             $perPage = $request->get('per_page', 5);
             $opticals = $query->paginate($perPage);
 
-            ActivityLogController::logCreate([
-                'action' => 'view_optical_list',
-                'total_records' => $opticals->total(),
-                'status' => 'success'
-            ], 'optical');
 
             return ResponseFormatter::success($opticals, 'Data optical berhasil dimuat', 200);
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'view_optical_list', 'error' => $th->getMessage()], 'optical');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

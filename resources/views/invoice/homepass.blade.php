@@ -204,27 +204,11 @@
                 <td style="border: 1px solid black; padding: 5px;"></td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
             </tr>
-            <tr style="background-color: #dbe5f1;">
-                <td colspan="3"
-                    style="border: 1px solid black; text-align: center; font-weight: bold; padding: 5px;">SUB TOTAL
-                </td>
-                <td style="border: 1px solid black; padding: 5px; font-weight: bold;">Rp.
-                    {{ number_format($subtotal ?? 0, 0, ',', '.') }}</td>
-                </td>
-            </tr>
             <tr>
                 <td style="border: 1px solid black; padding: 5px; text-align: center;">5.</td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
                 <td style="border: 1px solid black; padding: 5px;"></td>
-                </td>
-            </tr>
-            <tr>
-                <td style="border: 1px solid black; padding: 5px; text-align: center;">6.</td>
-                <td style="border: 1px solid black; padding: 5px;">Pajak ({{ $ppn }}%)</td>
-                <td style="border: 1px solid black; padding: 5px;"></td>
-                <td style="border: 1px solid black; padding: 5px;">Rp.
-                    {{ number_format($ppnAmount ?? 0, 0, ',', '.') }}</td>
                 </td>
             </tr>
             <tr style="background-color: #dbe5f1;">
@@ -236,6 +220,11 @@
                 </td>
             </tr>
         </table>
+        <b>
+            <i>
+                Harga tercantum sudah termasuk pajak (PPN 11%).
+            </i>
+        </b>
 
         <table style="width: 100%; margin-top: 15px;">
             <tr>

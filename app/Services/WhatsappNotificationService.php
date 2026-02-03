@@ -2,11 +2,13 @@
 
 namespace App\Services;
 
+use App\Models\Groups;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Models\InvoiceHomepass;
 use App\Models\Member;
 use Exception;
+use Illuminate\Support\Facades\Auth;
 
 class WhatsappNotificationService
 {
@@ -16,9 +18,23 @@ class WhatsappNotificationService
 
     public function __construct()
     {
-        $this->apiKey = config('services.mpwa.api_key');
+        $this->apiKey  = config('services.mpwa.api_key');
         $this->baseUrl = config('services.mpwa.base_url');
-        $this->defaultSender = config('services.mpwa.sender');
+
+        $user = Auth::user();
+
+        if (!$user || !$user->group_id) {
+            throw new \Exception('Group tidak ditemukan');
+        }
+
+        $group = Groups::find($user->group_id);
+
+        if (!$group || !$group->wa_api_token) {
+            throw new \Exception('WA API Token tidak ditemukan');
+        }
+
+        // ambil sender dari database
+        $this->defaultSender = $group->wa_api_token;
     }
 
     /**
@@ -43,7 +59,6 @@ class WhatsappNotificationService
 
             // Send via MPWA API
             return $this->sendMessage($phoneNumber, $message);
-
         } catch (Exception $e) {
             Log::error('WhatsApp Notification Failed', [
                 'invoice_id' => $invoice->id,
@@ -107,16 +122,16 @@ class WhatsappNotificationService
         $dueDate = $invoice->due_date->format('d/m/Y');
         $period = $invoice->subscription_period;
 
-        $paymentMethodText = match($paymentMethod) {
+        $paymentMethodText = match ($paymentMethod) {
             'cash' => 'Tunai',
             'bank_transfer' => 'Transfer Bank',
             'payment_gateway' => 'Payment Gateway',
             default => 'Lainnya'
         };
 
-        return match($status) {
+        return match ($status) {
             'paid' =>
-                "Halo *{$memberName}*,\n\n" .
+            "Halo *{$memberName}*,\n\n" .
                 "✅ *Pembayaran Berhasil Diterima*\n\n" .
                 "Terima kasih! Pembayaran Anda telah kami terima.\n\n" .
                 "📋 *Detail Pembayaran:*\n" .
@@ -131,7 +146,7 @@ class WhatsappNotificationService
                 "_Admin Aman ISP_",
 
             'unpaid' =>
-                "Halo *{$memberName}*,\n\n" .
+            "Halo *{$memberName}*,\n\n" .
                 "📌 *Pengingat Tagihan*\n\n" .
                 "Anda memiliki tagihan yang belum dibayar:\n\n" .
                 "📋 *Detail Tagihan:*\n" .
@@ -147,7 +162,7 @@ class WhatsappNotificationService
                 "_Admin Aman ISP_",
 
             'overdue' =>
-                "⚠️ *PERHATIAN - Tagihan Jatuh Tempo*\n\n" .
+            "⚠️ *PERHATIAN - Tagihan Jatuh Tempo*\n\n" .
                 "Halo *{$memberName}*,\n\n" .
                 "Tagihan Anda sudah melewati jatuh tempo.\n\n" .
                 "📋 *Detail Tagihan:*\n" .
@@ -162,7 +177,7 @@ class WhatsappNotificationService
                 "_Admin Aman ISP_",
 
             'pending' =>
-                "Halo *{$memberName}*,\n\n" .
+            "Halo *{$memberName}*,\n\n" .
                 "⏳ *Pembayaran Sedang Diproses*\n\n" .
                 "Kami telah menerima pembayaran Anda.\n\n" .
                 "📋 *Detail:*\n" .
@@ -210,7 +225,6 @@ class WhatsappNotificationService
             throw new Exception(
                 'MPWA API error: ' . ($response->json()['message'] ?? $response->body())
             );
-
         } catch (Exception $e) {
             Log::error('MPWA API request failed', [
                 'phone' => $phoneNumber,
@@ -245,7 +259,6 @@ class WhatsappNotificationService
                 "_Aman ISP - Notification System_";
 
             return $this->sendMessage($phoneNumber, $message);
-
         } catch (Exception $e) {
             return [
                 'success' => false,

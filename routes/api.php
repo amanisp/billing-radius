@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\Dashboard;
+use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\FakturController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LogsController;
@@ -117,6 +118,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/invoices/pdf/{inv_number}', [FakturController::class, 'single']);
         Route::get('/invoices/paid/all', [FakturController::class, 'invoicePaid']);
         Route::delete('/invoices/cancel/{id}', [FakturController::class, 'paymentCancel']);
+
+
+        // Expense
+        Route::get('/expenses', [ExpenseController::class, 'index']);
+        Route::get('/expenses/summary', [ExpenseController::class, 'summary']);
+        Route::get('/expenses/payment-admin', [ExpenseController::class, 'adminLedger']);
+        Route::post('/expenses/setor', [ExpenseController::class, 'setor']);
+        Route::post('/expenses', [ExpenseController::class, 'store']);
 
 
         // ========== Payouts ==========
