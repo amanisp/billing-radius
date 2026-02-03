@@ -154,15 +154,10 @@ class LogsController extends Controller
                 ];
             });
 
-            ActivityLogController::logCreate([
-                'action' => 'view_activity_logs',
-                'total_records' => $logs->total(),
-                'status' => 'success'
-            ], 'activity_logs');
+
 
             return ResponseFormatter::success($logs, 'Data aktivitas berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'view_activity_logs', 'error' => $th->getMessage()], 'activity_logs');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

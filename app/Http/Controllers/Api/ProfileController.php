@@ -52,15 +52,9 @@ class ProfileController extends Controller
             $perPage = $request->get('per_page', 15);
             $profiles = $query->paginate($perPage);
 
-            ActivityLogController::logCreate([
-                'action' => 'view_profiles_list',
-                'total_records' => $profiles->total(),
-                'status' => 'success'
-            ], 'profiles');
 
             return ResponseFormatter::success($profiles, 'Data profiles berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'view_profiles_list', 'error' => $th->getMessage()], 'profiles');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

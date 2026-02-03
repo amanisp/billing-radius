@@ -130,14 +130,9 @@ class ConnectionController extends Controller
                 return $connection;
             });
 
-            ActivityLogController::logCreate([
-                'action' => 'view_connections_list',
-                'total_records' => $connections->total(),
-                'status' => 'success'
-            ], 'connections');
+
             return ResponseFormatter::success($connections, 'Data connections berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'view_connections_list', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }

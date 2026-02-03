@@ -74,10 +74,8 @@ class AreaController extends Controller
             $perPage = $request->get('per_page', 5);
             $areas = $query->paginate($perPage);
 
-            ActivityLogController::logCreate(['action' => 'index', 'status' => 'success'], 'areas');
             return ResponseFormatter::success($areas, 'Data area berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'index', 'error' => $th->getMessage()], 'areas');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

@@ -88,18 +88,11 @@ class SessionController extends Controller
                 ];
             });
 
-            ActivityLogController::logCreate([
-                'action' => 'view_pppoe_sessions',
-                'total_records' => $data->total(),
-                'status' => 'success'
-            ], 'pppoe_sessions');
+
 
             return ResponseFormatter::success($data, 'Data PPPoE Online berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF([
-                'action' => 'view_pppoe_sessions',
-                'error' => $th->getMessage()
-            ], 'pppoe_sessions');
+
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

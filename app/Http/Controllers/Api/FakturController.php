@@ -62,13 +62,11 @@ class FakturController extends Controller
             // 2️⃣ Ambil data pembayaran
             $amount   = $invoice->member->paymentDetail->amount ?? 0;
             $discount = $invoice->member->paymentDetail->discount ?? 0;
-            $ppn      = $invoice->member->paymentDetail->ppn ?? 0;
             $otherFee = 0; // Bisa ditambah jika ada biaya lain
 
             // 3️⃣ Hitung subtotal dan total
             $subtotal  = $amount - $discount + $otherFee;
-            $ppnAmount = $subtotal * ($ppn / 100);
-            $total     = $subtotal + $ppnAmount;
+            $total     = $subtotal;
 
             // 4️⃣ Bulan dari start_date
             $monthYear = Carbon::parse($invoice->start_date)->translatedFormat('F Y');
@@ -81,9 +79,7 @@ class FakturController extends Controller
                     'monthYear'       => $monthYear,
                     'amount'          => $amount,
                     'discount'        => $discount,
-                    'ppn'             => $ppn,
                     'subtotal'        => $subtotal,
-                    'ppnAmount'       => $ppnAmount,
                     'total'           => $total,
                     'nomor_pelanggan' => $invoice->member->connection->internet_number,
                 ]
@@ -234,7 +230,7 @@ class FakturController extends Controller
             // ========================
             // Role filter
             // ========================
-            if ($user->role === 'teknisi') {
+            if (in_array($user->role, ['teknisi', 'kasir'])) {
                 $areaIds = DB::table('technician_areas')
                     ->where('user_id', $user->id)
                     ->pluck('area_id');
@@ -579,8 +575,7 @@ class FakturController extends Controller
             $discount = $pd->discount;
 
             // Hitung total (1 bulan)
-            $vatAmount = ($price - $discount) * ($vat / 100);
-            $totalAmount = $price - $discount + $vatAmount;
+            $totalAmount = $price - $discount;
 
             $connection = $member->connection;
             $connectionId = $connection?->id;

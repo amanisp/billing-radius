@@ -55,10 +55,8 @@ class AdminController extends Controller
             $perPage = $request->get('per_page', 5);
             $opticals = $query->paginate($perPage);
 
-            ActivityLogController::logCreate(['action' => 'index', 'status' => 'success'], 'users');
             return ResponseFormatter::success($opticals, 'Data admin berhasil dimuat', 200);
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'index', 'error' => $th->getMessage()], 'users');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

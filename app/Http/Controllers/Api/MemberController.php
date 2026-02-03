@@ -90,15 +90,9 @@ class MemberController extends Controller
             $perPage = $request->get('per_page', 15);
             $members = $query->paginate($perPage);
 
-            ActivityLogController::logCreate([
-                'action' => 'view_members_list',
-                'total_records' => $members->total(),
-                'status' => 'success'
-            ], 'members');
 
             return ResponseFormatter::success($members, 'Data members berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'view_members_list', 'error' => $th->getMessage()], 'members');
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
