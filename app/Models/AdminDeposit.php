@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class AdminDeposit extends Model
 {
     protected $fillable = [
+        'group_id',
         'admin_id',
         'created_by',
         'amount',

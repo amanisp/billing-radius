@@ -14,6 +14,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
+use function Pest\Laravel\json;
+
 class ExpenseController extends Controller
 {
     private function getAuthUser()
@@ -145,12 +147,15 @@ class ExpenseController extends Controller
              * TOTAL BULAN INI
              * ============================ */
             $incomeThisMonth = InvoiceHomepass::whereNotNull('paid_at')
+                ->where('group_id', $user->group_id)
                 ->where('status', 'paid')
                 ->whereMonth('paid_at', $now->month)
                 ->whereYear('paid_at', $now->year)
                 ->sum('amount');
 
+
             $expenseThisMonth = Expense::whereMonth('expense_date', $now->month)
+                ->where('group_id', $user->group_id)
                 ->whereYear('expense_date', $now->year)
                 ->sum('amount');
 
@@ -167,6 +172,7 @@ class ExpenseController extends Controller
                 DB::raw("DATE_FORMAT(paid_at, '%Y-%m') as month"),
                 DB::raw("SUM(amount) as total")
             )
+                ->where('group_id', $user->group_id)
                 ->where('status', 'paid')
                 ->whereNotNull('paid_at')
                 ->whereBetween('paid_at', [$startDate, $endDate])
@@ -180,6 +186,7 @@ class ExpenseController extends Controller
                 DB::raw("DATE_FORMAT(expense_date, '%Y-%m') as month"),
                 DB::raw("SUM(amount) as total")
             )
+                ->where('group_id', $user->group_id)
                 ->whereBetween('expense_date', [$startDate, $endDate])
                 ->groupBy('month')
                 ->pluck('total', 'month');
@@ -233,6 +240,7 @@ class ExpenseController extends Controller
             ]);
 
             $data =  AdminDeposit::create([
+                'group_id' => $user->group_id,
                 'admin_id' => $request->admin_id,
                 'created_by' => $user->id,
                 'amount' => $request->amount,
@@ -251,7 +259,6 @@ class ExpenseController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-
             if (!$user) {
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
@@ -259,24 +266,21 @@ class ExpenseController extends Controller
             $now = Carbon::now();
 
             $admins = User::whereIn('role', ['mitra', 'kasir', 'teknisi', 'admin'])
-                ->where('group_id', $user->group_id)
+                ->group($user->group_id)
                 ->get();
 
-            $data = $admins->map(function ($admin) use ($now) {
+            $data = $admins->map(function ($admin) use ($now, $user) {
 
-                // 🔹 Invoice dibayar bulan ini
                 $invoiceQuery = InvoiceHomepass::where('payer_id', $admin->id)
-                    ->whereNotNull('paid_at')
-                    ->whereMonth('paid_at', $now->month)
-                    ->whereYear('paid_at', $now->year);
+                    ->group($user->group_id)
+                    ->paidThisMonth($now);
 
                 $totalReceived = (int) $invoiceQuery->sum('amount');
                 $invoiceCount  = $invoiceQuery->count();
 
-                // 🔹 Setoran admin bulan ini
                 $totalDeposited = (int) AdminDeposit::where('admin_id', $admin->id)
-                    ->whereMonth('created_at', $now->month)
-                    ->whereYear('created_at', $now->year)
+                    ->group($user->group_id)
+                    ->thisMonth($now)
                     ->sum('amount');
 
                 return [
@@ -288,7 +292,6 @@ class ExpenseController extends Controller
                     'remaining'      => max(0, $totalReceived - $totalDeposited),
                 ];
             });
-
 
             return ResponseFormatter::success($data, 'Data rekap berhasil di tampilkan');
         } catch (\Throwable $th) {
