@@ -118,95 +118,104 @@ class FakturController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
 
             $now = Carbon::now();
-            $currentMonth = $now->month;
-            $currentYear  = $now->year;
-
-            $members = Member::with(['paymentDetail'])
-                ->where('group_id', $user->group_id)
-                ->get();
+            $currentMonth  = $now->month;
+            $currentYear   = $now->year;
+            $currentPeriod = $now->format('F Y'); // contoh: January 2026
 
             $stats = [
                 'this_month' => [
                     'total_invoices' => 0,
-                    'total_amount' => 0,
-                    'paid_count' => 0,
-                    'paid_amount' => 0,
-                    'unpaid_count' => 0,
-                    'unpaid_amount' => 0,
+                    'total_amount'   => 0,
+                    'paid_count'     => 0,
+                    'paid_amount'    => 0,
+                    'unpaid_count'   => 0,
+                    'unpaid_amount'  => 0,
                 ],
                 'overdue' => [
-                    'count' => 0,
+                    'count'  => 0,
                     'amount' => 0,
-                ]
+                ],
             ];
+
+            $members = Member::with(['paymentDetail', 'invoices'])
+                ->where('group_id', $user->group_id)
+                ->get();
 
             foreach ($members as $member) {
                 $payment = $member->paymentDetail;
                 if (!$payment) continue;
 
+                // ====================
+                // Nominal tagihan bulanan
+                // ====================
                 $total = ($payment->amount ?? 0) - ($payment->discount ?? 0);
-                $total += isset($payment->ppn) ? ($total * $payment->ppn / 100) : 0;
-
-                $total = round($total, 0); // 0 desimal untuk rupiah
-
-
-                // ====================
-                // 1️⃣ this_month
-                // ====================
-                $isPaid = false;
-                if ($payment->last_invoice) {
-                    $invoiceMonth = Carbon::parse($payment->last_invoice)->month;
-                    $invoiceYear  = Carbon::parse($payment->last_invoice)->year;
-
-                    if ($invoiceMonth == $currentMonth && $invoiceYear == $currentYear) {
-                        $isPaid = true;
-                    }
+                if (!empty($payment->ppn)) {
+                    $total += $total * $payment->ppn / 100;
                 }
+                $total = round($total, 0);
 
+                // ====================
+                // 1️⃣ THIS MONTH
+                // ====================
                 $stats['this_month']['total_invoices'] += 1;
-                $stats['this_month']['total_amount'] += $total;
+                $stats['this_month']['total_amount']   += $total;
 
-                if ($isPaid) {
-                    $stats['this_month']['paid_count'] += 1;
+                $paidInvoiceThisMonth = $member->invoices
+                    ->where('invoice_type', 'H')
+                    ->where('status', 'paid')
+                    ->where('subscription_period', $currentPeriod)
+                    ->first();
+
+                if ($paidInvoiceThisMonth) {
+                    $stats['this_month']['paid_count']  += 1;
                     $stats['this_month']['paid_amount'] += $total;
                 } else {
-                    $stats['this_month']['unpaid_count'] += 1;
+                    $stats['this_month']['unpaid_count']  += 1;
                     $stats['this_month']['unpaid_amount'] += $total;
                 }
 
                 // ====================
-                // 2️⃣ overdue
+                // 2️⃣ OVERDUE
                 // ====================
-                if ($payment->last_invoice) {
-                    $lastInvoice = Carbon::parse($payment->last_invoice);
+                $lastPaidInvoice = $member->invoices
+                    ->where('invoice_type', 'H')
+                    ->where('status', 'paid')
+                    ->whereNotNull('paid_at')
+                    ->sortByDesc('paid_at')
+                    ->first();
 
-                    // selisih bulan antara last_invoice dan bulan sebelumnya
-                    $monthsDiff = ($currentYear - $lastInvoice->year) * 12 + ($currentMonth - 1 - $lastInvoice->month);
+                if ($lastPaidInvoice) {
+                    $lastPaidDate = Carbon::parse($lastPaidInvoice->paid_at);
+
+                    // hitung selisih bulan (bulan berjalan tidak dihitung)
+                    $monthsDiff =
+                        ($currentYear - $lastPaidDate->year) * 12 +
+                        ($currentMonth - 1 - $lastPaidDate->month);
 
                     if ($monthsDiff > 0) {
-                        $stats['overdue']['count'] += $monthsDiff;
-                        $stats['overdue']['amount'] += $total * $monthsDiff; // akumulasi nominal tiap bulan
+                        $stats['overdue']['count']  += $monthsDiff;
+                        $stats['overdue']['amount'] += $total * $monthsDiff;
                     }
                 }
-                // NOTE: jika last_invoice null → jangan masuk overdue
             }
 
-            ActivityLogController::logCreate([
-                'action' => 'view_invoice_stats',
-                'stats' => $stats,
-                'status' => 'success'
-            ], 'invoices');
 
-            return ResponseFormatter::success($stats, 'Stats pembayaran berhasil dimuat');
+            return ResponseFormatter::success(
+                $stats,
+                'Stats pembayaran berhasil dimuat'
+            );
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF([
-                'action' => 'view_invoice_stats',
-                'error' => $th->getMessage()
-            ], 'invoices');
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
+            );
         }
     }
 
@@ -362,11 +371,11 @@ class FakturController extends Controller
             // ========================
             // Search filter (nama / username / internet_number)
             // ========================
-            if ($search = $request->get('search')) {
-                $query->whereHas('payer', function ($q) use ($search) {
-                    $q->where('fullname', 'like', "%{$search}%")
-                        ->orWhere('username', 'like', "%{$search}%")
-                        ->orWhere('internet_number', 'like', "%{$search}%");
+            if ($request->filled('search')) {
+                $search = $request->search;
+
+                $query->whereHas('member', function ($q) use ($search) {
+                    $q->where('fullname', 'LIKE', "%{$search}%");
                 });
             }
 
@@ -378,6 +387,7 @@ class FakturController extends Controller
             } elseif ($request->filled('payer_name')) {
                 $query->whereHas('payer', fn($q) => $q->where('fullname', 'like', "%{$request->payer_name}%"));
             }
+
 
             // ========================
             // Sorting & pagination
