@@ -266,20 +266,20 @@ class ExpenseController extends Controller
             $now = Carbon::now();
 
             $admins = User::whereIn('role', ['mitra', 'kasir', 'teknisi', 'admin'])
-                ->group($user->group_id)
+                ->where('group_id', $user->group_id)
                 ->get();
 
             $data = $admins->map(function ($admin) use ($now, $user) {
 
                 $invoiceQuery = InvoiceHomepass::where('payer_id', $admin->id)
-                    ->group($user->group_id)
+                    ->where('group_id', $user->group_id)
                     ->paidThisMonth($now);
 
                 $totalReceived = (int) $invoiceQuery->sum('amount');
                 $invoiceCount  = $invoiceQuery->count();
 
                 $totalDeposited = (int) AdminDeposit::where('admin_id', $admin->id)
-                    ->group($user->group_id)
+                    ->where('group_id', $user->group_id)
                     ->thisMonth($now)
                     ->sum('amount');
 
