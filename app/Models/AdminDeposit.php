@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
+
 
 class AdminDeposit extends Model
 {
@@ -13,6 +15,13 @@ class AdminDeposit extends Model
         'amount',
         'note'
     ];
+
+    public function scopeThisMonth($query, Carbon $date)
+    {
+        return $query
+            ->whereMonth('created_at', $date->month)
+            ->whereYear('created_at', $date->year);
+    }
 
     public function admin()
     {
