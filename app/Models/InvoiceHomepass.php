@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
+
 
 class InvoiceHomepass extends Model
 {
@@ -29,6 +31,14 @@ class InvoiceHomepass extends Model
         'paid_at' => 'datetime',
         'amount' => 'integer',
     ];
+
+    public function scopePaidThisMonth($query, Carbon $date)
+    {
+        return $query
+            ->where('status', 'paid')
+            ->whereMonth('paid_at', $date->month)
+            ->whereYear('paid_at', $date->year);
+    }
 
     public function payer()
     {
