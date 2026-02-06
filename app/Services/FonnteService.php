@@ -90,7 +90,7 @@ class FonnteService
         }
     }
 
-    public function sendBroadcast($groupId, array $targets, string $message, int $delay = 2): array
+    public function sendBroadcast($groupId, array $targets, string $message, int $minDelay = 2, int $maxDelay = 10): array
     {
         $groupId = $groupId ?? $this->getCurrentGroupId();
         $deviceToken = $this->getDeviceToken($groupId);
@@ -101,12 +101,15 @@ class FonnteService
 
         $results = [];
         foreach ($targets as $index => $target) {
+            // RANDOM DELAY 2-10 detik
+            $randomDelay = rand($minDelay, $maxDelay);
+
             $payload = [
                 'target' => $this->formatPhone($target),
                 'message' => $message,
-                'delay' => $index * $delay,
             ];
 
+            // TIDAK kirim delay ke Fonnte (hanya local sleep)
             $response = Http::withHeaders(['Authorization' => $deviceToken])
                 ->timeout(30)
                 ->post("{$this->baseUrl}/send", $payload);
@@ -114,10 +117,15 @@ class FonnteService
             $result = $this->handleResponse($response);
             $results[] = [
                 'target' => $target,
+                'local_delay_used' => "{$randomDelay}s", // DEBUG
                 'success' => $result['success'],
-                'data' => $result['data'] ?? null,
-                'error' => $result['error'] ?? null
+                'data' => $result['data'] ?? null
             ];
+
+            // LOCAL SLEEP (anti spam WhatsApp)
+            if ($index < count($targets) - 1) {
+                sleep($randomDelay);
+            }
         }
 
         return [
@@ -129,6 +137,8 @@ class FonnteService
             ]
         ];
     }
+
+
 
     public function getQR($groupId, ?string $device = null, bool $autoread = true): array
     {
