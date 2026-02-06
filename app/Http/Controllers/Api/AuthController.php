@@ -275,57 +275,32 @@ class AuthController extends Controller
         }
     }
 
-    public function updateWhatsappToken(Request $request)
+    public function updateAccountToken(Request $request)
     {
         try {
             $request->validate([
-                'wa_api_token' => 'required|string|min:10',
+                'account_token' => 'required|string|min:10|max:255',  // Fonnte Account Token
             ]);
 
             $user = Auth::user();
 
-            if (!$user || !$user->group_id) {
-                return ResponseFormatter::error(
-                    null,
-                    'Group tidak ditemukan',
-                    404
-                );
-            }
-
-            $group = Groups::find($user->group_id);
-
-            if (!$group) {
-                return ResponseFormatter::error(
-                    null,
-                    'Group tidak ditemukan',
-                    404
-                );
-            }
-
-            $group->update([
-                'wa_api_token' => $request->wa_api_token,
-            ]);
+            GlobalSettings::updateOrCreate(
+                ['group_id' => $user->group_id],
+                ['whatsapp_api_key' => $request->account_token]  // Account Token
+            );
 
             ActivityLogController::logCreate([
-                'action' => 'update_whatsapp_token',
-                'group_id' => $group->id,
+                'action' => 'update_account_token',
+                'group_id' => $user->group_id,
                 'status' => 'success'
-            ], 'groups');
+            ], 'global_settings');
 
             return ResponseFormatter::success([
-                'wa_api_token' => $group->wa_api_token,
-            ], 'WhatsApp API Token berhasil diperbarui', 200);
+                'account_token_saved' => true,
+                'next_step' => 'Call GET /whatsapp/status to see devices'
+            ], 'Fonnte Account Token saved! Next: generate QR', 200);
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF([
-                'action' => 'update_whatsapp_token',
-                'error' => $th->getMessage(),
-            ], 'groups');
-
-            return ResponseFormatter::error(
-                null,
-                $th->getMessage(),
-                500
-            );
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
 }

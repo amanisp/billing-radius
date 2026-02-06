@@ -35,10 +35,10 @@ return [
         ],
     ],
 
-    'mpwa' => [
-        'api_key' => env('MPWA_API_KEY', 'qnARDI9SJswXG7Vl6e3EFyMUCrq1v4'),
-        'base_url' => env('MPWA_BASE_URL', 'https://mpwa.amanisp.net.id'),
-        'sender' => env('MPWA_DEFAULT_SENDER', '62895380015903'),
+    'fonnte' => [
+        'url'            => env('FONNTE_URL', 'https://api.fonnte.com'),
+        'device_token'   => env('FONNTE_DEVICE_TOKEN'),
+        'account_token'  => env('FONNTE_ACCOUNT_TOKEN'),
     ],
 
     'freeradius' => [
