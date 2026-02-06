@@ -1,28 +1,31 @@
 <?php
-
+// app/Models/WhatsappMessageLog.php - FULL FIXED
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class WhatsappMessageLog extends Model
 {
-    use HasFactory;
-
     protected $table = 'whatsapp_message_logs';
 
     protected $fillable = [
         'group_id',
-        'phone',
-        'subject',
+        'recipient',
         'message',
-        'session_id',
         'status',
+        'type',
         'sent_at',
+        'response_data'
     ];
 
     protected $casts = [
         'sent_at' => 'datetime',
         'response_data' => 'array'
     ];
+
+    // Tambah jika belum ada
+    public function group()
+    {
+        return $this->belongsTo(Groups::class, 'group_id');
+    }
 }
