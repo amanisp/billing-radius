@@ -66,17 +66,29 @@ class WhatsAppController extends Controller
             'targets' => 'required|array|min:1|max:1000',
             'targets.*' => 'required|string',
             'message' => 'required|string|max:1000',
-            'delay' => 'nullable|integer|min:1|max:60',
+            'min_delay' => 'nullable|integer|min:1|max:30',  // 1-30s
+            'max_delay' => 'nullable|integer|min:2|max:60',  // 2-60s
         ]);
 
-        $result = $this->fonnte->sendBroadcast($groupId, $validated['targets'], $validated['message'], $validated['delay'] ?? 2);
+        $minDelay = $request->min_delay ?? 2;
+        $maxDelay = $request->max_delay ?? 10;
 
+        $result = $this->fonnte->sendBroadcast(
+            $groupId,
+            $validated['targets'],
+            $validated['message'],
+            $minDelay,
+            $maxDelay
+        );
+
+
+        // Log semua targets (tetap log meski gagal)
         foreach ($validated['targets'] as $target) {
             WhatsappMessageLog::create([
                 'group_id' => $groupId,
                 'recipient' => $target,
                 'message' => $validated['message'],
-                'status' => 'sent',
+                'status' => 'sent', // ubah jadi 'pending' jika mau track status
                 'type' => 'broadcast',
                 'sent_at' => now(),
             ]);
@@ -89,6 +101,7 @@ class WhatsAppController extends Controller
             'summary' => $result['summary']
         ]);
     }
+
 
     public function generateQR(Request $request)
     {
