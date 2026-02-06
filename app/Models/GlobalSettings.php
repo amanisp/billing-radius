@@ -19,7 +19,7 @@ class GlobalSettings extends Model
         'due_date_pascabayar',
         'footer',
         'group_id',
-        'whatsapp_api_key', // Hanya API key yang disimpan
+        'whatsapp_api_key', // account token for WhatsApp API
     ];
 
     /**

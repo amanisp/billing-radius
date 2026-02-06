@@ -146,23 +146,6 @@ class WhatsappController extends Controller
             ], 400);
         }
 
-        $result = $this->whatsappService->sendTextMessage(
-            $apiKey,
-            $request->phone,
-            'Test connection from ISP Management System.',
-            'Test Connection',
-            [
-                'group_id' => $user->group_id
-            ]
-        );
-
-
-        if ($result['success']) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Test message sent successfully!',
-            ]);
-        }
 
         return response()->json([
             'success' => false,
@@ -297,12 +280,6 @@ class WhatsappController extends Controller
 
                 // Calculate delay (15 seconds per batch of 10 messages)
                 $delay = floor($count / 10) * 15;
-
-                SendWhatsAppMessageJob::dispatch($apiKey, $broadcast, $member)
-                    ->onQueue('broadcasts')
-                    ->delay(now()->addSeconds($delay));
-
-                $count++;
             }
 
             // Get area name dari database (bukan API)
@@ -427,7 +404,7 @@ class WhatsappController extends Controller
             return $date;
         }
     }
-    
+
 
 
 }

@@ -9,7 +9,7 @@ class Groups extends Model
     protected $fillable = [
         'name',
         'slug',
-        'wa_api_token',
+        'wa_api_token', //device token for WhatsApp API
         'group_type',
     ];
 }
