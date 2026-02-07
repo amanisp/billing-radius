@@ -3,7 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\WhatsappMessageLog;
-use App\Services\WhatsappService;
+use App\Services\FonnteService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -18,35 +18,51 @@ class SendWhatsAppBroadcastJob implements ShouldQueue
     public $timeout = 60;  // 1 menit per pesan
 
     public function __construct(
-        public string $deviceToken,
+        public int $groupId,
         public string $target,
-        public string $message,
-        public ?\DateTime $delayUntil = null
+        public array $data,       // ['message'=>'...', 'template'=>'...', 'variables'=>[...] ]
+        public array $options = [] // ['delay'=>10, 'footer'=>'...']
     ) {}
 
-    public function handle(WhatsappService $whatsapp)
+    public function handle(FonnteService $whatsapp)
     {
-        $result = $whatsapp->sendText(
-            $this->deviceToken,
-            $this->target,
-            $this->message
-        );
+        try {
+            // Kirim pesan menggunakan FonnteService
+            $result = $whatsapp->sendText(
+                $this->groupId,
+                $this->target,
+                $this->data,
+                $this->options
+            );
 
-        // Update log
-        WhatsappMessageLog::where('recipient', $this->target)
-            ->where('message', $this->message)
-            ->where('status', 'queued')
-            ->latest()
-            ->first()?->update([
-                'status'        => $result['success'] ? 'sent' : 'failed',
-                'sent_at'       => now(),
-                'response_data' => json_encode($result)
-            ]);
+            // Update log queued jika ada
+            $log = WhatsappMessageLog::where('recipient', $this->target)
+                ->where('status', 'queued')
+                ->latest()
+                ->first();
 
-        if (!$result['success']) {
-            Log::error('Broadcast failed', [
+            if ($log) {
+                $log->update([
+                    'status'        => $result['success'] ? 'sent' : 'failed',
+                    'sent_at'       => now(),
+                    'message'       => $this->data['message'] ?? ($this->data['template'] ?? null),
+                    'response_data' => json_encode($result),
+                ]);
+            }
+
+            // Log error jika gagal
+            if (!$result['success']) {
+                Log::error('Broadcast failed', [
+                    'target' => $this->target,
+                    'error'  => $result['error'] ?? 'Unknown error',
+                    'data'   => $this->data,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::error('Broadcast job exception', [
                 'target' => $this->target,
-                'error'  => $result['error']
+                'exception' => $e->getMessage(),
+                'data' => $this->data,
             ]);
         }
     }

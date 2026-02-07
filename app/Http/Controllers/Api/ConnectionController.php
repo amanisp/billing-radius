@@ -15,6 +15,7 @@ use App\Models\Profiles;
 use App\Models\User;
 use App\Models\Member;
 use App\Models\PaymentDetail;
+use App\Services\FonnteService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,13 @@ use Illuminate\Validation\Rule;
 
 class ConnectionController extends Controller
 {
+    protected $fonnte;
+
+    public function __construct(FonnteService $fonnte)
+    {
+        $this->fonnte = $fonnte;
+    }
+
     private static function findAvailableIsolirIp($usedIps)
     {
         $baseIp = ip2long('172.30.0.2');
@@ -500,7 +508,7 @@ class ConnectionController extends Controller
     {
         try {
             $user = $this->getAuthUser();
-            $connection = Connection::where('id', $id)->firstOrFail();
+            $connection = Connection::where('id', $id)->with('member')->firstOrFail();
 
             if ($connection->group_id !== $user->group_id) {
                 return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
@@ -518,7 +526,6 @@ class ConnectionController extends Controller
             // ISOLIR ON
             // ======================
             if ($newIsolirStatus) {
-
 
 
                 // Ambil IP yang sudah terpakai
@@ -549,6 +556,20 @@ class ConnectionController extends Controller
                 ]);
 
                 $message = "Isolir aktif, IP $isolirIp diberikan";
+
+                if (!empty($connection->member->phone_number) && str_starts_with($connection->member->phone_number, '62')) {
+                    $this->fonnte->sendText(
+                        $user->group_id,
+                        $connection->member->phone_number,
+                        [
+                            'template' => 'account_suspend',
+                            'variables' => [
+                                'full_name' => $connection->member->fullname,
+                                'footer' => "Hormat Kami,\nPT. Anugerah Media Data Nusantara"
+                            ]
+                        ]
+                    );
+                }
             }
             // ======================
             // ISOLIR OFF
@@ -569,6 +590,22 @@ class ConnectionController extends Controller
                     ->delete();
 
                 $message = "Isolir dinonaktifkan, akun aktif kembali";
+
+
+                if (!empty($connection->member->phone_number) && str_starts_with($connection->member->phone_number, '62')) {
+                    $this->fonnte->sendText(
+                        $user->group_id,
+                        $connection->member->phone_number,
+                        [
+                            'template' => 'account_active',
+                            'variables' => [
+                                'full_name' => $connection->member->fullname,
+                                'pppoe_user'    => $connection->username,
+                                'pppoe_profile' => $connection->profile->name, // sesuaikan nama profil
+                            ]
+                        ]
+                    );
+                }
             }
 
             DB::commit();
@@ -589,36 +626,6 @@ class ConnectionController extends Controller
         }
     }
 
-    // public function toggleIsolir(Request $request, $id)
-    // {
-    //     try {
-    //         $user = $this->getAuthUser();
-    //         $connection = Connection::where('id', $id)->firstOrFail();
-
-    //         if ($connection->group_id !== $user->group_id) {
-    //             return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
-    //         }
-
-    //         $oldData = $connection->toArray();
-    //         $username = $connection->username ?? $connection->mac_address;
-
-    //         DB::beginTransaction();
-
-    //         $newIsolirStatus = !$connection->isolir;
-    //         $connection->update(['isolir' => $newIsolirStatus]);
-
-    //         DB::commit();
-
-    //         ActivityLogController::logCreate(['action' => 'toggleIsolir', 'status' => 'success'], 'connections');
-    //         return ResponseFormatter::success([
-    //             'isolir' => $newIsolirStatus
-    //         ], 'Status isolir berhasil diubah', 200);
-    //     } catch (\Throwable $th) {
-    //         DB::rollBack();
-    //         ActivityLogController::logCreateF(['action' => 'toggleIsolir', 'error' => $th->getMessage()], 'connections');
-    //         return ResponseFormatter::error(null, $th->getMessage(), 200);
-    //     }
-    // }
 
     /**
      * DELETE /api/v1/connections/{id}

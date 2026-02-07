@@ -23,9 +23,18 @@ use Illuminate\Support\Facades\View;
 use Mpdf\Mpdf;
 use App\Services\WhatsappNotificationService;
 use App\Jobs\SendWhatsappMessageJob;
+use App\Services\FonnteService;
 
 class FakturController extends Controller
 {
+
+    protected $fonnte;
+
+    public function __construct(FonnteService $fonnte)
+    {
+        $this->fonnte = $fonnte;
+    }
+
     private function getAuthUser()
     {
         $user = Auth::user();
@@ -628,12 +637,25 @@ class FakturController extends Controller
                 ]);
 
                 // Dispatch job untuk kirim WhatsApp
-                SendWhatsappMessageJob::dispatch(
-                    $invoice,
-                    $member,
-                    'paid',
-                    $validated['payment_method']
-                )->delay(now()->addSeconds(2));
+                if (!empty($member->phone_number) && str_starts_with($member->phone_number, '62')) {
+                    $this->fonnte->sendText(
+                        $user->group_id,
+                        $member->phone_number,
+                        [
+                            'template' => 'payment_paid',
+                            'variables' => [
+                                'full_name'        => $member->fullname,
+                                'no_invoice'       => $invNumber,
+                                'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                                'pppoe_user'       => $connection?->username,
+                                'pppoe_profile'    => $connection?->profile->name,
+                                'period'           => $invoice->subscription_period,
+                                'payment_gateway'  => $invoice->payment_method === 'back_transfer' ? 'Transfer Bank' : 'Cash',
+                                'footer'           => 'PT. Anugerah Media Data Nusantara'
+                            ]
+                        ]
+                    );
+                }
 
                 Log::info('WhatsApp job dispatched successfully', [
                     'invoice_id' => $invoice->id,
@@ -726,10 +748,29 @@ class FakturController extends Controller
             // Cari invoice
             $invoice = InvoiceHomepass::where('id', $id)
                 ->where('group_id', $user->group_id)
+                ->with('member')
                 ->first();
 
             if (!$invoice) {
                 return ResponseFormatter::error(null, 'Invoice tidak ditemukan', 404);
+            }
+
+            if (!empty($invoice->member->phone_number) && str_starts_with($invoice->member->phone_number, '62')) {
+                $this->fonnte->sendText(
+                    $user->group_id,
+                    $invoice->member->phone_number,
+                    [
+                        'template' => 'payment_cancel',
+                        'variables' => [
+                            'full_name'     => $invoice->member->fullname,
+                            'no_invoice'    => $invoice->inv_number,
+                            'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                            'invoice_date' => $invoice->paid_at ? $invoice->paid_at->format('Y-m-d') : null,
+                            'due_date'     => $invoice->due_date ? $invoice->due_date->format('Y-m-d') : null,
+                            'period'      => $invoice->subscription_period,
+                        ]
+                    ]
+                );
             }
 
             // Hapus invoice

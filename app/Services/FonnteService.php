@@ -17,6 +17,28 @@ class FonnteService
         $this->baseUrl = config('services.fonnte.url', 'https://api.fonnte.com');
     }
 
+    private function renderTemplate(string $templateKey, array $variables = []): string
+    {
+        $templates = config('whatsapp_templates');
+
+        if (!isset($templates[$templateKey])) {
+            throw new \InvalidArgumentException("WhatsApp template '{$templateKey}' not found");
+        }
+
+        $message = $templates[$templateKey];
+
+        foreach ($variables as $key => $value) {
+            $message = str_replace(
+                '[' . $key . ']',
+                (string) $value,
+                $message
+            );
+        }
+
+        return $message;
+    }
+
+
     private function getAccountToken($groupId = null): ?string
     {
         // 1. Config fallback
@@ -61,42 +83,92 @@ class FonnteService
         }
     }
 
-    public function sendText($groupId, string $target, string $message, array $options = []): array
-    {
+    public function sendText(
+        $groupId,
+        string $target,
+        array $data = [],   // isi message / template di sini
+        array $options = []
+    ): array {
         $groupId = $groupId ?? $this->getCurrentGroupId();
         $deviceToken = $this->getDeviceToken($groupId);
 
         if (!$deviceToken) {
-            return ['success' => false, 'error' => 'Device token not configured (scan QR & save to groups.wa_api_token)'];
+            return [
+                'success' => false,
+                'error' => 'Device token not configured (scan QR & save to groups.wa_api_token)'
+            ];
         }
 
         try {
+            /**
+             * PRIORITAS MESSAGE
+             * 1. Custom message langsung
+             * 2. Template message
+             */
+            if (!empty($data['message'])) {
+                $message = $data['message'];
+            } elseif (!empty($data['template'])) {
+                $message = $this->renderTemplate(
+                    $data['template'],
+                    $data['variables'] ?? []
+                );
+            } else {
+                return [
+                    'success' => false,
+                    'error' => 'Message or template is required'
+                ];
+            }
+
             $payload = [
-                'target' => $this->formatPhone($target),
+                'target'  => $this->formatPhone($target),
                 'message' => $message,
-                'device' => $options['device'] ?? null,
+                'device'  => $options['device'] ?? null,
             ];
 
-            if (isset($options['footer'])) $payload['footer'] = $options['footer'];
-            if (isset($options['delay'])) $payload['delay'] = $options['delay'];
+            if (isset($options['footer'])) {
+                $payload['footer'] = $options['footer'];
+            }
 
-            $response = Http::withHeaders(['Authorization' => $deviceToken])
+            if (isset($options['delay'])) {
+                $payload['delay'] = (int) $options['delay'];
+            }
+
+            $response = Http::withHeaders([
+                'Authorization' => $deviceToken
+            ])
                 ->timeout(30)
                 ->post("{$this->baseUrl}/send", $payload);
 
             return $this->handleResponse($response);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return $this->handleException($e, 'send_text');
         }
     }
 
-    public function sendBroadcast($groupId, array $targets, string $message, int $minDelay = 2, int $maxDelay = 10): array
-    {
+
+    public function sendBroadcast(
+        $groupId,
+        array $targets,
+        ?string $message = null,
+        ?string $templateKey = null,
+        array $variables = [],
+        int $minDelay = 2,
+        int $maxDelay = 10
+    ): array {
         $groupId = $groupId ?? $this->getCurrentGroupId();
         $deviceToken = $this->getDeviceToken($groupId);
 
         if (!$deviceToken) {
             return ['success' => false, 'error' => 'Device token not configured'];
+        }
+
+        // Jika templateKey diberikan, render pesan dari template
+        if ($templateKey) {
+            $message = $this->renderTemplate($templateKey, $variables);
+        }
+
+        if (!$message) {
+            return ['success' => false, 'error' => 'No message provided'];
         }
 
         $results = [];
@@ -109,7 +181,7 @@ class FonnteService
                 'message' => $message,
             ];
 
-            // TIDAK kirim delay ke Fonnte (hanya local sleep)
+            // Kirim request ke Fonnte
             $response = Http::withHeaders(['Authorization' => $deviceToken])
                 ->timeout(30)
                 ->post("{$this->baseUrl}/send", $payload);
@@ -117,25 +189,18 @@ class FonnteService
             $result = $this->handleResponse($response);
             $results[] = [
                 'target' => $target,
-                'local_delay_used' => "{$randomDelay}s", // DEBUG
+                'local_delay_used' => "{$randomDelay}s",
                 'success' => $result['success'],
                 'data' => $result['data'] ?? null
             ];
 
-            // LOCAL SLEEP (anti spam WhatsApp)
+            // LOCAL SLEEP untuk anti spam
             if ($index < count($targets) - 1) {
                 sleep($randomDelay);
             }
         }
 
-        return [
-            'success' => true,
-            'data' => $results,
-            'summary' => [
-                'total' => count($targets),
-                'successful' => count(array_filter($results, fn($r) => $r['success']))
-            ]
-        ];
+        return $results;
     }
 
 

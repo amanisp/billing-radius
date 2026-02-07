@@ -140,7 +140,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/templates', [WhatsAppController::class, 'templates']);
             Route::post('/send', [WhatsAppController::class, 'sendMessage']);
             Route::post('/broadcast', [WhatsAppController::class, 'broadcast']);
-            Route::post('/qr', [WhatsAppController::class, 'generateQR']);
+            Route::post('/broadcast/area', [WhatsAppController::class, 'broadcastArea']);
+            Route::post('/broadcast/unpaid', [WhatsAppController::class, 'broadcastInvoice']);
             Route::post('/disconnect', [WhatsAppController::class, 'disconnect']);
             Route::get('/debug', [WhatsAppController::class, 'debugTokens']);
         });
