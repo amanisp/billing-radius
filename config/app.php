@@ -56,10 +56,6 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
-    // Wisender
-    'wisender' => [
-        'host' => env('WA_API_HOST'),
-    ],
 
 
     /*

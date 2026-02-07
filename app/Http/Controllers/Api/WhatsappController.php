@@ -2,13 +2,21 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
+use App\Jobs\SendWhatsAppBroadcastJob;
+use App\Models\Area;
+use App\Models\Connection;
 use App\Models\GlobalSettings;
 use App\Models\Groups;
+use App\Models\Member;
+use App\Models\User;
 use App\Services\FonnteService;
 use App\Models\WhatsappMessageLog;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class WhatsAppController extends Controller
 {
@@ -17,6 +25,17 @@ class WhatsAppController extends Controller
     public function __construct(FonnteService $fonnte)
     {
         $this->fonnte = $fonnte;
+    }
+
+    private function getAuthUser()
+    {
+        $user = Auth::user();
+        if ($user instanceof User) return $user;
+
+        $id = Auth::id();
+        if ($id) return User::find($id);
+
+        return null;
     }
 
     public function status()
@@ -28,6 +47,142 @@ class WhatsAppController extends Controller
             ? response()->json(['success' => true, 'data' => $result['data']])
             : response()->json(['success' => false, 'message' => $result['error']], $result['status'] ?? 500);
     }
+
+    public function broadcastArea(Request $request)
+    {
+        $user = $this->getAuthUser();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $validated = $request->validate([
+            'subject' => 'required|string|max:255',
+            'area'    => 'required', // bisa 'all' atau ID
+            'message' => 'required|string'
+        ]);
+
+        // Ambil koneksi sesuai area
+        $query = Connection::with('member')
+            ->where('group_id', $user->group_id)
+            ->whereHas('member', fn($q) => $q->whereNotNull('phone_number'));
+
+        if ($validated['area'] !== 'all') {
+            $query->where('area_id', $validated['area']);
+        }
+
+        $connections = $query->get();
+
+        if ($connections->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No members found for selected area'
+            ], 404);
+        }
+
+        $message = "Yth. Pelanggan\n{$validated['subject']}\n\n{$validated['message']}";
+
+        // Chunk setiap 5 koneksi
+        $connections->chunk(5)->each(function ($chunk, $batchIndex) use ($user, $message) {
+            foreach ($chunk as $conn) {
+                $target = $conn->member->phone_number;
+
+                // Dispatch job dengan delay batch
+                SendWhatsAppBroadcastJob::dispatch(
+                    $user->group_id,            // groupId
+                    $target,                    // nomor tujuan
+                    ['message' => $message],    // data pesan custom
+                    []                          // options, bisa isi 'delay'=>10 jika mau delay per pesan
+                )->delay(now()->addSeconds($batchIndex * 10)); // delay per batch 10 detik
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Broadcast queued successfully, messages will be sent shortly.'
+        ]);
+    }
+
+    public function broadcastInvoice(Request $request)
+    {
+        $user = $this->getAuthUser();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $month = $request->get('month', now()->month);
+        $year  = $request->get('year', now()->year);
+
+        $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
+        $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
+
+        // Ambil member yang belum bayar bulan ini
+        $membersQuery = Member::with(['paymentDetail', 'connection.profile'])
+            ->where('group_id', $user->group_id)
+            ->whereDoesntHave('invoices', function ($q) use ($startOfMonth, $endOfMonth) {
+                $q->where('status', 'paid')
+                    ->whereDate('start_date', '<=', $endOfMonth)
+                    ->whereDate('due_date', '>=', $startOfMonth);
+            });
+
+
+        $members = $membersQuery->get();
+
+        if ($members->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No members found for selected area/month'
+            ], 404);
+        }
+
+
+        // Chunk setiap 5 member
+        $members->chunk(5)->each(function ($chunk, $batchIndex) use ($user, $year, $month) {
+            foreach ($chunk as $member) {
+                $target = $member->phone_number ?? null;
+                if (!$target) continue;
+
+
+                $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
+                $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
+                $amount = $member->paymentDetail->amount ?? 0;
+                $discount = $member->paymentDetail->discount ?? 0;
+
+                $total = $amount - $discount;
+                // Variabel untuk template
+                $variables = [
+                    'full_name'     => $member->fullname,
+                    'uid'           => $member->connection->internet_number ?? '-',          // ID Pelanggan
+                    'amount'        => number_format($amount ?? 0, 0, ',', '.'),
+                    'discount'      => number_format($discount ?? 0, 0, ',', '.'),
+                    'total'         => number_format($total ?? 0, 0, ',', '.'),
+                    'pppoe_user'    => $member->connection->username ?? '-',
+                    'pppoe_profile' => $member->connection->profile->name ?? '-',
+                    'period'        => $startOfMonth->translatedFormat('F Y'),  // contoh: "Februari 2026"
+                    'due_date'      => $endOfMonth->format('d/m/Y'),           // contoh: "28/02/2026"
+                    'payment_url'   => 'https://bayar.amanisp.net.id',
+                    'footer'        => "Pembayaran diatas sudah termasuk PPn 11%\nPembayaran Manual silahkan hubungi admin kami."
+                ];
+
+
+                // Dispatch job dengan delay batch
+                SendWhatsAppBroadcastJob::dispatch(
+                    $user->group_id,
+                    $target,
+                    [
+                        'template'  => 'invoice_terbit',
+                        'variables' => $variables
+                    ],
+                    [] // options: bisa isi delay per pesan
+                )->delay(now()->addSeconds($batchIndex * 10));
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Invoice broadcast queued successfully, messages will be sent shortly.'
+        ]);
+    }
+
 
     public function sendMessage(Request $request)
     {

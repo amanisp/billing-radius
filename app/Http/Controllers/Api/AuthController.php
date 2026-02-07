@@ -154,6 +154,8 @@ class AuthController extends Controller
                 return ResponseFormatter::error(null, 'Unauthorized', 401);
             }
 
+            $global = GlobalSettings::where('group_id', $user->group_id)->first();
+
             $data = [
                 'id' => $user->id,
                 'username' => $user->username,
@@ -163,6 +165,7 @@ class AuthController extends Controller
                 'group_id' => $user->group_id,
                 'group' => $user->group,
                 'phone_number' => $user->phone_number,
+                'global_setting' => $global
             ];
 
             return ResponseFormatter::success($data, 'User data berhasil dimuat', 200);
@@ -300,7 +303,36 @@ class AuthController extends Controller
                 'next_step' => 'Call GET /whatsapp/status to see devices'
             ], 'Fonnte Account Token saved! Next: generate QR', 200);
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
+        }
+    }
+
+    public function updateWhatsappToken(Request $request)
+    {
+        try {
+            $request->validate([
+                'device_token' => 'required|string|min:10|max:255',  // Fonnte Account Token
+            ]);
+
+            $user = Auth::user();
+
+            Groups::updateOrCreate(
+                ['id' => $user->group_id],
+                ['wa_api_token' => $request->device_token]  // Account Token
+            );
+
+            ActivityLogController::logCreate([
+                'action' => 'update_account_token',
+                'group_id' => $user->group_id,
+                'status' => 'success'
+            ], 'global_settings');
+
+            return ResponseFormatter::success([
+                'device_token_saved' => true,
+                'next_step' => 'Call GET /whatsapp/status to see devices'
+            ], 'Fonnte Account Token saved! Next: generate QR', 200);
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 }
