@@ -238,18 +238,20 @@ class FakturController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $query = Member::with([
-                'paymentDetail',
-                'connection.area',
-                'invoices' => function ($q) {
-                    $q->where('status', 'paid');
-                }
-            ]);
+            $query = Member::query()
+                ->with([
+                    'paymentDetail',
+                    'connection.area',
+                    'invoices' => function ($q) {
+                        $q->where('status', 'paid');
+                    }
+                ]);
 
             // ========================
             // Role filter
             // ========================
             if (in_array($user->role, ['teknisi', 'kasir'])) {
+
                 $areaIds = DB::table('technician_areas')
                     ->where('user_id', $user->id)
                     ->pluck('area_id');
@@ -257,14 +259,12 @@ class FakturController extends Controller
                 if ($areaIds->isEmpty()) {
                     $query->whereRaw('1 = 0');
                 } else {
-                    $query->whereHas(
-                        'connection',
-                        fn($q) =>
-                        $q->whereIn('area_id', $areaIds)
-                    );
+                    $query->whereHas('connection', function ($q) use ($areaIds) {
+                        $q->whereIn('area_id', $areaIds);
+                    });
                 }
             } else {
-                $query->where('group_id', $user->group_id);
+                $query->where('members.group_id', $user->group_id);
             }
 
             // ========================
@@ -296,15 +296,14 @@ class FakturController extends Controller
             }
 
             // ========================
-            // Search
+            // Search (OPTIMAL VERSION)
             // ========================
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
-                    $q->whereHas('connection', function ($q2) use ($search) {
-                        $q2->where('username', 'like', "%{$search}%")
-                            ->orWhere('internet_number', 'like', "%{$search}%")
-                            ->orWhere('mac_address', 'like', "%{$search}%");
-                    })->orWhere('fullname', 'like', "%{$search}%");
+                    $q->where('members.fullname', 'like', "%{$search}%")
+                        ->orWhereHas('connection', function ($q2) use ($search) {
+                            $q2->where('username', 'like', "%{$search}%");
+                        });
                 });
             }
 
@@ -312,11 +311,9 @@ class FakturController extends Controller
             // Area filter
             // ========================
             if ($request->filled('area_id')) {
-                $query->whereHas(
-                    'connection',
-                    fn($q) =>
-                    $q->where('area_id', $request->area_id)
-                );
+                $query->whereHas('connection', function ($q) use ($request) {
+                    $q->where('area_id', $request->area_id);
+                });
             }
 
             // ========================
@@ -326,11 +323,9 @@ class FakturController extends Controller
                 $statusMap = ['isolir' => 1, 'active' => 0];
 
                 if (isset($statusMap[$request->status])) {
-                    $query->whereHas(
-                        'connection',
-                        fn($q) =>
-                        $q->where('isolir', $statusMap[$request->status])
-                    );
+                    $query->whereHas('connection', function ($q) use ($statusMap, $request) {
+                        $q->where('isolir', $statusMap[$request->status]);
+                    });
                 }
             }
 
@@ -338,7 +333,7 @@ class FakturController extends Controller
             // Sort & paginate
             // ========================
             $query->orderBy(
-                $request->get('sort_field', 'created_at'),
+                $request->get('sort_field', 'members.created_at'),
                 $request->get('sort_direction', 'desc')
             );
 

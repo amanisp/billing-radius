@@ -57,11 +57,7 @@ class SessionController extends Controller
 
             // 🔍 Search filter opsional
             if ($search = $request->get('search')) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('ra.username', 'like', "%{$search}%")
-                        ->orWhere('ra.framedipaddress', 'like', "%{$search}%")
-                        ->orWhere('ra.callingstationid', 'like', "%{$search}%");
-                });
+                $query->where('ra.username', 'like', "%{$search}%");
             }
 
             // 🔄 Sort

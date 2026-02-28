@@ -73,12 +73,17 @@ class ConnectionController extends Controller
             // 🔍 Search
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
-                    $q->where('username', 'like', "%{$search}%")
-                        ->orWhere('internet_number', 'like', "%{$search}%")
-                        ->orWhere('mac_address', 'like', "%{$search}%")
-                        ->orWhereHas('member', function ($q2) use ($search) {
-                            $q2->where('fullname', 'like', "%{$search}%");
-                        });
+
+                    // Search prefix (cepat pakai index)
+                    $q->where('username', 'like', "{$search}%");
+
+                    // Kalau user cari bagian setelah @
+                    if (str_contains($search, '@')) {
+                        $q->orWhere('username', 'like', "%{$search}");
+                    } else {
+                        // Cari domain setelah @ (area)
+                        $q->orWhereRaw("SUBSTRING_INDEX(username, '@', -1) LIKE ?", ["{$search}%"]);
+                    }
                 });
             }
 
