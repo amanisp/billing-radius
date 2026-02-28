@@ -112,6 +112,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/invoices', [FakturController::class, 'index']);
         Route::get('/invoices/member/{id}', [FakturController::class, 'invoiceByMemberId']);
         Route::post('/invoices', [FakturController::class, 'manualPayment']);
+        Route::post('/invoices/bulk', [FakturController::class, 'bulkManualPayment']);
         Route::get('/invoices/details/{id}', [FakturController::class, 'fakturDetail']);
         Route::get('/invoices/stats', [FakturController::class, 'stats']);
         Route::get('/invoices/pdf/{inv_number}', [FakturController::class, 'single']);

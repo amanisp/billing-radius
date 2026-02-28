@@ -7,6 +7,7 @@ use App\Helpers\InvoiceHelper;
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ActivityLogController;
+use App\Jobs\BulkManualPaymentJob;
 use App\Models\Invoice;
 use App\Models\InvoiceHomepass;
 use App\Models\Member;
@@ -549,6 +550,30 @@ class FakturController extends Controller
         }
     }
 
+    public function bulkManualPayment(Request $request)
+    {
+        $user = $this->getAuthUser();
+
+        $validated = $request->validate([
+            'list_id' => 'required|array|min:1',
+            'payment_method' => 'required|in:bank_transfer,cash',
+            'month' => 'required|date_format:Y-m',
+        ]);
+
+        BulkManualPaymentJob::dispatch(
+            $validated['list_id'],
+            $validated['payment_method'],
+            $validated['month'],
+            $user->id
+        );
+
+        return ResponseFormatter::success(
+            null,
+            'Bulk payment sedang diproses di background',
+            202
+        );
+    }
+
 
     public function manualPayment(Request $request)
     {
@@ -755,23 +780,23 @@ class FakturController extends Controller
                 return ResponseFormatter::error(null, 'Invoice tidak ditemukan', 404);
             }
 
-            if (!empty($invoice->member->phone_number) && str_starts_with($invoice->member->phone_number, '62')) {
-                $this->fonnte->sendText(
-                    $user->group_id,
-                    $invoice->member->phone_number,
-                    [
-                        'template' => 'payment_cancel',
-                        'variables' => [
-                            'full_name'     => $invoice->member->fullname,
-                            'no_invoice'    => $invoice->inv_number,
-                            'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
-                            'invoice_date' => $invoice->paid_at ? $invoice->paid_at->format('Y-m-d') : null,
-                            'due_date'     => $invoice->due_date ? $invoice->due_date->format('Y-m-d') : null,
-                            'period'      => $invoice->subscription_period,
-                        ]
-                    ]
-                );
-            }
+            // if (!empty($invoice->member->phone_number) && str_starts_with($invoice->member->phone_number, '62')) {
+            //     $this->fonnte->sendText(
+            //         $user->group_id,
+            //         $invoice->member->phone_number,
+            //         [
+            //             'template' => 'payment_cancel',
+            //             'variables' => [
+            //                 'full_name'     => $invoice->member->fullname,
+            //                 'no_invoice'    => $invoice->inv_number,
+            //                 'total' => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+            //                 'invoice_date' => $invoice->paid_at ? $invoice->paid_at->format('Y-m-d') : null,
+            //                 'due_date'     => $invoice->due_date ? $invoice->due_date->format('Y-m-d') : null,
+            //                 'period'      => $invoice->subscription_period,
+            //             ]
+            //         ]
+            //     );
+            // }
 
             // Hapus invoice
             $invoice->delete();
