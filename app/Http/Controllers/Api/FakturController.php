@@ -132,10 +132,9 @@ class FakturController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $now = Carbon::now();
-            $currentMonth  = $now->month;
-            $currentYear   = $now->year;
-            $currentPeriod = $now->format('F Y'); // contoh: January 2026
+            $now              = Carbon::now();
+            $currentPeriod    = $now->format('F Y');           // contoh: March 2026
+            $lastMonthPeriod  = $now->copy()->subMonth()->format('F Y'); // contoh: February 2026
 
             $stats = [
                 'this_month' => [
@@ -157,16 +156,21 @@ class FakturController extends Controller
                 ->get();
 
             foreach ($members as $member) {
+
                 $payment = $member->paymentDetail;
-                if (!$payment) continue;
+                if (!$payment) {
+                    continue;
+                }
 
                 // ====================
-                // Nominal tagihan bulanan
+                // Hitung nominal tagihan bulanan
                 // ====================
                 $total = ($payment->amount ?? 0) - ($payment->discount ?? 0);
+
                 if (!empty($payment->ppn)) {
                     $total += $total * $payment->ppn / 100;
                 }
+
                 $total = round($total, 0);
 
                 // ====================
@@ -175,13 +179,13 @@ class FakturController extends Controller
                 $stats['this_month']['total_invoices'] += 1;
                 $stats['this_month']['total_amount']   += $total;
 
-                $paidInvoiceThisMonth = $member->invoices
+                $paidThisMonth = $member->invoices
                     ->where('invoice_type', 'H')
                     ->where('status', 'paid')
                     ->where('subscription_period', $currentPeriod)
                     ->first();
 
-                if ($paidInvoiceThisMonth) {
+                if ($paidThisMonth) {
                     $stats['this_month']['paid_count']  += 1;
                     $stats['this_month']['paid_amount'] += $total;
                 } else {
@@ -190,30 +194,19 @@ class FakturController extends Controller
                 }
 
                 // ====================
-                // 2️⃣ OVERDUE
+                // 2️⃣ OVERDUE (Belum bayar bulan lalu)
                 // ====================
-                $lastPaidInvoice = $member->invoices
+                $paidLastMonth = $member->invoices
                     ->where('invoice_type', 'H')
                     ->where('status', 'paid')
-                    ->whereNotNull('paid_at')
-                    ->sortByDesc('paid_at')
+                    ->where('subscription_period', $lastMonthPeriod)
                     ->first();
 
-                if ($lastPaidInvoice) {
-                    $lastPaidDate = Carbon::parse($lastPaidInvoice->paid_at);
-
-                    // hitung selisih bulan (bulan berjalan tidak dihitung)
-                    $monthsDiff =
-                        ($currentYear - $lastPaidDate->year) * 12 +
-                        ($currentMonth - 1 - $lastPaidDate->month);
-
-                    if ($monthsDiff > 0) {
-                        $stats['overdue']['count']  += $monthsDiff;
-                        $stats['overdue']['amount'] += $total * $monthsDiff;
-                    }
+                if (!$paidLastMonth) {
+                    $stats['overdue']['count']  += 1;
+                    $stats['overdue']['amount'] += $total;
                 }
             }
-
 
             return ResponseFormatter::success(
                 $stats,
