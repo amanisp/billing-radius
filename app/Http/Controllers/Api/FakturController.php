@@ -133,6 +133,7 @@ class FakturController extends Controller
 
             $now = Carbon::now();
             $currentPeriod = $now->format('F Y');
+            $lastMonthPeriod = $now->copy()->subMonth()->format('F Y');
             $startOfCurrentMonth = $now->copy()->startOfMonth();
 
             $stats = [
@@ -173,10 +174,9 @@ class FakturController extends Controller
                 if (!$payment || !$payment->active_date) continue;
 
                 $activeDate = Carbon::parse($payment->active_date)->startOfMonth();
-                $monthsSinceActive = $activeDate->diffInMonths($startOfCurrentMonth);
 
-                // 🔴 MEMBER BARU → skip semua perhitungan
-                if ($monthsSinceActive < 1) {
+                // kalau active date setelah bulan ini → skip
+                if ($activeDate->gt($startOfCurrentMonth)) {
                     continue;
                 }
 
@@ -214,25 +214,17 @@ class FakturController extends Controller
                 // 2️⃣ OVERDUE
                 // ====================
 
-                if ($monthsSinceActive >= 2) {
+                // hanya cek kalau sudah lewat minimal 1 bulan
+                if ($activeDate->lt($startOfCurrentMonth)) {
 
-                    $periodPointer = $activeDate->copy()->addMonth();
+                    $invoiceLastMonth = $member->invoices
+                        ->where('invoice_type', 'H')
+                        ->where('subscription_period', $lastMonthPeriod)
+                        ->first();
 
-                    while ($periodPointer->lt($startOfCurrentMonth)) {
-
-                        $period = $periodPointer->format('F Y');
-
-                        $invoiceExists = $member->invoices
-                            ->where('invoice_type', 'H')
-                            ->where('subscription_period', $period)
-                            ->first();
-
-                        if (!$invoiceExists) {
-                            $stats['overdue']['count']  += 1;
-                            $stats['overdue']['amount'] += $total;
-                        }
-
-                        $periodPointer->addMonth();
+                    if (!$invoiceLastMonth) {
+                        $stats['overdue']['count']  += 1;
+                        $stats['overdue']['amount'] += $total;
                     }
                 }
             }
