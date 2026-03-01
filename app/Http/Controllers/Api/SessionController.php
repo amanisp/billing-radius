@@ -6,6 +6,7 @@ use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ActivityLogController;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -37,12 +38,15 @@ class SessionController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
+            $nowUtc = Carbon::now('UTC');
+
+
             // 🔍 Query ke tabel radacct (FreeRADIUS)
             $query = DB::connection('radius')->table('radacct as ra')
                 ->join('radusergroup as rug', 'ra.username', '=', 'rug.username')
                 ->where('rug.groupname', 'mitra_' . $user->group_id) // Filter per mitra
                 ->whereNull('ra.acctstoptime') // hanya user yang masih online
-                ->where('ra.acctupdatetime', '>=', now()->subMinutes(60)) // aktif 2 jam terakhir
+                ->where('ra.acctupdatetime', '>=', $nowUtc->subMinutes(60)) // aktif 2 jam terakhir
                 ->select([
                     'ra.acctsessionid as session_id',
                     'ra.username',

@@ -9,6 +9,7 @@ use App\Models\Area;
 use App\Models\Connection;
 use App\Models\OpticalDist;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -74,12 +75,15 @@ class Dashboard extends Controller
              * TOTAL ACTIVE (ONLINE)
              * ===============================
              */
+
+            $nowUtc = Carbon::now('UTC');
+
             $totalActive = DB::connection('radius')
                 ->table('radacct as ra')
                 ->join('radusergroup as rug', 'ra.username', '=', 'rug.username')
                 ->where('rug.groupname', $groupName)
                 ->whereNull('ra.acctstoptime')
-                ->where('ra.acctupdatetime', '>=', now()->subMinutes(120))
+                ->where('ra.acctupdatetime', '>=', $nowUtc->subMinutes(120))
                 ->distinct('ra.username')
                 ->count('ra.username');
 
