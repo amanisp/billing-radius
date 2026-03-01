@@ -132,9 +132,8 @@ class FakturController extends Controller
             }
 
             $now = Carbon::now();
-            $currentMonth  = $now->month;
-            $currentYear   = $now->year;
-            $currentPeriod = $now->format('F Y'); // contoh: January 2026
+            $currentPeriod = $now->format('F Y');
+            $startOfCurrentMonth = $now->copy()->startOfMonth();
 
             $stats = [
                 'this_month' => [
@@ -163,23 +162,33 @@ class FakturController extends Controller
                     $q->whereIn('area_id', $assignedAreaIds);
                 });
             } else {
-
                 $query->where('group_id', $user->group_id);
             }
 
             $members = $query->get();
 
             foreach ($members as $member) {
+
                 $payment = $member->paymentDetail;
-                if (!$payment) continue;
+                if (!$payment || !$payment->active_date) continue;
+
+                $activeDate = Carbon::parse($payment->active_date)->startOfMonth();
+                $monthsSinceActive = $activeDate->diffInMonths($startOfCurrentMonth);
+
+                // 🔴 MEMBER BARU → skip semua perhitungan
+                if ($monthsSinceActive < 1) {
+                    continue;
+                }
 
                 // ====================
-                // Nominal tagihan bulanan
+                // Hitung nominal bulanan
                 // ====================
                 $total = ($payment->amount ?? 0) - ($payment->discount ?? 0);
+
                 if (!empty($payment->ppn)) {
                     $total += $total * $payment->ppn / 100;
                 }
+
                 $total = round($total, 0);
 
                 // ====================
@@ -188,13 +197,12 @@ class FakturController extends Controller
                 $stats['this_month']['total_invoices'] += 1;
                 $stats['this_month']['total_amount']   += $total;
 
-                $paidInvoiceThisMonth = $member->invoices
+                $invoiceThisMonth = $member->invoices
                     ->where('invoice_type', 'H')
-                    ->where('status', 'paid')
                     ->where('subscription_period', $currentPeriod)
                     ->first();
 
-                if ($paidInvoiceThisMonth) {
+                if ($invoiceThisMonth) {
                     $stats['this_month']['paid_count']  += 1;
                     $stats['this_month']['paid_amount'] += $total;
                 } else {
@@ -205,35 +213,35 @@ class FakturController extends Controller
                 // ====================
                 // 2️⃣ OVERDUE
                 // ====================
-                $lastPaidInvoice = $member->invoices
-                    ->where('invoice_type', 'H')
-                    ->where('status', 'paid')
-                    ->whereNotNull('paid_at')
-                    ->sortByDesc('paid_at')
-                    ->first();
 
-                if ($lastPaidInvoice) {
-                    $lastPaidDate = Carbon::parse($lastPaidInvoice->paid_at);
+                if ($monthsSinceActive >= 2) {
 
-                    // hitung selisih bulan (bulan berjalan tidak dihitung)
-                    $monthsDiff =
-                        ($currentYear - $lastPaidDate->year) * 12 +
-                        ($currentMonth - 1 - $lastPaidDate->month);
+                    $periodPointer = $activeDate->copy()->addMonth();
 
-                    if ($monthsDiff > 0) {
-                        $stats['overdue']['count']  += $monthsDiff;
-                        $stats['overdue']['amount'] += $total * $monthsDiff;
+                    while ($periodPointer->lt($startOfCurrentMonth)) {
+
+                        $period = $periodPointer->format('F Y');
+
+                        $invoiceExists = $member->invoices
+                            ->where('invoice_type', 'H')
+                            ->where('subscription_period', $period)
+                            ->first();
+
+                        if (!$invoiceExists) {
+                            $stats['overdue']['count']  += 1;
+                            $stats['overdue']['amount'] += $total;
+                        }
+
+                        $periodPointer->addMonth();
                     }
                 }
             }
-
 
             return ResponseFormatter::success(
                 $stats,
                 'Stats pembayaran berhasil dimuat'
             );
         } catch (\Throwable $th) {
-
             return ResponseFormatter::error(
                 null,
                 $th->getMessage(),
@@ -374,8 +382,23 @@ class FakturController extends Controller
             // ========================
             // Base query
             // ========================
+
             $query = InvoiceHomepass::with(['payer', 'member'])
                 ->where('group_id', $user->group_id);
+
+            // ========================
+            // Role-based filter
+            // ========================
+            if (in_array($user->role, ['teknisi', 'kasir'])) {
+
+                $assignedAreaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id');
+
+                $query->whereHas('connection', function ($q) use ($assignedAreaIds) {
+                    $q->whereIn('area_id', $assignedAreaIds);
+                });
+            }
 
             // ========================
             // Target month & year filter
