@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\Member;
 use App\Models\PaymentDetail;
 use App\Services\FonnteService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -125,11 +126,13 @@ class ConnectionController extends Controller
             $connections->getCollection()->transform(function ($connection) {
                 $username = $connection->username ?? $connection->mac_address;
 
+                $nowUtc = Carbon::now('UTC');
+
                 $latestSession = DB::connection('radius')
                     ->table('radacct')
                     ->where('username', $username)
                     ->whereNull('acctstoptime')         // Hanya session online
-                    ->where('acctupdatetime', '>=', now()->subMinutes(5)) // Antighost session
+                    ->where('acctupdatetime', '>=', $nowUtc->subMinutes(30)) // Antighost session
                     ->orderBy('acctstarttime', 'DESC')  // Ambil session terbaru
                     ->first();
 
