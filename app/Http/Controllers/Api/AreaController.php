@@ -48,14 +48,14 @@ class AreaController extends Controller
                 ->withCount(['opticals', 'connection']);
 
 
-            if (in_array($user->role, ['teknisi', 'kasir'])) {
-                $assignedIds = DB::table('technician_areas')
-                    ->where('user_id', $user->id)
-                    ->pluck('area_id');
-                $query->whereIn('id', $assignedIds);
-            } else {
-                $query->where('group_id', $user->group_id);
-            }
+            // if (in_array($user->role, ['teknisi', 'kasir'])) {
+            //     $assignedIds = DB::table('technician_areas')
+            //         ->where('user_id', $user->id)
+            //         ->pluck('area_id');
+            //     $query->whereIn('id', $assignedIds);
+            // } else {
+            $query->where('group_id', $user->group_id);
+            // }
 
             // 🔍 Search
             if ($search = $request->get('search')) {

@@ -151,9 +151,23 @@ class FakturController extends Controller
                 ],
             ];
 
-            $members = Member::with(['paymentDetail', 'invoices'])
-                ->where('group_id', $user->group_id)
-                ->get();
+            $query = Member::with(['paymentDetail', 'invoices', 'connection']);
+
+            if (in_array($user->role, ['teknisi', 'kasir'])) {
+
+                $assignedAreaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id');
+
+                $query->whereHas('connection', function ($q) use ($assignedAreaIds) {
+                    $q->whereIn('area_id', $assignedAreaIds);
+                });
+            } else {
+
+                $query->where('group_id', $user->group_id);
+            }
+
+            $members = $query->get();
 
             foreach ($members as $member) {
                 $payment = $member->paymentDetail;
