@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
-use App\Jobs\SendWhatsAppBroadcastJob;
+use App\Jobs\SendWhatsappBroadcastJob;
 use App\Models\Area;
 use App\Models\Connection;
 use App\Models\GlobalSettings;
@@ -18,7 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
-class WhatsAppController extends Controller
+class WhatsappController extends Controller
 {
     protected $fonnte;
 
