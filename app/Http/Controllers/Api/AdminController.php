@@ -39,11 +39,7 @@ class AdminController extends Controller
 
             // 🔍 Search
             if ($search = $request->get('search')) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('device_name', 'like', "%{$search}%")
-                        ->orWhere('ip_public', 'like', "%{$search}%");
-                });
+                $query->where('name', 'like', "%{$search}%");
             }
 
             // 🔄 Sort

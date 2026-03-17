@@ -173,14 +173,9 @@ class ConnectionController extends Controller
                 'dhcp' => (clone $query)->where('type', 'dhcp')->count(),
             ];
 
-            ActivityLogController::logCreate([
-                'action' => 'view_connections_stats',
-                'stats' => $stats,
-                'status' => 'success'
-            ], 'connections');
+
             return ResponseFormatter::success($stats, 'Statistics berhasil dimuat');
         } catch (\Throwable $th) {
-            ActivityLogController::logCreateF(['action' => 'view_connections_stats', 'error' => $th->getMessage()], 'connections');
             return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
@@ -761,16 +756,17 @@ class ConnectionController extends Controller
             DB::connection('radius')->table('radusergroup')->insert([
                 [
                     'username' => $username,
-                    'groupname' => 'mitra_' . $groupId,
+                    'groupname' => $profile->name . '-' . $groupId,
                     'priority' => 1,
                     'group_id' => $groupId
                 ],
                 [
                     'username' => $username,
-                    'groupname' => $profile->name . '-' . $groupId,
+                    'groupname' => 'mitra_' . $groupId,
                     'priority' => 1,
                     'group_id' => $groupId
                 ]
+
             ]);
         }
     }

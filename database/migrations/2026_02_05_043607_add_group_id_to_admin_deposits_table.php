@@ -12,13 +12,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('admin_deposits', function (Blueprint $table) {
-            $table->unsignedBigInteger('group_id')->after('admin_id');
+            // $table->unsignedBigInteger('group_id')->after('admin_id');
 
-            // kalau ada tabel groups
-            $table->foreign('group_id')
-                ->references('id')
-                ->on('groups')
-                ->onDelete('cascade');
+            // // kalau ada tabel groups
+            // $table->foreign('group_id')
+            //     ->references('id')
+            //     ->on('groups')
+            //     ->onDelete('cascade');
         });
     }
 
@@ -28,8 +28,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('admin_deposits', function (Blueprint $table) {
-            $table->dropForeign(['group_id']);
-            $table->dropColumn('group_id');
+            // $table->dropForeign(['group_id']);
+            // $table->dropColumn('group_id');
         });
     }
 };

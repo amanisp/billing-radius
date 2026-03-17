@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\Dashboard;
+use App\Http\Controllers\Api\EosController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\FakturController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -30,6 +31,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::put('/me/account-token', [AuthController::class, 'updateAccountToken']);
         Route::put('/me/whatsapp-token', [AuthController::class, 'updateWhatsappToken']);
+
+        // ======Engginer On SIte======
+        Route::get('/engginer', [EosController::class, 'index']);
+        Route::delete('/engginer/{id}', [EosController::class, 'destroy']);
 
 
         Route::get('/dashboard/stats', [Dashboard::class, 'stats']);

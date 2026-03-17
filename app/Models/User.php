@@ -45,6 +45,18 @@ class User extends Authenticatable
         return $this->belongsTo(Groups::class, 'group_id');
     }
 
+    // Member
+    public function members()
+    {
+        return $this->hasMany(Member::class, 'group_id', 'group_id');
+    }
+
+    // Member
+    public function opticals()
+    {
+        return $this->hasMany(OpticalDist::class, 'group_id', 'group_id');
+    }
+
     /**
      * Company memiliki banyak teknisi
      */
