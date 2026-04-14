@@ -314,15 +314,29 @@
                                                                                                 style="margin:0;Margin:0;font-family:Open Sans,BlinkMacSystemFont,Segoe UI,Helvetica Neue,Arial,sans-serif;line-height:25px;font-weight:400;font-style:normal;font-size:15px;text-decoration:none;text-transform:none;letter-spacing:-0.1px;direction:ltr;color:#141414;text-align:left;mso-line-height-rule:exactly;mso-text-raise:3px;">
                                                                                                 Terima kasih telah
                                                                                                 menggunakan layanan AMAN
-                                                                                                ISP. Saat ini terdapat
-                                                                                                percobaan reset password
-                                                                                                pada akun
-                                                                                                {{ $data['email'] }}
-                                                                                                melalui billing AMAN
-                                                                                                ISP. Untuk melanjutkan
-                                                                                                proses login, gunakan 6
-                                                                                                angka berikut untuk
-                                                                                                autentikasi akun Anda:
+                                                                                                ISP.
+
+                                                                                                Kami menerima permintaan
+                                                                                                reset password pada akun
+                                                                                                Anda dengan email:
+                                                                                                {{ $email }}
+
+                                                                                                Untuk melanjutkan
+                                                                                                proses, silakan klik
+                                                                                                tombol di bawah ini
+                                                                                                untuk mengatur ulang
+                                                                                                password Anda.
+
+                                                                                                Link ini hanya berlaku
+                                                                                                selama 5 menit dan
+                                                                                                hanya dapat digunakan
+                                                                                                satu kali.
+
+                                                                                                Jika Anda tidak
+                                                                                                melakukan permintaan
+                                                                                                ini, silakan abaikan
+                                                                                                email ini demi keamanan
+                                                                                                akun Anda.
                                                                                             </p>
                                                                                         </td>
                                                                                     </tr>
@@ -346,11 +360,22 @@
                                                                                     width="100%"
                                                                                     style="width:100%;">
                                                                                     <tr>
-                                                                                        <td class="t18">
-                                                                                            <h2 class="t17"
-                                                                                                style="margin:0;Margin:0;font-family:Roboto,BlinkMacSystemFont,Segoe UI,Helvetica Neue,Arial,sans-serif;line-height:30px;font-weight:400;font-style:normal;font-size:16px;text-decoration:none;text-transform:none;direction:ltr;color:#0034F2;text-align:center;mso-line-height-rule:exactly;mso-text-raise:4px;">
-                                                                                                {{ $data['token'] }}
-                                                                                            </h2>
+                                                                                        <td
+                                                                                            style="text-align:center; padding:20px 0;">
+                                                                                            <a href="{{ $link }}"
+                                                                                                style="
+            display:inline-block;
+            padding:12px 24px;
+            background-color:#0034F2;
+            color:#ffffff;
+            text-decoration:none;
+            border-radius:6px;
+            font-family:Roboto,Arial,sans-serif;
+            font-size:14px;
+            font-weight:500;
+        ">
+                                                                                                Reset Password
+                                                                                            </a>
                                                                                         </td>
                                                                                     </tr>
                                                                                 </table>

@@ -65,12 +65,9 @@ class VpnController extends Controller
 
             // 🔍 Search
             if ($search = $request->get('search')) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('username', 'like', "%{$search}%")
-                        ->orWhere('ip_address', 'like', "%{$search}%");
-                });
+                $query->where('name', 'like', "%{$search}%");
             }
+
 
             // 🔄 Sort
             $sortField = $request->get('sort_field', 'id');

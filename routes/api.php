@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\FakturController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LogsController;
 use App\Http\Controllers\Api\MemberController;
+use App\Http\Controllers\Api\MikrotikController;
 use App\Http\Controllers\Api\NasController;
 use App\Http\Controllers\Api\OpticalController;
 use App\Http\Controllers\Api\PayoutController;
@@ -24,6 +25,7 @@ use App\Http\Controllers\Api\WhatsappController;
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);
 Route::post('/v1/send-token', [AuthController::class, 'sendToken']);
+Route::post('/v1/reset-password', [AuthController::class, 'resetPassword']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('v1')->group(function () {
@@ -35,6 +37,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // ======Engginer On SIte======
         Route::get('/engginer', [EosController::class, 'index']);
         Route::delete('/engginer/{id}', [EosController::class, 'destroy']);
+
 
 
         Route::get('/dashboard/stats', [Dashboard::class, 'stats']);

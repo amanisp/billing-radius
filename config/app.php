@@ -71,6 +71,10 @@ return [
 
     'timezone' => env('APP_TIMEZONE', 'ASIA/JAKARTA'),
 
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
+    'ip_radius' => env('IP_RADIUS', '127.0.0.1'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

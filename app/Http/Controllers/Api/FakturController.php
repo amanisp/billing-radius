@@ -132,9 +132,9 @@ class FakturController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $now              = Carbon::now();
-            $currentPeriod    = $now->format('F Y');           // contoh: March 2026
-            $lastMonthPeriod  = $now->copy()->subMonth()->format('F Y'); // contoh: February 2026
+            $now             = Carbon::now();
+            $currentPeriod   = $now->format('F Y');
+            $lastMonthPeriod = $now->copy()->subMonth()->format('F Y');
 
             $stats = [
                 'this_month' => [
@@ -151,31 +151,41 @@ class FakturController extends Controller
                 ],
             ];
 
-            $members = Member::with(['paymentDetail', 'invoices'])
-                ->where('group_id', $user->group_id)
-                ->get();
+            // 1. Inisialisasi Query Member
+            $query = Member::with(['paymentDetail', 'invoices']);
+
+            // 2. Terapkan Role Filter (Sama dengan logika daftar member Anda)
+            if (in_array($user->role, ['teknisi', 'kasir'])) {
+                $areaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id');
+
+                if ($areaIds->isEmpty()) {
+                    // Jika teknisi tidak punya area, paksa hasil kosong
+                    return ResponseFormatter::success($stats, 'Tidak ada area yang ditugaskan');
+                } else {
+                    $query->whereHas('connection', function ($q) use ($areaIds) {
+                        $q->whereIn('area_id', $areaIds);
+                    });
+                }
+            } else {
+                // Admin/Owner melihat semua dalam group
+                $query->where('group_id', $user->group_id);
+            }
+
+            // 3. Ambil data member yang sudah terfilter
+            $members = $query->get();
 
             foreach ($members as $member) {
-
                 $payment = $member->paymentDetail;
-                if (!$payment) {
-                    continue;
-                }
+                if (!$payment) continue;
 
-                // ====================
-                // Hitung nominal tagihan bulanan
-                // ====================
-                $total = ($payment->amount ?? 0) - ($payment->discount ?? 0);
+                // Hitung nominal (Amount - Discount + PPN)
+                $baseAmount = ($payment->amount ?? 0) - ($payment->discount ?? 0);
+                $tax        = !empty($payment->ppn) ? ($baseAmount * $payment->ppn / 100) : 0;
+                $total      = round($baseAmount + $tax, 0);
 
-                if (!empty($payment->ppn)) {
-                    $total += $total * $payment->ppn / 100;
-                }
-
-                $total = round($total, 0);
-
-                // ====================
-                // 1️⃣ THIS MONTH
-                // ====================
+                // --- Logika Statistik This Month ---
                 $stats['this_month']['total_invoices'] += 1;
                 $stats['this_month']['total_amount']   += $total;
 
@@ -193,9 +203,7 @@ class FakturController extends Controller
                     $stats['this_month']['unpaid_amount'] += $total;
                 }
 
-                // ====================
-                // 2️⃣ OVERDUE (Belum bayar bulan lalu)
-                // ====================
+                // --- Logika Statistik Overdue (Bulan Lalu) ---
                 $paidLastMonth = $member->invoices
                     ->where('invoice_type', 'H')
                     ->where('status', 'paid')
@@ -208,17 +216,9 @@ class FakturController extends Controller
                 }
             }
 
-            return ResponseFormatter::success(
-                $stats,
-                'Stats pembayaran berhasil dimuat'
-            );
+            return ResponseFormatter::success($stats, 'Stats pembayaran berhasil dimuat');
         } catch (\Throwable $th) {
-
-            return ResponseFormatter::error(
-                null,
-                $th->getMessage(),
-                500
-            );
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
 
@@ -235,6 +235,7 @@ class FakturController extends Controller
                 ->with([
                     'paymentDetail',
                     'connection.area',
+                    'connection.profile',
                     'invoices' => function ($q) {
                         $q->where('status', 'paid');
                     }

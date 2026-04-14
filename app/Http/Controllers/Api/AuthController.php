@@ -13,6 +13,7 @@ use App\Services\WhatsappService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -174,6 +175,7 @@ class AuthController extends Controller
         }
     }
 
+
     public function sendToken(Request $request)
     {
         $request->validate([
@@ -181,56 +183,63 @@ class AuthController extends Controller
         ]);
 
         try {
-            $email = $request->email;
+            $email = strtolower(trim($request->email));
 
-            // Cek user secara silent
+            $lastRequest = ResetTokens::where('email', $email)
+                ->where('created_at', '>=', now()->subMinute(5))
+                ->first();
+
+            if ($lastRequest) {
+                return ResponseFormatter::success(null, 'Link reset password telah dikirim');
+            }
+
             $user = User::where('email', $email)->first();
 
             if ($user) {
-                // Generate 6 digit token
-                $token = random_int(100000, 999999);
 
-                // Hapus token lama
+                $plainToken = Str::random(64);
+
+                DB::beginTransaction();
+
                 ResetTokens::where('email', $email)->delete();
 
-                // Simpan token baru
                 ResetTokens::create([
                     'email'      => $email,
-                    'token' => Hash::make($token),
-                    'expired_at' => now()->addMinutes(10),
+                    'token'      => Hash::make($plainToken),
+                    'expired_at' => now()->addMinutes(5),
                 ]);
 
-                // Kirim email
-                Mail::raw(
-                    "Kode reset password Anda adalah: $token\nBerlaku selama 10 menit.",
-                    function ($message) use ($email) {
-                        $message->to($email)
-                            ->subject('Kode Reset Password');
-                    }
-                );
+                DB::commit();
+
+                $resetLink = config('app.frontend_url') . '/verify-token?' . http_build_query([
+                    'email' => $email,
+                    'token' => $plainToken,
+                ]);
+
+                Mail::send('mail.token', [
+                    'link' => $resetLink,
+                    'email' => $email,
+                ], function ($message) use ($email) {
+                    $message->to($email)
+                        ->subject('Reset Password');
+                });
             }
 
-            // RESPONSE SELALU SAMA
-            ActivityLogController::logCreate(['action' => 'sendToken', 'status' => 'success'], 'users');
-            return ResponseFormatter::success(
-                null,
-                'Kode reset password telah dikirim'
-            );
+            return ResponseFormatter::success(null, 'Link reset password telah dikirim');
         } catch (\Throwable $e) {
-            ActivityLogController::logCreateF(['action' => 'sendToken', 'error' => $e->getMessage()], 'users');
-            // Response aman
-            return ResponseFormatter::error(
-                null,
-                'Terjadi kesalahan, silakan coba lagi'
-            );
+
+            DB::rollBack();
+
+            return ResponseFormatter::error(null, 'Terjadi kesalahan, silakan coba lagi');
         }
     }
 
-    public function verifyToken(Request $request)
+    public function resetPassword(Request $request)
     {
         $request->validate([
             'email' => 'required|email',
-            'token' => 'required|digits:6',
+            'token' => 'required',
+            'password' => 'required|min:8|confirmed',
         ]);
 
         try {
@@ -239,41 +248,53 @@ class AuthController extends Controller
             if (! $reset) {
                 return ResponseFormatter::error(
                     null,
-                    'Token tidak valid atau sudah kadaluarsa'
+                    'Token tidak valid atau sudah kadaluarsa',
+                    400 // ⬅️ BAD REQUEST
                 );
             }
 
-            // Cek expired
             if ($reset->isExpired()) {
                 $reset->delete();
 
                 return ResponseFormatter::error(
                     null,
-                    'Token tidak valid atau sudah kadaluarsa'
+                    'Token tidak valid atau sudah kadaluarsa',
+                    400
                 );
             }
 
-            // Cocokkan token dengan hash
             if (! Hash::check($request->token, $reset->token)) {
                 return ResponseFormatter::error(
                     null,
-                    'Token tidak valid atau sudah kadaluarsa'
+                    'Token tidak valid atau sudah kadaluarsa',
+                    400
                 );
             }
 
-            // Token VALID → hapus agar tidak bisa dipakai ulang
+            $user = User::where('email', $request->email)->first();
+
+            if (! $user) {
+                return ResponseFormatter::error(
+                    null,
+                    'User tidak ditemukan',
+                    404
+                );
+            }
+
+            $user->password = Hash::make($request->password);
+            $user->save();
+
             $reset->delete();
 
-            ActivityLogController::logCreate(['action' => 'verifyToken', 'status' => 'success'], 'users');
             return ResponseFormatter::success(
                 null,
-                'Token valid'
+                'Password berhasil diperbarui'
             );
         } catch (\Throwable $e) {
-            ActivityLogController::logCreateF(['action' => 'verifyToken', 'error' => $e->getMessage()], 'users');
             return ResponseFormatter::error(
                 null,
-                'Terjadi kesalahan, silakan coba lagi'
+                'Terjadi kesalahan, silakan coba lagi',
+                500 // ⬅️ INTERNAL ERROR
             );
         }
     }

@@ -49,12 +49,9 @@ class NasController extends Controller
 
             // 🔍 Search
             if ($search = $request->get('search')) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('username', 'like', "%{$search}%")
-                        ->orWhere('ip_address', 'like', "%{$search}%");
-                });
+                $query->where('name', 'like', "%{$search}%");
             }
+
 
             // 🔄 Sort
             $sortField = $request->get('sort_field', 'id');
@@ -97,7 +94,7 @@ class NasController extends Controller
             $data = Nas::create([
                 'name'        => $validated['name'],
                 'group_id'    => $groupId,
-                'ip_radius'     => '10.137.24.15',
+                'ip_radius'     => config('app.ip_radius'),
                 'ip_router'         => $validated['ip_router'],
                 'secret'         => $validated['secret'],
             ]);

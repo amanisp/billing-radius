@@ -14,6 +14,7 @@ use App\Models\Connection;
 use App\Models\Profiles;
 use App\Models\User;
 use App\Models\Member;
+use App\Models\Nas;
 use App\Models\PaymentDetail;
 use App\Services\FonnteService;
 use Carbon\Carbon;
@@ -29,6 +30,33 @@ class ConnectionController extends Controller
     public function __construct(FonnteService $fonnte)
     {
         $this->fonnte = $fonnte;
+    }
+
+    private function disconnectMultiNas($username, $nasList)
+    {
+        $sessions = DB::connection('radius')->table('radacct')
+            ->where('username', $username)
+            ->whereNull('acctstoptime')
+            ->get();
+
+        foreach ($sessions as $session) {
+
+            foreach ($nasList as $nas) {
+
+                $nasIp  = $nas->ip_router;
+                $secret = $nas->secret;
+
+                $cmd = "echo 'Acct-Session-Id={$session->acctsessionid}' | radclient -x {$nasIp} disconnect {$secret}";
+                exec($cmd, $output, $status);
+
+                logger("DISCONNECT {$username}", [
+                    'nas'     => $nasIp,
+                    'session' => $session->acctsessionid,
+                    'status'  => $status,
+                    'output'  => $output
+                ]);
+            }
+        }
     }
 
     private static function findAvailableIsolirIp($usedIps)
@@ -512,6 +540,7 @@ class ConnectionController extends Controller
         try {
             $user = $this->getAuthUser();
             $connection = Connection::where('id', $id)->with('member')->firstOrFail();
+            $nasList = Nas::where('group_id', $user->group_id)->get();
 
             if ($connection->group_id !== $user->group_id) {
                 return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
@@ -537,6 +566,7 @@ class ConnectionController extends Controller
                     ->pluck('value')
                     ->toArray();
 
+
                 $isolirIp = self::findAvailableIsolirIp($usedIps);
 
                 if (!$isolirIp) {
@@ -558,7 +588,9 @@ class ConnectionController extends Controller
                     'group_id'  => $user->group_id,
                 ]);
 
+                $this->disconnectMultiNas($username, $nasList);
                 $message = "Isolir aktif, IP $isolirIp diberikan";
+
 
                 if (!empty($connection->member->phone_number) && str_starts_with($connection->member->phone_number, '62')) {
                     $this->fonnte->sendText(
@@ -591,6 +623,8 @@ class ConnectionController extends Controller
                     ->where('attribute', 'Auth-Type')
                     ->where('value', 'Reject')
                     ->delete();
+
+                $this->disconnectMultiNas($username, $nasList);
 
                 $message = "Isolir dinonaktifkan, akun aktif kembali";
 

@@ -17,15 +17,15 @@ use Illuminate\Support\Facades\Route;
 // Guest routes
 // ======================
 Route::middleware('guest')->group(function () {
-    Route::controller(RegisteredUserController::class)->group(function () {
-        Route::get('register', 'create')->name('register');
-        Route::post('register', 'store');
-    });
+    // Route::controller(RegisteredUserController::class)->group(function () {
+    //     Route::get('register', 'create')->name('register');
+    //     Route::post('register', 'store');
+    // });
 
-    Route::controller(AuthenticatedSessionController::class)->group(function () {
-        Route::get('login', 'create')->name('login');
-        Route::post('login', 'store');
-    });
+    // Route::controller(AuthenticatedSessionController::class)->group(function () {
+    //     Route::get('login', 'create')->name('login');
+    //     Route::post('login', 'store');
+    // });
 
     // Uncomment kalau mau aktifkan fitur forgot password
     /*

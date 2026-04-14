@@ -3,7 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Company;
-use App\Models\globalSettings;
+use App\Models\GlobalSettings;
 use App\Models\Groups;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -28,7 +28,7 @@ class UserSeeder extends Seeder
             'group_type' => $role,
         ]);
 
-        globalSettings::create(['isolir_mode' => false, 'group_id' => $group['id']]);
+        GlobalSettings::create(['isolir_mode' => false, 'group_id' => $group['id']]);
 
         User::create([
             'username'       => 'superadmin',
