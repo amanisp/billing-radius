@@ -673,6 +673,7 @@ class ConnectionController extends Controller
         try {
             $user = $this->getAuthUser();
             $connection = Connection::with(['member.paymentDetail'])->findOrFail($id);
+            $nasList = Nas::where('group_id', $user->group_id)->get();
 
             if ($connection->group_id !== $user->group_id) {
                 return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
@@ -702,6 +703,8 @@ class ConnectionController extends Controller
 
             $deletedData = $connection->toArray();
             $connection->delete();
+
+            $this->disconnectMultiNas($username, $nasList);
 
             DB::commit();
 
