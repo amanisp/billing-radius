@@ -51,7 +51,7 @@ class PayoutController extends Controller
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->where('external_id', 'like', "%{$search}%")
-                      ->orWhere('email', 'like', "%{$search}%");
+                        ->orWhere('email', 'like', "%{$search}%");
                 });
             }
 
@@ -216,30 +216,30 @@ class PayoutController extends Controller
                     'group_id' => $user->group_id,
                 ]);
 
-            ActivityLogController::logCreate(['action' => 'createPayout', 'status' => 'success'], 'payouts');
-            Log::info('Payout created successfully', [
-                'payout_id' => $payout->id,
-                'external_id' => $payout->external_id,
-            ]);
+                ActivityLogController::logCreate(['action' => 'createPayout', 'status' => 'success'], 'payouts');
+                Log::info('Payout created successfully', [
+                    'payout_id' => $payout->id,
+                    'external_id' => $payout->external_id,
+                ]);
 
-            return ResponseFormatter::success([
-                'payout' => $payout,
-                'xendit_response' => $data,
-            ], 'Payout berhasil dibuat', 201);
-        } else {
-            $errorBody = $response->body();
-            ActivityLogController::logCreateF(['action' => 'createPayout', 'error' => $errorBody], 'payouts');
-            Log::error('Xendit payout creation failed', [
-                'status' => $response->status(),
-                'error' => $errorBody,
-            ]);
+                return ResponseFormatter::success([
+                    'payout' => $payout,
+                    'xendit_response' => $data,
+                ], 'Payout berhasil dibuat', 201);
+            } else {
+                $errorBody = $response->body();
+                ActivityLogController::logCreateF(['action' => 'createPayout', 'error' => $errorBody], 'payouts');
+                Log::error('Xendit payout creation failed', [
+                    'status' => $response->status(),
+                    'error' => $errorBody,
+                ]);
 
-            return ResponseFormatter::error(
-                ['xendit_error' => $errorBody],
-                'Gagal membuat payout di Xendit',
-                $response->status()
-            );
-        }
+                return ResponseFormatter::error(
+                    ['xendit_error' => $errorBody],
+                    'Gagal membuat payout di Xendit',
+                    $response->status()
+                );
+            }
         } catch (\Throwable $th) {
             ActivityLogController::logCreateF(['action' => 'createPayout', 'error' => $th->getMessage()], 'payouts');
             return ResponseFormatter::error(null, $th->getMessage(), 500);

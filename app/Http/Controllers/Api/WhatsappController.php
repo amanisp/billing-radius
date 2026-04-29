@@ -5,18 +5,17 @@ namespace App\Http\Controllers\Api;
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendWhatsappBroadcastJob;
-use App\Models\Area;
 use App\Models\Connection;
-use App\Models\GlobalSettings;
 use App\Models\Groups;
 use App\Models\Member;
 use App\Models\User;
-use App\Services\FonnteService;
 use App\Models\WhatsappMessageLog;
+use App\Services\FonnteService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use App\Services\WhatsappCoreService;
 
 class WhatsappController extends Controller
 {
@@ -25,6 +24,96 @@ class WhatsappController extends Controller
     public function __construct(FonnteService $fonnte)
     {
         $this->fonnte = $fonnte;
+    }
+
+
+    private function formatWhatsappNumber(?string $phone): ?string
+    {
+        if (!$phone) return null;
+
+        // ambil hanya angka
+        $phone = preg_replace('/[^0-9]/', '', $phone);
+
+        if (!$phone) return null;
+
+        // ubah ke format 62
+        if (str_starts_with($phone, '0')) {
+            $phone = '62' . substr($phone, 1);
+        } elseif (!str_starts_with($phone, '62')) {
+            $phone = '62' . $phone;
+        }
+
+        return $phone . '@s.whatsapp.net';
+    }
+
+
+    public function whatsappLog(Request $request)
+    {
+        try {
+            $user = $this->getAuthUser();
+            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
+
+            $query = WhatsappMessageLog::where('group_id', $user->group_id);
+
+            // 🔍 Search by recipient atau message
+            if ($search = $request->get('search')) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('recipient', 'like', "%{$search}%")
+                        ->orWhere('message', 'like', "%{$search}%");
+                });
+            }
+
+            // 🔽 Filter by status
+            if ($status = $request->get('status')) {
+                $query->where('status', $status); // queued, sent, failed
+            }
+
+            // 🔽 Filter by type
+            if ($type = $request->get('type')) {
+                $query->where('type', $type);
+            }
+
+            // 📅 Filter by tanggal
+            if ($request->filled('date_from')) {
+                $query->whereDate('created_at', '>=', $request->date_from);
+            }
+            if ($request->filled('date_to')) {
+                $query->whereDate('created_at', '<=', $request->date_to);
+            }
+
+            // 🔄 Sort
+            $allowedSorts = ['id', 'recipient', 'status', 'type', 'sent_at', 'created_at'];
+            $sortField     = in_array($request->get('sort_field'), $allowedSorts)
+                ? $request->get('sort_field')
+                : 'created_at'; // ✅ default created_at lebih masuk akal dari 'id'
+            $sortDirection = $request->get('sort_direction', 'desc') === 'asc' ? 'asc' : 'desc';
+
+            $query->orderBy($sortField, $sortDirection);
+
+            // 📄 Pagination
+            $perPage = min((int) $request->get('per_page', 15), 100); // ✅ max 100 per page
+            $logs    = $query->paginate($perPage);
+
+            // ✅ Format response konsisten dengan controller lain
+            return ResponseFormatter::success([
+                'items' => $logs->items(),
+                'meta'  => [
+                    'current_page' => $logs->currentPage(),
+                    'per_page'     => $logs->perPage(),
+                    'total'        => $logs->total(),
+                    'last_page'    => $logs->lastPage(),
+                ],
+                // ✅ summary statistik
+                'summary' => [
+                    'total'  => WhatsappMessageLog::where('group_id', $user->group_id)->count(),
+                    'sent'   => WhatsappMessageLog::where('group_id', $user->group_id)->where('status', 'sent')->count(),
+                    'failed' => WhatsappMessageLog::where('group_id', $user->group_id)->where('status', 'failed')->count(),
+                    'queued' => WhatsappMessageLog::where('group_id', $user->group_id)->where('status', 'queued')->count(),
+                ],
+            ], 'Data log WhatsApp berhasil dimuat');
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
     }
 
     private function getAuthUser()
@@ -38,14 +127,108 @@ class WhatsappController extends Controller
         return null;
     }
 
-    public function status()
-    {
-        $groupId = Auth::user()->group_id;
-        $result = $this->fonnte->getDeviceStatus($groupId);
 
-        return $result['success']
-            ? response()->json(['success' => true, 'data' => $result['data']])
-            : response()->json(['success' => false, 'message' => $result['error']], $result['status'] ?? 500);
+    public function loginQr(WhatsappCoreService $service)
+    {
+
+        try {
+            $user = $this->getAuthUser();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+
+            $group = Groups::findOrFail($user->group_id); // atau sesuai logic kamu
+
+            // 🔥 pastikan device ada
+            $deviceId = $service->ensureDevice($group);
+
+            // 🔥 baru login
+            $response = $service->login($deviceId);
+
+            $data = [
+                'device_id' => $deviceId,
+                'qr_link' => $response->json('results.qr_link')
+            ];
+
+            return ResponseFormatter::success($data, 'QR Code berhasil digenerate!');
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error($th, 'QR Code gagal digenerate!', 200);
+        }
+    }
+
+    public function status(WhatsappCoreService $service)
+    {
+        try {
+            $user = $this->getAuthUser();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            // 🔹 ambil / generate device id dari group
+            $group = Groups::findOrFail($user->group_id);
+
+            $deviceId = $group->wa_api_token; // ambil aja tanpa ensure
+
+            if (!$deviceId) {
+                return ResponseFormatter::success([
+                    'state' => 'not_registered'
+                ], 'Device belum dibuat');
+            }
+            // 🔹 ambil status + avatar otomatis
+            $result = $service->getDeviceStatusWithAvatar($deviceId);
+
+            $data = [
+                'phone'        => $result['phone'] ?? null,
+                'display_name' => $result['status']['results']['display_name'] ?? null,
+                'state'        => $result['status']['results']['state'] ?? null,
+                'avatar_url'   => $result['avatar']['results']['url'] ?? null,
+            ];
+
+            return ResponseFormatter::success($data, 'QR Code berhasil digenerate!');
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error($th, 'Status whatsapp tidak ada!', 200);
+        }
+    }
+
+    public function disconnect(Request $request, WhatsappCoreService $service)
+    {
+        try {
+            $user = Auth::user();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            // 1. Ambil deviceId secara otomatis berdasarkan group_id user
+            // Mengikuti pola yang sama dengan method status Anda
+            $group = Groups::findOrFail($user->group_id);
+
+            $deviceId = $group->wa_api_token; // ambil aja tanpa ensure
+
+            if (!$deviceId) {
+                return ResponseFormatter::success([
+                    'state' => 'not_registered'
+                ], 'Device belum dibuat');
+            }
+
+            // 2. Panggil fungsi disconnect dari service
+            $result = $service->disconnectDevice($deviceId);
+
+            if ($result['success']) {
+                return ResponseFormatter::success(
+                    $result['data'] ?? null,
+                    'WhatsApp Device disconnected successfully!'
+                );
+            }
+
+            return ResponseFormatter::error(
+                null,
+                $result['message'] ?? 'Gagal memutuskan koneksi WhatsApp',
+                $result['status'] ?? 500
+            );
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error($th, 'Terjadi kesalahan sistem saat diskonek!', 500);
+        }
     }
 
     public function broadcastArea(Request $request)
@@ -79,20 +262,40 @@ class WhatsappController extends Controller
             ], 404);
         }
 
-        $message = "Yth. Pelanggan\n{$validated['subject']}\n\n{$validated['message']}";
-
         // Chunk setiap 5 koneksi
-        $connections->chunk(5)->each(function ($chunk, $batchIndex) use ($user, $message) {
-            foreach ($chunk as $conn) {
-                $target = $conn->member->phone_number;
+        $connections->chunk(5)->each(function ($chunk, $batchIndex) use ($user, $validated) {
 
-                // Dispatch job dengan delay batch
+            $counter = 0;
+
+            foreach ($chunk as $connection) {
+
+                $member = $connection->member;
+
+                if (!$member || !$member->phone_number) continue;
+
+                $target = $this->formatWhatsappNumber($member->phone_number);
+                if (!$target) continue;
+
+                $delay = ($counter * 2) + rand(1, 3);
+
+                // ✅ message per user
+                $message = "Yth. Pelanggan {$member->fullname}\n"
+                    . "{$validated['subject']}\n\n"
+                    . "{$validated['message']}";
+
+                Log::info('DISPATCH AREA JOB', [
+                    'target' => $target,
+                    'delay'  => $delay
+                ]);
+
                 SendWhatsAppBroadcastJob::dispatch(
-                    $user->group_id,            // groupId
-                    $target,                    // nomor tujuan
-                    ['message' => $message],    // data pesan custom
-                    []                          // options, bisa isi 'delay'=>10 jika mau delay per pesan
-                )->delay(now()->addSeconds($batchIndex * 10)); // delay per batch 10 detik
+                    $user->group_id,
+                    $target,
+                    ['message' => $message],
+                    []
+                )->delay(now()->addSeconds($delay));
+
+                $counter++; // ✅ penting!
             }
         });
 
@@ -136,11 +339,13 @@ class WhatsappController extends Controller
 
 
         // Chunk setiap 5 member
-        $members->chunk(5)->each(function ($chunk, $batchIndex) use ($user, $year, $month) {
-            foreach ($chunk as $member) {
-                $target = $member->phone_number ?? null;
-                if (!$target) continue;
+        $members->chunk(10)->each(function ($chunk, $batchIndex) use ($user, $year, $month) {
+            $counter = 0;
+            foreach ($chunk as $index => $member) {
+                $target = $this->formatWhatsappNumber($member->phone_number);
 
+                if (!$target) continue;
+                $delay = ($counter * 2) + rand(1, 3);
 
                 $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
                 $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
@@ -163,6 +368,10 @@ class WhatsappController extends Controller
                     'footer'        => "Pembayaran diatas sudah termasuk PPn 11%\nPembayaran Manual silahkan hubungi admin kami."
                 ];
 
+                Log::info('DISPATCH JOB', [
+                    'target' => $target,
+                    'delay'  => $delay
+                ]);
 
                 // Dispatch job dengan delay batch
                 SendWhatsAppBroadcastJob::dispatch(
@@ -173,150 +382,13 @@ class WhatsappController extends Controller
                         'variables' => $variables
                     ],
                     [] // options: bisa isi delay per pesan
-                )->delay(now()->addSeconds($batchIndex * 10));
+                )->delay(now()->addSeconds($delay));
             }
         });
 
         return response()->json([
             'success' => true,
             'message' => 'Invoice broadcast queued successfully, messages will be sent shortly.'
-        ]);
-    }
-
-
-    public function sendMessage(Request $request)
-    {
-        $groupId = Auth::user()->group_id;
-        $validated = $request->validate([
-            'target' => 'required|string',
-            'message' => 'required|string',
-            'device' => 'nullable|string',
-            'footer' => 'nullable|string',
-            'delay' => 'nullable|integer|min:0|max:60',
-        ]);
-
-        $result = $this->fonnte->sendText($groupId, $validated['target'], $validated['message'], $request->only(['device', 'footer', 'delay']));
-
-        if ($result['success']) {
-            WhatsappMessageLog::create([
-                'group_id' => $groupId,
-                'recipient' => $validated['target'],
-                'message' => $validated['message'],
-                'status' => 'sent',
-                'type' => 'single',
-                'sent_at' => now(),
-                'response_data' => json_encode($result['data'])
-            ]);
-        }
-
-        return $result['success']
-            ? response()->json(['success' => true, 'message' => 'Sent!', 'data' => $result['data']])
-            : response()->json(['success' => false, 'message' => $result['error']], $result['status'] ?? 500);
-    }
-
-    public function broadcast(Request $request)
-    {
-        $groupId = Auth::user()->group_id;
-        $validated = $request->validate([
-            'targets' => 'required|array|min:1|max:1000',
-            'targets.*' => 'required|string',
-            'message' => 'required|string|max:1000',
-            'min_delay' => 'nullable|integer|min:1|max:30',  // 1-30s
-            'max_delay' => 'nullable|integer|min:2|max:60',  // 2-60s
-        ]);
-
-        $minDelay = $request->min_delay ?? 2;
-        $maxDelay = $request->max_delay ?? 10;
-
-        $result = $this->fonnte->sendBroadcast(
-            $groupId,
-            $validated['targets'],
-            $validated['message'],
-            $minDelay,
-            $maxDelay
-        );
-
-
-        // Log semua targets (tetap log meski gagal)
-        foreach ($validated['targets'] as $target) {
-            WhatsappMessageLog::create([
-                'group_id' => $groupId,
-                'recipient' => $target,
-                'message' => $validated['message'],
-                'status' => 'sent', // ubah jadi 'pending' jika mau track status
-                'type' => 'broadcast',
-                'sent_at' => now(),
-            ]);
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Broadcast completed',
-            'data' => $result['data'],
-            'summary' => $result['summary']
-        ]);
-    }
-
-
-    public function generateQR(Request $request)
-    {
-        $groupId = Auth::user()->group_id;
-        $validated = $request->validate([
-            'device' => 'nullable|string',
-            'autoread' => 'nullable|boolean',
-        ]);
-
-        $result = $this->fonnte->getQR($groupId, $validated['device'] ?? null, $validated['autoread'] ?? true);
-
-        return $result['success']
-            ? response()->json(['success' => true, 'data' => $result['data']])
-            : response()->json(['success' => false, 'message' => $result['error']], $result['status'] ?? 500);
-    }
-
-    public function disconnect(Request $request)
-    {
-        $groupId = Auth::user()->group_id;
-        $validated = $request->validate(['device' => 'nullable|string']);
-
-        $result = $this->fonnte->disconnect($groupId, $validated['device'] ?? null);
-
-        return $result['success']
-            ? response()->json(['success' => true, 'message' => 'Disconnected!', 'data' => $result['data']])
-            : response()->json(['success' => false, 'message' => $result['error']], $result['status'] ?? 500);
-    }
-
-    public function templates()
-    {
-        return response()->json([
-            'success' => true,
-            'data' => $this->fonnte->getTemplates()
-        ]);
-    }
-
-    public function updateWhatsappToken(Request $request)
-    {
-        $request->validate(['whatsapp_token' => 'required|string']);
-
-        GlobalSettings::updateOrCreate(
-            ['group_id' => Auth::user()->group_id],
-            ['whatsapp_api_key' => $request->whatsapp_token]
-        );
-
-        return response()->json(['success' => true, 'message' => 'Account token saved!']);
-    }
-
-    public function debugTokens()
-    {
-        $groupId = Auth::user()->group_id;
-
-        return response()->json([
-            'success' => true,
-            'debug' => [
-                'account_token_configured' => !empty(config('services.fonnte.account_token')),
-                'account_token_db' => !empty(GlobalSettings::getWhatsAppApiKey($groupId)),
-                'device_token_db' => !empty(Groups::find($groupId)?->wa_api_token),
-                'devices_status' => $this->fonnte->getDeviceStatus($groupId),
-            ]
         ]);
     }
 }

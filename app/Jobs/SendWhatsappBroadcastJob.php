@@ -3,13 +3,14 @@
 namespace App\Jobs;
 
 use App\Models\WhatsappMessageLog;
-use App\Services\FonnteService;
+use App\Services\WhatsappCoreService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use App\Services\WhatsappRateLimiter;
 
 class SendWhatsappBroadcastJob implements ShouldQueue
 {
@@ -24,15 +25,29 @@ class SendWhatsappBroadcastJob implements ShouldQueue
         public array $options = [] // ['delay'=>10, 'footer'=>'...']
     ) {}
 
-    public function handle(FonnteService $whatsapp)
+    public function handle(WhatsappCoreService $wa, WhatsappRateLimiter $rateLimiter)
     {
         try {
-            // Kirim pesan menggunakan FonnteService
-            $result = $whatsapp->sendText(
+
+
+            // 🔒 GLOBAL RATE LIMIT
+            $rateLimiter->hit();
+
+            // ⏱️ Delay natural
+            sleep(rand(5, 12));
+
+            $deviceId = $wa->ensureDeviceByGroup($this->groupId);
+
+
+            $payload = [
+                'phone'   => $this->target,
+                'message' => $wa->buildMessage($this->data),
+            ];
+
+            $result = $wa->sendMessage(
                 $this->groupId,
-                $this->target,
-                $this->data,
-                $this->options
+                $deviceId,
+                $payload
             );
 
             // Update log queued jika ada

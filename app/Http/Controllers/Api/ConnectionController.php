@@ -679,7 +679,11 @@ class ConnectionController extends Controller
                 return response()->json(['message' => 'Connection tidak ditemukan!'], 403);
             }
 
+
+
             $username = $connection->username ?? $connection->mac_address;
+
+            $this->disconnectMultiNas($username, $nasList);
 
             DB::beginTransaction();
 
@@ -704,7 +708,7 @@ class ConnectionController extends Controller
             $deletedData = $connection->toArray();
             $connection->delete();
 
-            $this->disconnectMultiNas($username, $nasList);
+
 
             DB::commit();
 

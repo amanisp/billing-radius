@@ -41,6 +41,10 @@ return [
         'account_token'  => env('FONNTE_ACCOUNT_TOKEN'),
     ],
 
+    'core_whatsapp' => [
+        'url' => env('WHATSAPP_URL', 'http://localhost:3001')
+    ],
+
     'freeradius' => [
         'url' => env('FREERADIUS_API_URL'),
         'token' => env('FREERADIUS_API_TOKEN'),

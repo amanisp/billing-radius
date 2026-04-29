@@ -145,14 +145,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/payouts/{id}', [PayoutController::class, 'destroy']);
 
         Route::prefix('whatsapp')->group(function () {
+            Route::get('/login', [WhatsAppController::class, 'loginQr']);
             Route::get('/status', [WhatsAppController::class, 'status']);
-            Route::get('/templates', [WhatsAppController::class, 'templates']);
-            Route::post('/send', [WhatsAppController::class, 'sendMessage']);
-            Route::post('/broadcast', [WhatsAppController::class, 'broadcast']);
             Route::post('/broadcast/area', [WhatsAppController::class, 'broadcastArea']);
             Route::post('/broadcast/unpaid', [WhatsAppController::class, 'broadcastInvoice']);
-            Route::post('/disconnect', [WhatsAppController::class, 'disconnect']);
-            Route::get('/debug', [WhatsAppController::class, 'debugTokens']);
+            Route::get('/disconnect', [WhatsAppController::class, 'disconnect']);
+            Route::get('/logs', [WhatsAppController::class, 'whatsappLog']);
         });
         // Logs
         Route::get('/logs', [LogsController::class, 'index']);
