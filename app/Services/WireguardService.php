@@ -32,30 +32,18 @@ class WireguardService
      */
     public function createPeer($ipAddress, $clientPublicKey)
     {
-        // 🛑 DUMMY MODE UNTUK TESTING DI MAC/LOCAL
-        if (app()->environment('local')) {
-            return [
-                'status'      => 'success',
-                'public_key'  => $clientPublicKey,
-                'ip_address'  => $ipAddress,
-                'config'      => 'Testing Mode Config',
-            ];
-        }
-
-        // 🟢 KODE ASLI UNTUK UBUNTU SERVER
         try {
-            // Daftarkan Peer ke Interface Server secara live menggunakan Public Key dari MikroTik
-            $addPeerCmd = "sudo wg set {$this->interface} peer {$clientPublicKey} allowed-ips {$ipAddress}/32";
+            // 1. Daftarkan Peer ke Interface Server secara live
+            // Menggunakan tanda kutip ('') pada public key untuk menghindari error karakter khusus (seperti +, /, atau =) di Shell Ubuntu
+            $addPeerCmd = "sudo wg set {$this->interface} peer '{$clientPublicKey}' allowed-ips {$ipAddress}/32";
             $addProcess = Process::fromShellCommandline($addPeerCmd);
             $addProcess->mustRun();
 
-            // Simpan state saat ini ke file wg0.conf agar permanen saat server reboot
+            // 2. Simpan state saat ini ke file wg0.conf agar permanen saat server reboot
             $saveProcess = Process::fromShellCommandline("sudo wg-quick save {$this->interface}");
             $saveProcess->mustRun();
 
-            // Karena user menggunakan MikroTik (generate key sendiri),
-            // kita tidak punya Private Key milik client untuk digenerate ke dalam file .conf.
-            // Client hanya butuh info Server Endpoint, Server Public Key, dan IP-nya saja.
+            // 3. Kembalikan response sukses
             return [
                 'status'      => 'success',
                 'public_key'  => $clientPublicKey,
