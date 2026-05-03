@@ -12,7 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('wireguard_clients', function (Blueprint $table) {
-            //
+            // Ini yang akan dieksekusi saat di-migrate
+            $table->string('name')->nullable()->after('group_id');
         });
     }
 
@@ -22,7 +23,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('wireguard_clients', function (Blueprint $table) {
-            $table->string('name')->nullable()->after('group_id');
+            // Ini yang akan dieksekusi saat di-rollback
+            if (Schema::hasColumn('wireguard_clients', 'name')) {
+                $table->dropColumn('name');
+            }
         });
     }
 };
