@@ -209,7 +209,7 @@ class AuthController extends Controller
 
                 DB::commit();
 
-                $resetLink = config('app.url') . '/verify-token?' . http_build_query([
+                $resetLink = config('app.frontend_url') . '/verify-token?' . http_build_query([
                     'email' => $email,
                     'token' => $plainToken,
                 ]);
