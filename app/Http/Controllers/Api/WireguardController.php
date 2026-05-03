@@ -50,7 +50,7 @@ class WireguardController extends Controller
             }
 
             // 🔍 Query dasar: filter berdasarkan group_id user
-            $query = WireguardClient::select('id', 'group_id', 'ip_address', 'public_key', 'created_at')
+            $query = WireguardClient::select('id', 'group_id', 'name', 'ip_address', 'public_key', 'created_at')
                 ->where('group_id', $user->group_id);
 
             // 🔍 Search (Misal mencari berdasarkan IP atau Public Key)
