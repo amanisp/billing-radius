@@ -27,37 +27,40 @@ class WireguardService
      * @param string $ipAddress IP yang dialokasikan (contoh: '172.31.18.2')
      * @return array
      */
-    public function createPeer($ipAddress)
+    /**
+     * Membuat peer WireGuard baru menggunakan Public Key dari Client.
+     */
+    public function createPeer($ipAddress, $clientPublicKey)
     {
+        // 🛑 DUMMY MODE UNTUK TESTING DI MAC/LOCAL
+        if (app()->environment('local')) {
+            return [
+                'status'      => 'success',
+                'public_key'  => $clientPublicKey,
+                'ip_address'  => $ipAddress,
+                'config'      => 'Testing Mode Config',
+            ];
+        }
+
+        // 🟢 KODE ASLI UNTUK UBUNTU SERVER
         try {
-            // 1. Generate Private Key Client
-            $privProcess = Process::fromShellCommandline('wg genkey');
-            $privProcess->mustRun();
-            $clientPrivateKey = trim($privProcess->getOutput());
-
-            // 2. Generate Public Key Client dari Private Key
-            $pubProcess = Process::fromShellCommandline("echo {$clientPrivateKey} | wg pubkey");
-            $pubProcess->mustRun();
-            $clientPublicKey = trim($pubProcess->getOutput());
-
-            // 3. Daftarkan Peer ke Interface Server secara live (/32 agar spesifik per user di tabel routing server)
+            // Daftarkan Peer ke Interface Server secara live menggunakan Public Key dari MikroTik
             $addPeerCmd = "sudo wg set {$this->interface} peer {$clientPublicKey} allowed-ips {$ipAddress}/32";
             $addProcess = Process::fromShellCommandline($addPeerCmd);
             $addProcess->mustRun();
 
-            // 4. Simpan state saat ini ke file wg0.conf agar permanen saat server reboot
+            // Simpan state saat ini ke file wg0.conf agar permanen saat server reboot
             $saveProcess = Process::fromShellCommandline("sudo wg-quick save {$this->interface}");
             $saveProcess->mustRun();
 
-            // 5. Generate template config untuk diserahkan ke sisi Client Router
-            $clientConfig = $this->generateClientConfig($clientPrivateKey, $ipAddress);
-
+            // Karena user menggunakan MikroTik (generate key sendiri),
+            // kita tidak punya Private Key milik client untuk digenerate ke dalam file .conf.
+            // Client hanya butuh info Server Endpoint, Server Public Key, dan IP-nya saja.
             return [
                 'status'      => 'success',
-                'private_key' => $clientPrivateKey,
                 'public_key'  => $clientPublicKey,
                 'ip_address'  => $ipAddress,
-                'config'      => $clientConfig,
+                'config'      => 'Konfigurasi dilakukan secara manual di MikroTik.',
             ];
         } catch (ProcessFailedException $e) {
             Log::error("Gagal membuat WireGuard Peer: " . $e->getMessage());

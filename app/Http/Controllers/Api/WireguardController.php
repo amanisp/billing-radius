@@ -81,6 +81,12 @@ class WireguardController extends Controller
      */
     public function store(Request $request)
     {
+        // 1. Validasi input dari request frontend
+        $request->validate([
+            'name'       => 'nullable|string|max:255',
+            'public_key' => 'required|string',
+        ]);
+
         try {
             $user = $this->getAuthUser();
 
@@ -88,32 +94,27 @@ class WireguardController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            // Dapatkan IP yang belum dipakai dari subnet /23
+            // 2. Dapatkan IP yang belum dipakai dari subnet /23
             $ipAddress = $this->getNextAvailableIp();
 
-            // Eksekusi service untuk membuat peer di Ubuntu
-            $result = $this->wgService->createPeer($ipAddress);
+            // 3. Eksekusi service dengan membawa parameter public_key dari MikroTik
+            $result = $this->wgService->createPeer($ipAddress, $request->public_key);
 
             if ($result['status'] === 'success') {
-                // Simpan ke database jika berhasil di server
+                // 4. Simpan ke database jika berhasil di server
                 $client = WireguardClient::create([
-                    'group_id'   => $user->group_id, // Menggunakan group_id dari auth user
+                    'group_id'   => $user->group_id,
+                    'name'       => $request->name, // Simpan name dari form
                     'ip_address' => $result['ip_address'],
-                    'public_key' => $result['public_key'],
-                    'config'     => $result['config'],
+                    'public_key' => $request->public_key, // Simpan public key MikroTik
+                    'config'     => $result['config'] ?? null,
                 ]);
-
-                // Opsional: Jika menggunakan Activity Log
-                // ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'wireguard_clients');
 
                 return ResponseFormatter::success($client, 'VPN Tunnel berhasil dibuat!', 201);
             }
 
             return ResponseFormatter::error($result['error'] ?? null, 'Gagal mengeksekusi WireGuard di server.', 500);
         } catch (\Exception $e) {
-            // Opsional: Jika menggunakan Activity Log
-            // ActivityLogController::logCreateF(['action' => 'store', 'error' => $e->getMessage()], 'wireguard_clients');
-
             return ResponseFormatter::error(null, $e->getMessage(), 422);
         }
     }

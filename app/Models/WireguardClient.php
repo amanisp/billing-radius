@@ -11,6 +11,7 @@ class WireguardClient extends Model
 
     protected $fillable = [
         'group_id',
+        'name',
         'ip_address',
         'public_key',
         'config',
