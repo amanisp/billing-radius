@@ -133,4 +133,6 @@ return [
 
     'api_token' => env('API_ACCESS_TOKEN', 'default_token'),
     'wa_api' => env('WA_API_HOST', 'default_token_wa'),
+
+
 ];

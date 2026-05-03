@@ -9,8 +9,6 @@ use App\Models\GlobalSettings;
 use App\Models\Groups;
 use App\Models\ResetTokens;
 use App\Models\User;
-use App\Services\WhatsappService;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -211,7 +209,7 @@ class AuthController extends Controller
 
                 DB::commit();
 
-                $resetLink = config('app.frontend_url') . '/verify-token?' . http_build_query([
+                $resetLink = config('app.url') . '/verify-token?' . http_build_query([
                     'email' => $email,
                     'token' => $plainToken,
                 ]);

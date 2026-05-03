@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AcsController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
@@ -20,7 +21,7 @@ use App\Http\Controllers\Api\SessionController;
 use App\Http\Controllers\Api\VpnController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\WhatsappController;
-
+use App\Http\Controllers\Api\WireguardController;
 
 Route::post('/v1/login', [AuthController::class, 'login']);
 Route::post('/v1/signup', [AuthController::class, 'signup']);
@@ -152,6 +153,22 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/disconnect', [WhatsAppController::class, 'disconnect']);
             Route::get('/logs', [WhatsAppController::class, 'whatsappLog']);
         });
+
+        Route::prefix('acs')->group(function () {
+            Route::get('/', [AcsController::class, 'byGroup']);
+            Route::post('/pppoe', [AcsController::class, 'searchPppoe']);
+            Route::post('/sn', [AcsController::class, 'searchSn']);
+            Route::post('/add-tag', [AcsController::class, 'addGroup']);
+        });
+
+
+        // Prefix /api/wireguard
+        Route::prefix('wireguard')->group(function () {
+            Route::get('/', [WireguardController::class, 'index']);
+            Route::post('/', [WireguardController::class, 'store']);
+            Route::delete('/{id}', [WireguardController::class, 'destroy']);
+        });
+
         // Logs
         Route::get('/logs', [LogsController::class, 'index']);
     });

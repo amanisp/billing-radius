@@ -2,11 +2,8 @@
 
 namespace App\Console;
 
-use App\Jobs\GenerateMonthlyInvoiceJob;
-use App\Services\WhatsappService;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
-use Illuminate\Support\Facades\Log as FacadesLog;
 
 class Kernel extends ConsoleKernel
 {

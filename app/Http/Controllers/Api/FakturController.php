@@ -2,29 +2,21 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\ActivityLogged;
 use App\Helpers\InvoiceHelper;
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ActivityLogController;
 use App\Jobs\BulkManualPaymentJob;
-use App\Models\Invoice;
 use App\Models\InvoiceHomepass;
 use App\Models\Member;
 use App\Models\PaymentDetail;
 use App\Models\User;
-use App\Services\WhatsappService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\View;
 use Mpdf\Mpdf;
-use App\Services\WhatsappNotificationService;
-use App\Jobs\SendWhatsappMessageJob;
-use App\Services\FonnteService;
 use App\Services\WhatsappCoreService;
 
 class FakturController extends Controller

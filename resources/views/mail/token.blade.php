@@ -1,510 +1,186 @@
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
-    xmlns:o="urn:schemas-microsoft-com:office:office" lang="en">
+<!DOCTYPE html>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 
 <head>
-    <title></title>
-    <meta charset="UTF-8" />
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-    <!--[if !mso]>-->
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <!--<![endif]-->
-    <meta name="x-apple-disable-message-reformatting" content="" />
-    <meta content="target-densitydpi=device-dpi" name="viewport" />
-    <meta content="true" name="HandheldFriendly" />
-    <meta content="width=device-width" name="viewport" />
-    <meta name="format-detection" content="telephone=no, date=no, address=no, email=no, url=no" />
-    <style type="text/css">
-        table {
-            border-collapse: separate;
-            table-layout: fixed;
-            mso-table-lspace: 0pt;
-            mso-table-rspace: 0pt
-        }
-
-        table td {
-            border-collapse: collapse
-        }
-
-        .ExternalClass {
-            width: 100%
-        }
-
-        .ExternalClass,
-        .ExternalClass p,
-        .ExternalClass span,
-        .ExternalClass font,
-        .ExternalClass td,
-        .ExternalClass div {
-            line-height: 100%
-        }
-
-        body,
-        a,
-        li,
-        p,
-        h1,
-        h2,
-        h3 {
-            -ms-text-size-adjust: 100%;
-            -webkit-text-size-adjust: 100%;
-        }
-
-        html {
-            -webkit-text-size-adjust: none !important
-        }
+    <meta charset="utf-8">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="x-apple-disable-message-reformatting">
+    <title>Reset Kata Sandi Anda</title>
+    <!--[if mso]>
+    <xml>
+        <o:OfficeDocumentSettings>
+            <o:AllowPNG/>
+            <o:PixelsPerInch>96</o:PixelsPerInch>
+        </o:OfficeDocumentSettings>
+    </xml>
+    <![endif]-->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
 
         body {
-            min-width: 100%;
-            Margin: 0px;
-            padding: 0px;
-        }
-
-        body,
-        #innerTable {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            background-color: #f8fafc;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
             -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale
         }
 
-        #innerTable img+div {
-            display: none;
-            display: none !important
+        table {
+            border-collapse: collapse;
+            border-spacing: 0;
         }
 
         img {
-            Margin: 0;
-            padding: 0;
-            -ms-interpolation-mode: bicubic
-        }
-
-        h1,
-        h2,
-        h3,
-        p,
-        a {
-            line-height: inherit;
-            overflow-wrap: normal;
-            white-space: normal;
-            word-break: break-word
-        }
-
-        a {
-            text-decoration: none
-        }
-
-        h1,
-        h2,
-        h3,
-        p {
-            min-width: 100% !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            display: inline-block !important;
             border: 0;
-            padding: 0;
-            margin: 0
+            line-height: 100%;
+            vertical-align: middle;
         }
 
-        a[x-apple-data-detectors] {
-            color: inherit !important;
-            text-decoration: none !important;
-            font-size: inherit !important;
-            font-family: inherit !important;
-            font-weight: inherit !important;
-            line-height: inherit !important
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
         }
 
-        u+#body a {
-            color: inherit;
+        .email-wrapper {
+            padding: 40px 20px;
+        }
+
+        .content-card {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 48px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .logo {
+            margin-bottom: 32px;
+            text-align: center;
+        }
+
+        .heading {
+            color: #1e293b;
+            font-size: 24px;
+            font-weight: 700;
+            line-height: 1.3;
+            margin: 0 0 16px;
+            text-align: left;
+        }
+
+        .text {
+            color: #475569;
+            font-size: 16px;
+            line-height: 1.6;
+            margin: 0 0 24px;
+            text-align: left;
+        }
+
+        .email-info {
+            background-color: #f1f5f9;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            color: #334155;
+            display: inline-block;
+            margin-bottom: 24px;
+        }
+
+        .btn-wrapper {
+            text-align: left;
+            margin-top: 8px;
+            margin-bottom: 32px;
+        }
+
+        .button {
+            background-color: #0034F2;
+            border-radius: 8px;
+            color: #ffffff !important;
+            display: inline-block;
+            font-size: 16px;
+            font-weight: 600;
+            padding: 16px 32px;
             text-decoration: none;
-            font-size: inherit;
-            font-family: inherit;
-            font-weight: inherit;
-            line-height: inherit;
+            transition: background-color 0.3s;
         }
 
-        a[href^="mailto"],
-        a[href^="tel"],
-        a[href^="sms"] {
-            color: inherit;
-            text-decoration: none
+        .footer {
+            margin-top: 32px;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 14px;
         }
-    </style>
-    <style type="text/css">
-        @media (min-width: 481px) {
-            .hd {
-                display: none !important
-            }
+
+        .divider {
+            height: 1px;
+            background-color: #e2e8f0;
+            margin: 32px 0;
         }
-    </style>
-    <style type="text/css">
-        @media (max-width: 480px) {
-            .hm {
-                display: none !important
+
+        @media (max-width: 600px) {
+            .content-card {
+                padding: 32px 24px;
             }
         }
     </style>
-    <style type="text/css">
-        @media (max-width: 480px) {
-
-            .t40,
-            .t45 {
-                mso-line-height-alt: 0px !important;
-                line-height: 0 !important;
-                display: none !important
-            }
-
-            .t41 {
-                padding: 40px !important;
-                border-radius: 0 !important
-            }
-
-            .t31 {
-                text-align: left !important
-            }
-
-            .t24 {
-                display: revert !important
-            }
-
-            .t26,
-            .t30 {
-                vertical-align: top !important;
-                width: auto !important;
-                max-width: 100% !important
-            }
-        }
-    </style>
-    <!--[if !mso]>-->
-    <link
-        href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600&amp;family=Montserrat:wght@700&amp;family=Roboto:wght@400&amp;display=swap"
-        rel="stylesheet" type="text/css" />
-    <!--<![endif]-->
-    <!--[if mso]>
-<xml>
-<o:OfficeDocumentSettings>
-<o:AllowPNG/>
-<o:PixelsPerInch>96</o:PixelsPerInch>
-</o:OfficeDocumentSettings>
-</xml>
-<![endif]-->
 </head>
 
-<body id="body" class="t48" style="min-width:100%;Margin:0px;padding:0px;background-color:#FFFFFF;">
-    <div class="t47" style="background-color:#FFFFFF;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="center">
-            <tr>
-                <td class="t46"
-                    style="font-size:0;line-height:0;mso-line-height-rule:exactly;background-color:#FFFFFF;"
-                    valign="top" align="center">
-                    <!--[if mso]>
-<v:background xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false">
-<v:fill color="#FFFFFF"/>
-</v:background>
-<![endif]-->
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
-                        align="center" id="innerTable">
-                        <tr>
-                            <td>
-                                <div class="t40"
-                                    style="mso-line-height-rule:exactly;mso-line-height-alt:50px;line-height:50px;font-size:1px;display:block;">
-                                    &nbsp;&nbsp;</div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td align="center">
-                                <table class="t44" role="presentation" cellpadding="0" cellspacing="0"
-                                    style="Margin-left:auto;Margin-right:auto;">
-                                    <tr>
-                                        <td width="600" class="t43" style="width:600px;">
-                                            <table class="t42" role="presentation" cellpadding="0" cellspacing="0"
-                                                width="100%" style="width:100%;">
-                                                <tr>
-                                                    <td class="t41"
-                                                        style="border:1px solid #EBEBEB;overflow:hidden;background-color:#FFFFFF;padding:44px 42px 32px 42px;border-radius:3px 3px 3px 3px;">
-                                                        <table role="presentation" width="100%" cellpadding="0"
-                                                            cellspacing="0" style="width:100% !important;">
-                                                            <tr>
-                                                                <td align="left">
-                                                                    <table class="t4" role="presentation"
-                                                                        cellpadding="0" cellspacing="0"
-                                                                        style="Margin-right:auto;">
-                                                                        <tr>
-                                                                            <td width="42" class="t3"
-                                                                                style="width:42px;">
-                                                                                <table class="t2"
-                                                                                    role="presentation" cellpadding="0"
-                                                                                    cellspacing="0" width="100%"
-                                                                                    style="width:100%;">
-                                                                                    <tr>
-                                                                                        <td class="t1">
-                                                                                            <div style="font-size:0px;">
-                                                                                                <img class="t0"
-                                                                                                    style="display:block;border:0;height:auto;width:100%;Margin:0;max-width:100%;"
-                                                                                                    width="42"
-                                                                                                    height="47.802061855670104"
-                                                                                                    alt=""
-                                                                                                    src="https://06fdf7bd-ff1a-4d18-9d91-15db89578ef6.b-cdn.net/e/9470a655-dd5b-4c65-899d-0ec67c0b5db2/e0854f40-9235-4976-8b6a-902cae520a03.png" />
-                                                                                            </div>
-                                                                                        </td>
-                                                                                    </tr>
-                                                                                </table>
-                                                                            </td>
-                                                                        </tr>
-                                                                    </table>
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td>
-                                                                    <div class="t5"
-                                                                        style="mso-line-height-rule:exactly;mso-line-height-alt:42px;line-height:42px;font-size:1px;display:block;">
-                                                                        &nbsp;&nbsp;</div>
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td align="center">
-                                                                    <table class="t10" role="presentation"
-                                                                        cellpadding="0" cellspacing="0"
-                                                                        style="Margin-left:auto;Margin-right:auto;">
-                                                                        <tr>
-                                                                            <td width="514" class="t9"
-                                                                                style="width:600px;">
-                                                                                <table class="t8"
-                                                                                    role="presentation"
-                                                                                    cellpadding="0" cellspacing="0"
-                                                                                    width="100%"
-                                                                                    style="width:100%;">
-                                                                                    <tr>
-                                                                                        <td class="t7"
-                                                                                            style="border-bottom:1px solid #EFF1F4;padding:0 0 18px 0;">
-                                                                                            <h1 class="t6"
-                                                                                                style="margin:0;Margin:0;font-family:Montserrat,BlinkMacSystemFont,Segoe UI,Helvetica Neue,Arial,sans-serif;line-height:28px;font-weight:700;font-style:normal;font-size:24px;text-decoration:none;text-transform:none;letter-spacing:-1px;direction:ltr;color:#141414;text-align:left;mso-line-height-rule:exactly;mso-text-raise:1px;">
-                                                                                                Token Reset Password
-                                                                                            </h1>
-                                                                                        </td>
-                                                                                    </tr>
-                                                                                </table>
-                                                                            </td>
-                                                                        </tr>
-                                                                    </table>
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td>
-                                                                    <div class="t11"
-                                                                        style="mso-line-height-rule:exactly;mso-line-height-alt:18px;line-height:18px;font-size:1px;display:block;">
-                                                                        &nbsp;&nbsp;</div>
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td align="center">
-                                                                    <table class="t16" role="presentation"
-                                                                        cellpadding="0" cellspacing="0"
-                                                                        style="Margin-left:auto;Margin-right:auto;">
-                                                                        <tr>
-                                                                            <td width="514" class="t15"
-                                                                                style="width:600px;">
-                                                                                <table class="t14"
-                                                                                    role="presentation"
-                                                                                    cellpadding="0" cellspacing="0"
-                                                                                    width="100%"
-                                                                                    style="width:100%;">
-                                                                                    <tr>
-                                                                                        <td class="t13">
-                                                                                            <p class="t12"
-                                                                                                style="margin:0;Margin:0;font-family:Open Sans,BlinkMacSystemFont,Segoe UI,Helvetica Neue,Arial,sans-serif;line-height:25px;font-weight:400;font-style:normal;font-size:15px;text-decoration:none;text-transform:none;letter-spacing:-0.1px;direction:ltr;color:#141414;text-align:left;mso-line-height-rule:exactly;mso-text-raise:3px;">
-                                                                                                Terima kasih telah
-                                                                                                menggunakan layanan AMAN
-                                                                                                ISP.
+<body>
+    <div class="container email-wrapper">
+        <!-- Logo Section -->
+        <div class="logo">
+            <img src="https://06fdf7bd-ff1a-4d18-9d91-15db89578ef6.b-cdn.net/e/9470a655-dd5b-4c65-899d-0ec67c0b5db2/e0854f40-9235-4976-8b6a-902cae520a03.png"
+                alt="AMAN ISP" width="48" style="margin-bottom: 12px;">
+            <div style="font-weight: 700; font-size: 18px; color: #1e293b; letter-spacing: -0.5px;">AMAN ISP</div>
+        </div>
 
-                                                                                                Kami menerima permintaan
-                                                                                                reset password pada akun
-                                                                                                Anda dengan email:
-                                                                                                {{ $email }}
+        <div class="content-card">
+            <h1 class="heading">Permintaan Reset Password</h1>
 
-                                                                                                Untuk melanjutkan
-                                                                                                proses, silakan klik
-                                                                                                tombol di bawah ini
-                                                                                                untuk mengatur ulang
-                                                                                                password Anda.
+            <p class="text">
+                Halo,<br><br>
+                Kami menerima permintaan untuk mengatur ulang kata sandi akun Anda yang terdaftar dengan email:
+            </p>
 
-                                                                                                Link ini hanya berlaku
-                                                                                                selama 5 menit dan
-                                                                                                hanya dapat digunakan
-                                                                                                satu kali.
+            <div class="email-info">
+                {{ $email }}
+            </div>
 
-                                                                                                Jika Anda tidak
-                                                                                                melakukan permintaan
-                                                                                                ini, silakan abaikan
-                                                                                                email ini demi keamanan
-                                                                                                akun Anda.
-                                                                                            </p>
-                                                                                        </td>
-                                                                                    </tr>
-                                                                                </table>
-                                                                            </td>
-                                                                        </tr>
-                                                                    </table>
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td align="center">
-                                                                    <table class="t21" role="presentation"
-                                                                        cellpadding="0" cellspacing="0"
-                                                                        style="Margin-left:auto;Margin-right:auto;">
-                                                                        <tr>
-                                                                            <td width="514" class="t20"
-                                                                                style="width:600px;">
-                                                                                <table class="t19"
-                                                                                    role="presentation"
-                                                                                    cellpadding="0" cellspacing="0"
-                                                                                    width="100%"
-                                                                                    style="width:100%;">
-                                                                                    <tr>
-                                                                                        <td
-                                                                                            style="text-align:center; padding:20px 0;">
-                                                                                            <a href="{{ $link }}"
-                                                                                                style="
-            display:inline-block;
-            padding:12px 24px;
-            background-color:#0034F2;
-            color:#ffffff;
-            text-decoration:none;
-            border-radius:6px;
-            font-family:Roboto,Arial,sans-serif;
-            font-size:14px;
-            font-weight:500;
-        ">
-                                                                                                Reset Password
-                                                                                            </a>
-                                                                                        </td>
-                                                                                    </tr>
-                                                                                </table>
-                                                                            </td>
-                                                                        </tr>
-                                                                    </table>
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td>
-                                                                    <div class="t35"
-                                                                        style="mso-line-height-rule:exactly;mso-line-height-alt:40px;line-height:40px;font-size:1px;display:block;">
-                                                                        &nbsp;&nbsp;</div>
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td align="center">
-                                                                    <table class="t39" role="presentation"
-                                                                        cellpadding="0" cellspacing="0"
-                                                                        style="Margin-left:auto;Margin-right:auto;">
-                                                                        <tr>
-                                                                            <td width="514" class="t38"
-                                                                                style="width:600px;">
-                                                                                <table class="t37"
-                                                                                    role="presentation"
-                                                                                    cellpadding="0" cellspacing="0"
-                                                                                    width="100%"
-                                                                                    style="width:100%;">
-                                                                                    <tr>
-                                                                                        <td class="t36"
-                                                                                            style="border-top:1px solid #DFE1E4;padding:24px 0 0 0;">
-                                                                                            <div class="t34"
-                                                                                                style="width:100%;text-align:left;">
-                                                                                                <div class="t33"
-                                                                                                    style="display:inline-block;">
-                                                                                                    <table
-                                                                                                        class="t32"
-                                                                                                        role="presentation"
-                                                                                                        cellpadding="0"
-                                                                                                        cellspacing="0"
-                                                                                                        align="left"
-                                                                                                        valign="top">
-                                                                                                        <tr
-                                                                                                            class="t31">
-                                                                                                            <td></td>
-                                                                                                            <td class="t26"
-                                                                                                                valign="top">
-                                                                                                                <table
-                                                                                                                    role="presentation"
-                                                                                                                    width="100%"
-                                                                                                                    cellpadding="0"
-                                                                                                                    cellspacing="0"
-                                                                                                                    class="t25"
-                                                                                                                    style="width:auto;">
-                                                                                                                    <tr>
-                                                                                                                        <td class="t23"
-                                                                                                                            style="background-color:#FFFFFF;text-align:center;line-height:20px;mso-line-height-rule:exactly;mso-text-raise:2px;">
-                                                                                                                            <span
-                                                                                                                                class="t22"
-                                                                                                                                style="display:block;margin:0;Margin:0;font-family:Open Sans,BlinkMacSystemFont,Segoe UI,Helvetica Neue,Arial,sans-serif;line-height:20px;font-weight:600;font-style:normal;font-size:14px;text-decoration:none;direction:ltr;color:#222222;text-align:center;mso-line-height-rule:exactly;mso-text-raise:2px;">AMAN
-                                                                                                                                ISP</span>
-                                                                                                                        </td>
-                                                                                                                        <td class="t24"
-                                                                                                                            style="width:20px;"
-                                                                                                                            width="20">
-                                                                                                                        </td>
-                                                                                                                    </tr>
-                                                                                                                </table>
-                                                                                                            </td>
-                                                                                                            <td class="t30"
-                                                                                                                valign="top">
-                                                                                                                <table
-                                                                                                                    role="presentation"
-                                                                                                                    width="100%"
-                                                                                                                    cellpadding="0"
-                                                                                                                    cellspacing="0"
-                                                                                                                    class="t29"
-                                                                                                                    style="width:auto;">
-                                                                                                                    <tr>
-                                                                                                                        <td class="t28"
-                                                                                                                            style="background-color:#FFFFFF;text-align:center;line-height:20px;mso-line-height-rule:exactly;mso-text-raise:2px;">
-                                                                                                                            <span
-                                                                                                                                class="t27"
-                                                                                                                                style="display:block;margin:0;Margin:0;font-family:Open Sans,BlinkMacSystemFont,Segoe UI,Helvetica Neue,Arial,sans-serif;line-height:20px;font-weight:500;font-style:normal;font-size:14px;text-decoration:none;direction:ltr;color:#B4BECC;text-align:center;mso-line-height-rule:exactly;mso-text-raise:2px;">PT
-                                                                                                                                Anugerah
-                                                                                                                                Media
-                                                                                                                                Data
-                                                                                                                                Nusantara</span>
-                                                                                                                        </td>
-                                                                                                                    </tr>
-                                                                                                                </table>
-                                                                                                            </td>
-                                                                                                            <td></td>
-                                                                                                        </tr>
-                                                                                                    </table>
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        </td>
-                                                                                    </tr>
-                                                                                </table>
-                                                                            </td>
-                                                                        </tr>
-                                                                    </table>
-                                                                </td>
-                                                            </tr>
-                                                        </table>
-                                                    </td>
-                                                </tr>
-                                            </table>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                <div class="t45"
-                                    style="mso-line-height-rule:exactly;mso-line-height-alt:50px;line-height:50px;font-size:1px;display:block;">
-                                    &nbsp;&nbsp;</div>
-                            </td>
-                        </tr>
-                    </table>
-                </td>
-            </tr>
-        </table>
+            <p class="text">
+                Silakan klik tombol di bawah ini untuk membuat kata sandi baru. Link ini hanya berlaku selama <strong>5
+                    menit</strong> dan hanya dapat digunakan satu kali.
+            </p>
+
+            <div class="btn-wrapper">
+                <!--[if mso]>
+                <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ $link }}" style="height:52px;v-text-anchor:middle;width:200px;" arcsize="16%" stroke="f" fillcolor="#0034F2">
+                    <w:anchorlock/>
+                    <center style="color:#ffffff;font-family:sans-serif;font-size:16px;font-weight:bold;">Reset Password</center>
+                </v:roundrect>
+                <![endif]-->
+                <a href="{{ $link }}" class="button">Reset Password</a>
+            </div>
+
+            <p class="text" style="font-size: 14px; margin-bottom: 0;">
+                Jika Anda tidak merasa melakukan permintaan ini, abaikan saja email ini. Akun Anda tetap aman.
+            </p>
+
+            <div class="divider"></div>
+
+            <p class="text" style="font-size: 13px; color: #94a3b8; margin-bottom: 0;">
+                Jika tombol di atas tidak berfungsi, salin dan tempel URL berikut ke browser Anda:<br>
+                <span style="color: #0034F2; word-break: break-all;">{{ $link }}</span>
+            </p>
+        </div>
+
+        <div class="footer">
+            <p style="margin-bottom: 4px; font-weight: 600; color: #64748b;">AMAN ISP</p>
+            <p style="margin: 0;">PT Anugerah Media Data Nusantara</p>
+            <p style="margin-top: 16px; font-size: 12px;">&copy; 2024 AMAN ISP. All rights reserved.</p>
+        </div>
     </div>
-    <div class="gmail-fix" style="display: none; white-space: nowrap; font: 15px courier; line-height: 0;">&nbsp;
-        &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-        &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;</div>
 </body>
 
 </html>

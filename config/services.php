@@ -50,4 +50,15 @@ return [
         'token' => env('FREERADIUS_API_TOKEN'),
     ],
 
+    'genieacs' => [
+        'url' => env('GENIEACS_URL'),
+        'username' => env('GENIEACS_USER'),
+        'password' => env('GENIEACS_PASS'),
+    ],
+
+    'wg' => [
+        'interface'  => env('WIREGUARD_INTERFACE', 'wg0'),
+        'public_key' => env('WIREGUARD_SERVER_PUBLIC_KEY', ''),
+        'endpoint'   => env('WIREGUARD_SERVER_ENDPOINT', ''),
+    ],
 ];
