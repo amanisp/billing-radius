@@ -24,7 +24,7 @@ class WireguardService
     /**
      * Membuat peer WireGuard baru (Add WG).
      * 
-     * @param string $ipAddress IP yang dialokasikan (contoh: '10.255.255.2')
+     * @param string $ipAddress IP yang dialokasikan (contoh: '10.10.10.2')
      * @return array
      */
     /**

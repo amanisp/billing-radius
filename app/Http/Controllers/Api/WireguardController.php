@@ -159,12 +159,13 @@ class WireguardController extends Controller
     /**
      * Helper untuk mencari IP kosong di subnet 172.31.18.1/23
      */
+
     private function getNextAvailableIp()
     {
         // Subnet /23 = 172.31.18.1 sampai 172.31.19.254
         // Kita mulai dari .2 karena .1 biasanya dipakai oleh interface server (wg0)
-        $startIp = ip2long('10.255.255.2');
-        $endIp   = ip2long('10.255.255.254');
+        $startIp = ip2long('10.10.10.2');
+        $endIp   = ip2long('10.10.11.254');
 
         // Ambil semua IP yang sudah terdaftar di database (tidak dibatasi group, karena IP pool bersifat global)
         $usedIps = WireguardClient::pluck('ip_address')->toArray();
