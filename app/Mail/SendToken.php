@@ -38,9 +38,9 @@ class SendToken extends Mailable
      */
     public function content(): Content
     {
-
         return new Content(
             view: 'mail.token',
+            with: $this->data // 🔥 WAJIB
         );
     }
 

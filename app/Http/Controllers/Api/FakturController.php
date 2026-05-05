@@ -552,10 +552,8 @@ class FakturController extends Controller
         return ResponseFormatter::success(
             null,
             'Bulk payment sedang diproses di background',
-            202
         );
     }
-
 
 
 

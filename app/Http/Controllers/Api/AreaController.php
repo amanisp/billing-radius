@@ -153,7 +153,7 @@ class AreaController extends Controller
             );
         } catch (\Throwable $th) {
             ActivityLogController::logCreateF(['action' => 'assignTechnician', 'error' => $th->getMessage()], 'areas');
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
     }
 

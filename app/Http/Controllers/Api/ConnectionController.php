@@ -433,19 +433,22 @@ class ConnectionController extends Controller
             // Validation
             $rules = [
                 'profile_id' => 'required|exists:profiles,id',
-                'nas_id' => 'nullable|exists:nas,id',
-                'area_id' => 'nullable|exists:areas,id',
+                'nas_id'     => 'nullable|exists:nas,id',
+                'area_id'    => 'nullable|exists:areas,id',
                 'optical_id' => 'nullable|exists:optical_dists,id',
-                'username' => [
+                'username'   => [
                     'required',
                     'string',
                     'max:255',
                     Rule::unique('connections')->ignore($id)->where(fn($q) => $q->where('group_id', $user->group_id))
                 ],
-                'password' => 'required|string'
+                'password'   => 'required|string'
             ];
 
             $validated = $request->validate($rules);
+
+            // Cek apakah profile_id mengalami perubahan
+            $isProfileChanged = $connection->profile_id != $validated['profile_id'];
 
             $groupId     = $connection->group_id;
             $oldUsername = $connection->username ?? $connection->mac_address;
@@ -520,6 +523,17 @@ class ConnectionController extends Controller
                 ->update(['username' => $newUsername]);
 
             DB::commit();
+
+            // ======================
+            // JALANKAN COA (DISCONNECT) JIKA PROFILE BERUBAH
+            // ======================
+            if ($isProfileChanged) {
+                // Ambil daftar NAS berdasarkan group_id user
+                $nasList = Nas::where('group_id', $user->group_id)->get();
+
+                // Gunakan $oldUsername karena sesi yang masih aktif di Mikrotik saat ini menggunakan username lama
+                $this->disconnectMultiNas($oldUsername, $nasList);
+            }
 
             ActivityLogController::logCreate(['action' => 'update', 'status' => 'success'], 'connections');
             return ResponseFormatter::success($connection, 'Connection berhasil diperbarui', 200);

@@ -9,6 +9,7 @@ use App\Models\GlobalSettings;
 use App\Models\Groups;
 use App\Models\ResetTokens;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -188,7 +189,17 @@ class AuthController extends Controller
                 ->first();
 
             if ($lastRequest) {
-                return ResponseFormatter::success(null, 'Link reset password telah dikirim');
+                $nextAllowedTime = Carbon::parse($lastRequest->created_at)->addMinutes(5);
+
+                if (now()->lt($nextAllowedTime)) {
+                    $remainingSeconds = now()->diffInSeconds($nextAllowedTime);
+                    $remainingMinutes = ceil($remainingSeconds / 60);
+
+                    return ResponseFormatter::success(
+                        null,
+                        "Silakan tunggu {$remainingMinutes} menit lagi sebelum meminta ulang link reset password"
+                    );
+                }
             }
 
             $user = User::where('email', $email)->first();
@@ -213,6 +224,8 @@ class AuthController extends Controller
                     'email' => $email,
                     'token' => $plainToken,
                 ]);
+
+
 
                 Mail::send('mail.token', [
                     'link' => $resetLink,
