@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\MemberController;
 use App\Http\Controllers\Api\MikrotikController;
 use App\Http\Controllers\Api\NasController;
 use App\Http\Controllers\Api\OpticalController;
+use App\Http\Controllers\Api\PaymentSettingsController;
 use App\Http\Controllers\Api\PayoutController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SessionController;
@@ -167,6 +168,20 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/', [WireguardController::class, 'index']);
             Route::post('/', [WireguardController::class, 'store']);
             Route::delete('/{id}', [WireguardController::class, 'destroy']);
+        });
+
+        // Prefic New Invoice
+        Route::prefix('inv')->group(function () {
+            Route::get('/', [InvoiceController::class, 'index']);
+            Route::post('/', [InvoiceController::class, 'store']);
+            Route::delete('/{id}', [InvoiceController::class, 'destroy']);
+        });
+
+        // Setting Invoice
+        Route::prefix('payment-settings')->group(function () {
+            Route::get('/', [PaymentSettingsController::class, 'index']);
+            Route::put('/', [PaymentSettingsController::class, 'update']);
+            // Route::delete('/{id}', [InvoiceController::class, 'destroy']);
         });
 
         // Logs

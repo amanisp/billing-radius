@@ -12,6 +12,7 @@ class PaymentDetail extends Model
         'payment_type',
         'billing_period',
         'active_date',
+        'last_invoice',
         'amount',
         'discount',
         'ppn',

@@ -26,6 +26,21 @@ class Invoice extends Model
     // Invoice.php
     public function payer()
     {
-        return $this->belongsTo(Mitra::class, 'payer_id');
+        return $this->belongsTo(User::class, 'payer_id');
+    }
+
+    public function member()
+    {
+        return $this->belongsTo(Member::class, 'member_id');
+    }
+
+    public function connection()
+    {
+        return $this->belongsTo(Connection::class, 'connection_id');
+    }
+
+    public function group()
+    {
+        return $this->belongsTo(Groups::class, 'group_id');
     }
 }
