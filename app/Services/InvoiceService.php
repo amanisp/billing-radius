@@ -4,71 +4,175 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\Member;
+use App\Models\GlobalSettings;
 use App\Helpers\InvoiceHelper;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class InvoiceService
 {
-    public function createManualInvoice(array $data)
+    /**
+     * Generate invoice manual / bulk
+     */
+    public function createInvoices(array $data): array
     {
         return DB::transaction(function () use ($data) {
 
-            $member = Member::with(['paymentDetail'])->findOrFail($data['member_id']);
+            $member = Member::with('paymentDetail')
+                ->findOrFail($data['member_id']);
+
             $paymentDetail = $member->paymentDetail;
 
             if (!$paymentDetail) {
-                throw new \Exception("Member ini tidak memiliki data Payment Detail.");
+                throw new \Exception(
+                    'Member tidak memiliki payment detail.'
+                );
             }
 
-            $tenor = (int) $data['subscription_period'];
-            $originalDay = Carbon::parse($paymentDetail->active_date)->day;
+            /**
+             * Global settings
+             */
+            $settings = GlobalSettings::where(
+                'group_id',
+                $member->group_id
+            )->first();
 
-            $currentStartDate = $paymentDetail->getNextInvoiceStartDate();
+            if (!$settings) {
+                throw new \Exception(
+                    'Global settings tidak ditemukan.'
+                );
+            }
 
-            // VALIDASI BULAN AWAL
-            $existingInvoice = Invoice::where('member_id', $member->id)
-                ->whereYear('start_date', $currentStartDate->year)
-                ->whereMonth('start_date', $currentStartDate->month)
-                ->exists();
+            $subscriptionPeriod = (int) $data['subscription_period'];
 
-            if ($existingInvoice) {
-                throw new \Exception("Invoice untuk bulan {$currentStartDate->format('F Y')} sudah ada.");
+            if ($subscriptionPeriod < 1) {
+                throw new \Exception(
+                    'Subscription period minimal 1.'
+                );
+            }
+
+            /**
+             * =========================================
+             * START DATE
+             * =========================================
+             *
+             * Jika start_month_year ada:
+             * gunakan bulan tsb + invoice_generate_days
+             *
+             * jika tidak ada:
+             * gunakan bulan sekarang + invoice_generate_days
+             */
+
+            $invoiceGenerateDay =
+                (int) ($settings->invoice_generate_days ?? 1);
+
+            if (!empty($data['start_month_year'])) {
+
+                $currentStartDate = Carbon::createFromFormat(
+                    'Y-m',
+                    $data['start_month_year']
+                )
+                    ->startOfMonth()
+                    ->day($invoiceGenerateDay);
+            } else {
+
+                $currentStartDate = now()
+                    ->startOfMonth()
+                    ->day($invoiceGenerateDay);
+            }
+
+            /**
+             * Handle overflow tanggal
+             * contoh:
+             * 31 februari
+             */
+            if ($currentStartDate->day !== $invoiceGenerateDay) {
+                $currentStartDate->endOfMonth();
             }
 
             $createdInvoices = [];
 
-            for ($i = 0; $i < $tenor; $i++) {
+            for ($i = 0; $i < $subscriptionPeriod; $i++) {
 
                 $startDate = $currentStartDate->copy();
 
-                // VALIDASI PER BULAN
-                $exists = Invoice::where('member_id', $member->id)
-                    ->whereYear('start_date', $startDate->year)
-                    ->whereMonth('start_date', $startDate->month)
+                /**
+                 * =========================================
+                 * VALIDASI DUPLICATE
+                 * =========================================
+                 */
+                $exists = Invoice::where(
+                    'member_id',
+                    $member->id
+                )
+                    ->whereYear(
+                        'start_date',
+                        $startDate->year
+                    )
+                    ->whereMonth(
+                        'start_date',
+                        $startDate->month
+                    )
                     ->exists();
 
                 if ($exists) {
-                    throw new \Exception("Invoice bulan {$startDate->format('F Y')} sudah ada.");
+
+                    throw new \Exception(
+                        "Invoice bulan {$startDate->translatedFormat('F Y')} sudah ada."
+                    );
                 }
 
-                $dueDate = $startDate->copy()->addDays(7);
 
-                // ✅ PAKAI HELPER
-                $invNumber = InvoiceHelper::generateInvoiceNumber($member->group_id, 'H');
+                $dueDay = (int) ($settings->due_date_pascabayar ?? 10);
 
+                /**
+                 * due date mengikuti bulan invoice
+                 */
+                $dueDate = Carbon::create(
+                    $startDate->year,
+                    $startDate->month,
+                    1
+                )->day($dueDay);
+
+                /**
+                 * overflow
+                 * contoh:
+                 * due day 31 di februari
+                 */
+                if ($dueDate->month !== $startDate->month) {
+                    $dueDate = $startDate->copy()->endOfMonth();
+                }
+
+                /**
+                 * =========================================
+                 * CREATE INVOICE
+                 * =========================================
+                 */
                 $invoice = Invoice::create([
+
                     'member_id'           => $member->id,
+
                     'connection_id'       => $member->connection_id,
+
                     'payer_id'            => $member->user_id,
+
                     'invoice_type'        => 'H',
+
                     'start_date'          => $startDate->toDateString(),
-                    'due_date'            => $data['due_date'] ?? $dueDate->toDateString(),
+
+                    'due_date'            => $dueDate->toDateString(),
+
                     'subscription_period' => 1,
-                    'inv_number'          => $invNumber,
+
+                    'inv_number'          => InvoiceHelper::generateInvoiceNumber(
+                        $member->group_id,
+                        'H'
+                    ),
+
                     'amount'              => $data['amount'],
 
                     'status'              => 'unpaid',
+
                     'payment_url'         => 'default',
 
                     'group_id'            => $member->group_id,
@@ -76,11 +180,28 @@ class InvoiceService
 
                 $createdInvoices[] = $invoice;
 
-                $currentStartDate->addMonth()->day($originalDay);
+                /**
+                 * =========================================
+                 * NEXT MONTH
+                 * =========================================
+                 */
+                $currentStartDate
+                    ->addMonthNoOverflow()
+                    ->day($invoiceGenerateDay);
+
+                if ($currentStartDate->day !== $invoiceGenerateDay) {
+                    $currentStartDate->endOfMonth();
+                }
             }
 
-            $lastCreatedInvoice = end($createdInvoices);
-            $paymentDetail->updateLastInvoice($lastCreatedInvoice->start_date);
+            /**
+             * update last invoice
+             */
+            $lastInvoice = end($createdInvoices);
+
+            $paymentDetail->updateLastInvoice(
+                $lastInvoice->start_date
+            );
 
             return $createdInvoices;
         });

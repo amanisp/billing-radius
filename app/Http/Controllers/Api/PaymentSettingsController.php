@@ -37,17 +37,7 @@ class PaymentSettingsController extends Controller
             if (!$user) return ResponseFormatter::error(null, 'Unauthorized', 401);
 
             // Mengambil data pertama atau inisialisasi jika belum ada
-            $settings = GlobalSettings::firstOrCreate(
-                ['id' => 1],
-                [
-                    'xendit_balance' => 0.00,
-                    'isolir_time' => '00:00:00',
-                    'invoice_generate_days' => 7,
-                    'notification_days' => 3,
-                    'isolir_after_exp' => 1,
-                    'due_date_pascabayar' => 20,
-                ]
-            );
+            $settings = GlobalSettings::where('group_id', $user->group_id)->first();
 
             return ResponseFormatter::success($settings, 'Pengaturan pembayaran berhasil dimuat');
         } catch (\Throwable $th) {
@@ -60,26 +50,27 @@ class PaymentSettingsController extends Controller
      */
     public function update(Request $request)
     {
+        // 1. PINDAHKAN VALIDASI KE SINI (Luar Try-Catch)
+        // Jika validasi gagal, Laravel otomatis mereturn 422 (Bad Request/Unprocessable)
+        $validated = $request->validate([
+            'isolir_time'           => 'required',
+            'invoice_generate_days' => 'required|integer|min:1',
+            'isolir_after_exp'      => 'required|integer|min:0',
+            'due_date_pascabayar'   => 'required|integer|between:1,31',
+            'footer'                => 'nullable|string',
+        ]);
+
         try {
             $user = $this->getAuthUser();
             if (!$user) return ResponseFormatter::error(null, 'Unauthorized', 401);
 
-            $settings = GlobalSettings::first();
+            $settings = GlobalSettings::where('group_id', $user->group_id)->first();
+
             if (!$settings) {
-                $settings = new GlobalSettings();
-                $settings->id = 1;
+                return ResponseFormatter::error(null, 'Pengaturan tidak ditemukan untuk group ini', 404);
             }
 
             $oldData = $settings->toArray();
-
-            $validated = $request->validate([
-                'isolir_time'           => 'required',
-                'invoice_generate_days' => 'required|integer|min:1',
-                'notification_days'     => 'required|integer|min:0',
-                'isolir_after_exp'      => 'required|integer|min:0',
-                'due_date_pascabayar'   => 'nullable|integer|between:1,31',
-                'footer'                => 'nullable|string',
-            ]);
 
             $settings->fill($validated);
             $settings->save();
@@ -89,12 +80,13 @@ class PaymentSettingsController extends Controller
 
             return ResponseFormatter::success($settings, 'Pengaturan berhasil diperbarui');
         } catch (\Throwable $th) {
+            // Jika masuk ke sini, berarti ada error database atau sistem
             ActivityLogController::logCreateF([
                 'action' => 'update_payment_settings',
                 'error' => $th->getMessage()
             ], 'global_settings');
 
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
 

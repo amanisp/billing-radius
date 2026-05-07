@@ -5,27 +5,191 @@ namespace App\Http\Controllers\Api;
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ActivityLogController;
+use App\Jobs\BulkInvoiceJob;
 use App\Models\Invoice;
+use App\Models\Member;
+use App\Models\User;
 use App\Services\InvoiceService;
+use App\Services\WhatsappCoreService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class InvoiceController extends Controller
 {
+
+    protected $whatsapp;
     protected $invoiceService;
 
-    public function __construct(InvoiceService $invoiceService)
+    public function __construct(InvoiceService $invoiceService, WhatsappCoreService $whatsapp)
     {
         $this->invoiceService = $invoiceService;
+        $this->whatsapp = $whatsapp;
     }
 
-    // GET /api/invoices
+    private function getAuthUser()
+    {
+        $user = Auth::user();
+        if ($user instanceof User) return $user;
+
+        $id = Auth::id();
+        if ($id) return User::find($id);
+
+        return null;
+    }
+
+
+    public function stats(Request $request)
+    {
+        try {
+
+            $user = Auth::user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            /**
+             * base query
+             */
+            $query = Invoice::query()
+                ->where('group_id', $user->group_id);
+
+            /**
+             * filter area untuk teknisi/kasir
+             */
+            if (in_array($user->role, ['teknisi', 'kasir'])) {
+
+                $areaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id');
+
+                if ($areaIds->isEmpty()) {
+
+                    return ResponseFormatter::success([
+                        'paid' => [
+                            'count'  => 0,
+                            'amount' => 0,
+                        ],
+                        'unpaid' => [
+                            'count'  => 0,
+                            'amount' => 0,
+                        ],
+                        'overdue' => [
+                            'count'  => 0,
+                            'amount' => 0,
+                        ],
+                        'revenue' => 0,
+                    ], 'Tidak ada area yang ditugaskan');
+                }
+
+                $query->whereHas('connection', function ($q) use ($areaIds) {
+                    $q->whereIn('area_id', $areaIds);
+                });
+            }
+
+            /**
+             * clone query
+             */
+            $paidQuery = clone $query;
+            $unpaidQuery = clone $query;
+            $overdueQuery = clone $query;
+
+            /**
+             * PAID
+             */
+            $paidCount = $paidQuery
+                ->where('status', 'paid')
+                ->count();
+
+            $paidAmount = $paidQuery
+                ->where('status', 'paid')
+                ->sum('amount');
+
+            /**
+             * UNPAID
+             */
+            $unpaidCount = $unpaidQuery
+                ->where('status', 'unpaid')
+                ->count();
+
+            $unpaidAmount = $unpaidQuery
+                ->where('status', 'unpaid')
+                ->sum('amount');
+
+            /**
+             * OVERDUE
+             */
+            $overdueCount = $overdueQuery
+                ->where('status', 'unpaid')
+                ->whereDate('due_date', '<', now())
+                ->count();
+
+            $overdueAmount = $overdueQuery
+                ->where('status', 'unpaid')
+                ->whereDate('due_date', '<', now())
+                ->sum('amount');
+
+            /**
+             * TOTAL REVENUE
+             */
+            $totalRevenue = Invoice::where(
+                'group_id',
+                $user->group_id
+            )
+                ->where('invoice_type', 'H')
+                ->where('status', 'paid')
+                ->sum('amount');
+
+            $stats = [
+
+                'paid' => [
+                    'count'  => $paidCount,
+                    'amount' => $paidAmount,
+                ],
+
+                'unpaid' => [
+                    'count'  => $unpaidCount,
+                    'amount' => $unpaidAmount,
+                ],
+
+                'overdue' => [
+                    'count'  => $overdueCount,
+                    'amount' => $overdueAmount,
+                ],
+
+                'revenue' => $totalRevenue,
+            ];
+
+            return ResponseFormatter::success(
+                $stats,
+                'Stats invoice berhasil dimuat'
+            );
+        } catch (\Throwable $th) {
+
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
+            );
+        }
+    }
+
+
     public function index(Request $request)
     {
         try {
             $user = Auth::user();
-            $query = Invoice::with(['member', 'connection'])
-                ->where('group_id', $user->group_id);
+
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            $query = Invoice::with(['member', 'connection.area'])
+                ->where('group_id', $user->group_id)->where('status', 'unpaid');
 
             // 🔍 Search (by invoice number or member name)
             if ($search = $request->get('search')) {
@@ -52,51 +216,300 @@ class InvoiceController extends Controller
         }
     }
 
-    // POST /api/invoices
     public function store(Request $request)
     {
         try {
+            $user = Auth::user();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
             $validated = $request->validate([
                 'member_id'           => 'required|exists:members,id',
-                'amount'              => 'required|numeric',
+                'amount'              => 'required|numeric|min:0',
+                'start_month_year'    => 'required|date_format:Y-m',
                 'subscription_period' => 'required|integer|min:1',
-                'due_date'            => 'nullable|date',
             ]);
 
-            $invoices = $this->invoiceService->createManualInvoice($validated);
+            $invoices = $this->invoiceService->createInvoices($validated);
 
             if (empty($invoices)) {
                 throw new \Exception("Invoice gagal dibuat.");
             }
 
-            // Ambil invoice pertama untuk log
+            /**
+             * Ambil invoice pertama untuk activity log
+             */
             $firstInvoice = $invoices[0];
 
             ActivityLogController::logCreate([
-                'action' => 'create_invoice',
+                'action'     => 'create_invoice',
                 'inv_number' => $firstInvoice->inv_number,
-                'status' => 'success'
+                'status'     => 'success',
             ], 'invoices');
 
-            return ResponseFormatter::success($invoices, 'Invoice berhasil dibuat', 201);
+            return ResponseFormatter::success(
+                $invoices,
+                'Invoice berhasil dibuat',
+                201
+            );
         } catch (\Exception $e) {
 
             ActivityLogController::logCreateF([
                 'action' => 'create_invoice',
-                'error' => $e->getMessage()
+                'error'  => $e->getMessage(),
             ], 'invoices');
 
-            return ResponseFormatter::error(null, $e->getMessage(), 400);
+            return ResponseFormatter::error(
+                null,
+                $e->getMessage(),
+                400
+            );
         } catch (\Throwable $th) {
 
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            ActivityLogController::logCreateF([
+                'action' => 'create_invoice',
+                'error'  => $th->getMessage(),
+            ], 'invoices');
+
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
+            );
         }
     }
 
-    // DELETE /api/invoices/{id}
+
+    public function bulkInv(Request $request)
+    {
+        try {
+
+            $user = Auth::user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            $validated = $request->validate([
+                'start_month_year'    => 'required|date_format:Y-m',
+            ]);
+
+            /**
+             * Ambil semua member sesuai group user
+             */
+            $members = Member::with([
+                'connection.area',
+                'paymentDetail'
+            ])
+                ->where('group_id', $user->group_id)
+                ->get();
+
+            if ($members->isEmpty()) {
+
+                return ResponseFormatter::error(
+                    null,
+                    'Member tidak ditemukan',
+                    404
+                );
+            }
+
+            /**
+             * Siapkan payload bulk
+             */
+            $bulkPayload = [];
+
+            foreach ($members as $member) {
+
+                /**
+                 * skip jika tidak ada payment detail
+                 */
+                if (!$member->paymentDetail) {
+                    continue;
+                }
+
+                $amount =
+                    (float) $member->paymentDetail->amount *
+                    (int) $validated['subscription_period'];
+
+                $bulkPayload[] = [
+                    'member_id'           => $member->id,
+                    'amount'              => $amount,
+                    'start_month_year'    => $validated['start_month_year'],
+                    'subscription_period' => $validated['subscription_period'],
+                    'due_date'            => $validated['due_date'] ?? null,
+                ];
+            }
+
+            if (empty($bulkPayload)) {
+
+                return ResponseFormatter::error(
+                    null,
+                    'Tidak ada member valid untuk diproses',
+                    400
+                );
+            }
+
+            /**
+             * dispatch queue
+             */
+            BulkInvoiceJob::dispatch($bulkPayload);
+
+            ActivityLogController::logCreate([
+                'action' => 'bulk_create_invoice',
+                'status' => 'queued',
+                'total'  => count($bulkPayload),
+            ], 'invoices');
+
+            return ResponseFormatter::success(
+                [
+                    'total_member' => count($bulkPayload),
+                ],
+                'Bulk invoice sedang diproses',
+                202
+            );
+        } catch (\Exception $e) {
+
+            ActivityLogController::logCreateF([
+                'action' => 'bulk_create_invoice',
+                'error'  => $e->getMessage(),
+            ], 'invoices');
+
+            return ResponseFormatter::error(
+                null,
+                $e->getMessage(),
+                400
+            );
+        } catch (\Throwable $th) {
+
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
+            );
+        }
+    }
+
+
+    public function manualPayment(Request $request)
+    {
+        DB::beginTransaction();
+
+        try {
+
+            $user = $this->getAuthUser();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            $validated = $request->validate([
+                'invoice_id'     => 'required|exists:invoices,id',
+                'payment_method' => 'required|in:bank_transfer,cash',
+            ]);
+
+
+            $invoice = Invoice::with([
+                'member',
+                'connection.profile'
+            ])
+                ->where('id', $validated['invoice_id'])
+                ->where('group_id', $user->group_id)
+                ->firstOrFail();
+
+            if ($invoice->status === 'paid') {
+
+                return ResponseFormatter::error(
+                    null,
+                    'Invoice sudah dibayar',
+                    400
+                );
+            }
+
+            $invoice->update([
+                'status'         => 'paid',
+                'payment_method' => $validated['payment_method'],
+                'paid_at'        => now(),
+                'payer_id'       => $user->id,
+            ]);
+
+            DB::commit();
+            $member = $invoice->member;
+            try {
+                if (!empty($member->phone_number) && str_starts_with($member->phone_number, '62')) {
+                    $deviceId = $this->whatsapp->ensureDeviceByGroup($member->group_id);
+                    $message  = $this->whatsapp->buildMessage([
+                        'template'  => 'payment_paid',
+                        'variables' => [
+                            'full_name'       => $member->fullname,
+                            'no_invoice'      => $invoice->inv_number,
+                            'total'           => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                            'pppoe_user'      => $member?->connection?->username,
+                            'pppoe_profile'   => $member?->connection?->profile->name,
+                            'period'          => $invoice->subscription_period,
+                            'payment_gateway' => $invoice->payment_method === 'bank_transfer' ? 'Transfer Bank' : 'Cash',
+                            'footer'          => 'PT. Anugerah Media Data Nusantara',
+                        ],
+                    ]);
+
+                    $this->whatsapp->sendMessage($member->group_id, $deviceId, [
+                        'phone'   => $member->phone_number,
+                        'message' => $message,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                // Jangan gagalkan payment kalau WhatsApp error
+                Log::error('Failed to send WhatsApp payment_paid', [
+                    'invoice_id' => $invoice->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+            /**
+             * activity log
+             */
+            ActivityLogController::logCreate([
+                'invoice_id' => $invoice->id,
+                'member_id'  => $invoice->member_id,
+                'amount'     => $invoice->amount,
+                'method'     => $validated['payment_method'],
+                'action'     => 'manual_payment',
+                'status'     => 'success',
+            ], 'invoices');
+
+            return ResponseFormatter::success(
+                $invoice->fresh(),
+                'Pembayaran berhasil'
+            );
+        } catch (\Throwable $th) {
+
+            DB::rollBack();
+
+            ActivityLogController::logCreateF([
+                'invoice_id' => $request->input('invoice_id'),
+                'action'     => 'manual_payment',
+                'error'      => $th->getMessage(),
+            ], 'invoices');
+
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
+            );
+        }
+    }
+
     public function destroy($id)
     {
         try {
+            $user = Auth::user();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
             $invoice = Invoice::findOrFail($id);
             $invoice->delete();
 

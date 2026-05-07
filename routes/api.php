@@ -173,7 +173,10 @@ Route::middleware('auth:sanctum')->group(function () {
         // Prefic New Invoice
         Route::prefix('inv')->group(function () {
             Route::get('/', [InvoiceController::class, 'index']);
+            Route::get('/stats', [InvoiceController::class, 'stats']);
+            Route::post('/paid', [InvoiceController::class, 'manualPayment']);
             Route::post('/', [InvoiceController::class, 'store']);
+            Route::post('/bulk', [InvoiceController::class, 'bulkInv']);
             Route::delete('/{id}', [InvoiceController::class, 'destroy']);
         });
 
