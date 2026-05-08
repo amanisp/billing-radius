@@ -444,18 +444,76 @@ class InvoiceController extends Controller
             }
 
             $validated = $request->validate([
-                'start_month_year' => 'required|date_format:Y-m',
+                'start_month_year'    => 'required|date_format:Y-m',
             ]);
 
-            BulkInvoiceJob::dispatch([
-                'group_id' => $user->group_id,
-                'start_month_year' => $validated['start_month_year'],
-            ]);
+            $globalSetting = GlobalSettings::where('group_id', $user->group_id)->first();
+            /**
+             * Ambil semua member sesuai group user
+             */
+            $members = Member::with([
+                'connection.area',
+                'paymentDetail'
+            ])
+                ->where('group_id', $user->group_id)
+                ->get();
+
+            if ($members->isEmpty()) {
+                return ResponseFormatter::error(null, 'Member tidak ditemukan', 404);
+            }
+
+            $dispatchedCount = 0;
+            $delayInSeconds = 0; // Variabel untuk mengatur jeda
+
+            foreach ($members as $member) {
+                if (!$member->paymentDetail) {
+                    continue;
+                }
+
+                $amount = (float) $member->paymentDetail->amount;
+
+                $payload = [
+                    'member_id'           => $member->id,
+                    'amount'              => $amount,
+                    'start_month_year'    => $validated['start_month_year'],
+                    'subscription_period' => 1,
+                    'due_date'            => $globalSetting->due_date_pascabayar ?? 20,
+                ];
+
+                // ✅ DISPATCH SATU PER SATU DI DALAM LOOP
+                // Tambahkan delay agar ada jeda waktu pengerjaan
+                BulkInvoiceJob::dispatch($payload)->delay(now()->addSeconds($delayInSeconds));
+
+                $delayInSeconds += 2; // Tambah jeda 2 detik untuk member berikutnya
+                $dispatchedCount++;
+            }
+
+            if ($dispatchedCount === 0) {
+                return ResponseFormatter::error(null, 'Tidak ada member valid untuk diproses', 400);
+            }
+
+            ActivityLogController::logCreate([
+                'action' => 'bulk_create_invoice',
+                'status' => 'queued',
+                'total'  => $dispatchedCount,
+            ], 'invoices');
 
             return ResponseFormatter::success(
-                null,
+                ['total_member' => $dispatchedCount],
                 'Bulk invoice sedang diproses',
                 202
+            );
+        } catch (\Exception $e) {
+
+            ActivityLogController::logCreateF([
+                'action' => 'bulk_create_invoice',
+                'error'  => $e->getMessage(),
+            ], 'invoices');
+
+            return ResponseFormatter::error(
+                null,
+                $e->getMessage(),
+                400
             );
         } catch (\Throwable $th) {
 

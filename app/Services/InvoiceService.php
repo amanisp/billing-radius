@@ -8,7 +8,6 @@ use App\Models\GlobalSettings;
 use App\Helpers\InvoiceHelper;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class InvoiceService
 {
@@ -206,55 +205,5 @@ class InvoiceService
 
             return $createdInvoices;
         });
-    }
-
-    public function bulkCreateInvoices(array $data)
-    {
-        $globalSetting = GlobalSettings::where(
-            'group_id',
-            $data['group_id']
-        )->first();
-
-        $members = Member::with([
-            'paymentDetail',
-            'connection'
-        ])
-            ->where('group_id', $data['group_id'])
-            ->get();
-
-        foreach ($members as $member) {
-
-            if (!$member->paymentDetail) {
-                continue;
-            }
-
-            try {
-
-                $payload = [
-
-                    'member_id' => $member->id,
-
-                    'amount' => (float) $member
-                        ->paymentDetail
-                        ->amount,
-
-                    'start_month_year' =>
-                    $data['start_month_year'],
-
-                    'subscription_period' => 1,
-
-                    'due_date' =>
-                    $globalSetting->due_date_pascabayar ?? 20,
-                ];
-
-                $this->createInvoices($payload);
-            } catch (\Throwable $th) {
-
-                Log::error('Bulk invoice failed', [
-                    'member_id' => $member->id,
-                    'message' => $th->getMessage(),
-                ]);
-            }
-        }
     }
 }
