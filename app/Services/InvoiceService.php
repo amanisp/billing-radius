@@ -18,7 +18,7 @@ class InvoiceService
     {
         return DB::transaction(function () use ($data) {
 
-            $member = Member::with('paymentDetail')
+            $member = Member::with(['paymentDetail', 'connection'])
                 ->findOrFail($data['member_id']);
 
             $paymentDetail = $member->paymentDetail;
@@ -165,8 +165,10 @@ class InvoiceService
                     'subscription_period' => 1,
 
                     'inv_number'          => InvoiceHelper::generateInvoiceNumber(
-                        $member->group_id,
-                        'H'
+                        $member->connection?->area_id ?? $member->group_id,
+                        'H',
+                        Invoice::class,
+                        $startDate
                     ),
 
                     'amount'              => $data['amount'],

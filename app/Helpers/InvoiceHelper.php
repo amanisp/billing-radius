@@ -17,9 +17,10 @@ class InvoiceHelper
      * @param int $areaId ID area dari database
      * @param string $type Tipe invoice (H untuk Homepass, dll)
      * @param string $modelClass Optional: specify which model to use
+     * @param \Carbon\Carbon|string|null $periodStart Optional: invoice period used for year/month sequence
      * @return string
      */
-    public static function generateInvoiceNumber($areaId, $type, $modelClass = null)
+    public static function generateInvoiceNumber($areaId, $type, $modelClass = null, $periodStart = null)
     {
         if (!$modelClass) {
             $modelClass = Invoice::class;
@@ -27,15 +28,20 @@ class InvoiceHelper
 
         $segmentasi = $type;
         $kodeArea = $areaId;
-        $year = now()->format('y');
-        $month = now()->format('m');
+        $period = $periodStart instanceof Carbon
+            ? $periodStart->copy()
+            : ($periodStart ? Carbon::parse($periodStart) : now());
 
-        return DB::transaction(function () use ($modelClass, $type, $areaId, $segmentasi, $kodeArea, $year, $month) {
+        $year = $period->format('y');
+        $month = $period->format('m');
+
+        return DB::transaction(function () use ($modelClass, $type, $areaId, $segmentasi, $kodeArea, $year, $month, $period) {
+            Area::whereKey($areaId)->lockForUpdate()->first();
 
             // Use lockForUpdate untuk row-level locking
             $latestInvoice = $modelClass::where('invoice_type', $type)
-                ->whereYear('start_date', now()->year)
-                ->whereMonth('start_date', now()->month)
+                ->whereYear('start_date', $period->year)
+                ->whereMonth('start_date', $period->month)
                 ->whereHas('connection', function ($q) use ($areaId) {
                     $q->where('area_id', $areaId);
                 })
