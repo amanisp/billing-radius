@@ -17,6 +17,7 @@ use App\Models\Member;
 use App\Models\Nas;
 use App\Models\PaymentDetail;
 use App\Services\FonnteService;
+use App\Services\WhatsappCoreService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -25,11 +26,11 @@ use Illuminate\Validation\Rule;
 
 class ConnectionController extends Controller
 {
-    protected $fonnte;
+    protected $whatsapp;
 
-    public function __construct(FonnteService $fonnte)
+    public function __construct(WhatsappCoreService $whatsapp)
     {
-        $this->fonnte = $fonnte;
+        $this->whatsapp = $whatsapp;
     }
 
     private function disconnectMultiNas($username, $nasList)
@@ -607,17 +608,34 @@ class ConnectionController extends Controller
 
 
                 if (!empty($connection->member->phone_number) && str_starts_with($connection->member->phone_number, '62')) {
-                    $this->fonnte->sendText(
-                        $user->group_id,
-                        $connection->member->phone_number,
-                        [
-                            'template' => 'account_suspend',
+
+                    try {
+                        $deviceId = $this->whatsapp->ensureDeviceByGroup($user->group_id);
+
+                        $message = $this->whatsapp->buildMessage([
+                            'template'  => 'account_suspend',
+                            'group_id'  => $user->group_id,
                             'variables' => [
                                 'full_name' => $connection->member->fullname,
-                                'footer' => "Hormat Kami,\nPT. Anugerah Media Data Nusantara"
+                                'pppoe_user' => $connection->username,
+                                'pppoe_profile' => $connection->profile?->name,
+                            ],
+                        ]);
+
+                        $this->whatsapp->sendMessage(
+                            $user->group_id,
+                            $deviceId,
+                            [
+                                'phone'   => $connection->member->phone_number,
+                                'message' => $message,
                             ]
-                        ]
-                    );
+                        );
+                    } catch (\Exception $e) {
+                        Log::error('Failed send WhatsApp isolir ON', [
+                            'connection_id' => $connection->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
             }
             // ======================
@@ -644,18 +662,34 @@ class ConnectionController extends Controller
 
 
                 if (!empty($connection->member->phone_number) && str_starts_with($connection->member->phone_number, '62')) {
-                    $this->fonnte->sendText(
-                        $user->group_id,
-                        $connection->member->phone_number,
-                        [
-                            'template' => 'account_active',
+
+                    try {
+                        $deviceId = $this->whatsapp->ensureDeviceByGroup($user->group_id);
+
+                        $message = $this->whatsapp->buildMessage([
+                            'template'  => 'account_active',
+                            'group_id'  => $user->group_id,
                             'variables' => [
-                                'full_name' => $connection->member->fullname,
+                                'full_name'     => $connection->member->fullname,
                                 'pppoe_user'    => $connection->username,
-                                'pppoe_profile' => $connection->profile->name, // sesuaikan nama profil
+                                'pppoe_profile' => $connection->connection?->profile?->name,
+                            ],
+                        ]);
+
+                        $this->whatsapp->sendMessage(
+                            $user->group_id,
+                            $deviceId,
+                            [
+                                'phone'   => $connection->member->phone_number,
+                                'message' => $message,
                             ]
-                        ]
-                    );
+                        );
+                    } catch (\Exception $e) {
+                        Log::error('Failed send WhatsApp isolir OFF', [
+                            'connection_id' => $connection->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
             }
 

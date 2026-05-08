@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\GlobalSettings;
 use App\Models\Groups;
+use App\Models\WhatsappTemplates;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -172,24 +174,75 @@ class WhatsappCoreService
 
     public function buildMessage(array $data): string
     {
+        // jika message manual dikirim langsung
         if (!empty($data['message'])) {
             return $data['message'];
         }
 
         $templateKey = $data['template'] ?? null;
         $variables   = $data['variables'] ?? [];
+        $groupId     = $data['group_id'] ?? null;
 
-        if (!$templateKey) return '';
-
-        $template = config("whatsapp_templates.$templateKey");
-
-        if (!$template) return '';
-
-        foreach ($variables as $key => $value) {
-            $template = str_replace("[$key]", $value, $template);
+        if (!$templateKey) {
+            return '';
         }
 
-        return $template;
+        // ambil template dari database
+        $template = WhatsappTemplates::where(
+            'template_type',
+            $templateKey
+        )
+            ->where(function ($query) use ($groupId) {
+
+                // prioritas template group
+                if ($groupId) {
+                    $query->where('group_id', $groupId)
+                        ->orWhereNull('group_id');
+                } else {
+                    $query->whereNull('group_id');
+                }
+            })
+            ->orderByRaw('group_id IS NULL')
+            ->first();
+
+        if (!$template) {
+            return '';
+        }
+
+        $message = $template->content;
+
+        /**
+         * ambil footer dari global settings
+         */
+        if (
+            str_contains($message, '[footer]')
+        ) {
+
+            $setting = GlobalSettings::where(
+                'group_id',
+                $groupId
+            )->first();
+
+            $footer = $setting?->footer ?? '';
+
+            $message = str_replace(
+                '[footer]',
+                $footer,
+                $message
+            );
+        }
+
+        // replace variable lain
+        foreach ($variables as $key => $value) {
+
+            $message = str_replace(
+                "[$key]",
+                (string) $value,
+                $message
+            );
+        }
+
+        return $message;
     }
 
     public function getDeviceStatusWithAvatar(string $deviceId, ?string $phone = null)

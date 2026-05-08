@@ -6,11 +6,13 @@ use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ActivityLogController;
 use App\Jobs\BulkInvoiceJob;
+use App\Models\GlobalSettings;
 use App\Models\Invoice;
 use App\Models\Member;
 use App\Models\User;
 use App\Services\InvoiceService;
 use App\Services\WhatsappCoreService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -189,9 +191,12 @@ class InvoiceController extends Controller
             }
 
             $query = Invoice::with(['member', 'connection.area'])
-                ->where('group_id', $user->group_id)->where('status', 'unpaid');
+                ->where('group_id', $user->group_id)
+                ->where('status', 'unpaid');
 
-            // 🔍 Search (by invoice number or member name)
+            /**
+             * 🔍 Search
+             */
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->where('inv_number', 'like', "%{$search}%")
@@ -201,17 +206,126 @@ class InvoiceController extends Controller
                 });
             }
 
-            // 🔄 Sort
+            /**
+             * 📅 Filter bulan & tahun
+             */
+            if ($month = $request->get('month')) {
+                $query->whereMonth('start_date', $month);
+            }
+
+            if ($year = $request->get('year')) {
+                $query->whereYear('start_date', $year);
+            }
+
+            /**
+             * 📍 Filter area
+             */
+            if ($areaId = $request->get('area_id')) {
+                $query->whereHas('connection', function ($q) use ($areaId) {
+                    $q->where('area_id', $areaId);
+                });
+            }
+
+            /**
+             * 🔄 Sort
+             */
             $sortField = $request->get('sort_field', 'created_at');
             $sortDirection = $request->get('sort_direction', 'desc');
             $query->orderBy($sortField, $sortDirection);
 
-            // 📄 Pagination
+            /**
+             * 📄 Pagination
+             */
             $perPage = $request->get('per_page', 10);
             $invoices = $query->paginate($perPage);
 
-            return ResponseFormatter::success($invoices, 'Data invoice berhasil dimuat');
+            return ResponseFormatter::success(
+                $invoices,
+                'Data invoice berhasil dimuat'
+            );
         } catch (\Throwable $th) {
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
+
+    public function invoicePaid(Request $request)
+    {
+        try {
+            $user = $this->getAuthUser();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            // ========================
+            // Base query
+            // ========================
+            $query = Invoice::with(['payer', 'member'])
+                ->where('group_id', $user->group_id)->where('status', 'paid');
+
+            // ========================
+            // Target month & year filter
+            // ========================
+            if ($request->filled('month') && $request->filled('year')) {
+                $month = $request->month;
+                $year  = $request->year;
+
+                $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
+                $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
+
+                $query->whereDate('start_date', '<=', $endOfMonth)
+                    ->whereDate('due_date', '>=', $startOfMonth);
+            }
+
+            // ========================
+            // Search filter (nama / username / internet_number)
+            // ========================
+            if ($request->filled('search')) {
+                $search = $request->search;
+
+                $query->whereHas('member', function ($q) use ($search) {
+                    $q->where('fullname', 'LIKE', "%{$search}%");
+                });
+            }
+
+            // ========================
+            // Payer filter
+            // ========================
+            if ($request->filled('payer_id')) {
+                $query->where('payer_id', $request->payer_id);
+            } elseif ($request->filled('payer_name')) {
+                $query->whereHas('payer', fn($q) => $q->where('fullname', 'like', "%{$request->payer_name}%"));
+            }
+
+
+            // ========================
+            // Sorting & pagination
+            // ========================
+            $query->orderBy(
+                $request->get('sort_field', 'created_at'),
+                $request->get('sort_direction', 'desc')
+            );
+
+            $invoices = $query->paginate($request->get('per_page', 5));
+
+            // ========================
+            // Return response
+            // ========================
+            return ResponseFormatter::success([
+                'items' => $invoices->items(),
+                'meta' => [
+                    'current_page' => $invoices->currentPage(),
+                    'per_page'     => $invoices->perPage(),
+                    'total'        => $invoices->total(),
+                    'last_page'    => $invoices->lastPage(),
+                ]
+            ], 'Detail invoice berhasil dimuat');
+        } catch (\Throwable $th) {
+            ActivityLogController::logCreateF([
+                'member_id' => $request->get('member_id') ?? null,
+                'action' => 'view_member_invoices',
+                'error' => $th->getMessage()
+            ], 'invoices');
+
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
@@ -297,6 +411,7 @@ class InvoiceController extends Controller
                 'start_month_year'    => 'required|date_format:Y-m',
             ]);
 
+            $globalSetting = GlobalSettings::where('group_id', $user->group_id)->first();
             /**
              * Ambil semua member sesuai group user
              */
@@ -308,65 +423,47 @@ class InvoiceController extends Controller
                 ->get();
 
             if ($members->isEmpty()) {
-
-                return ResponseFormatter::error(
-                    null,
-                    'Member tidak ditemukan',
-                    404
-                );
+                return ResponseFormatter::error(null, 'Member tidak ditemukan', 404);
             }
 
-            /**
-             * Siapkan payload bulk
-             */
-            $bulkPayload = [];
+            $dispatchedCount = 0;
+            $delayInSeconds = 0; // Variabel untuk mengatur jeda
 
             foreach ($members as $member) {
-
-                /**
-                 * skip jika tidak ada payment detail
-                 */
                 if (!$member->paymentDetail) {
                     continue;
                 }
 
-                $amount =
-                    (float) $member->paymentDetail->amount *
-                    (int) $validated['subscription_period'];
+                $amount = (float) $member->paymentDetail->amount;
 
-                $bulkPayload[] = [
+                $payload = [
                     'member_id'           => $member->id,
                     'amount'              => $amount,
                     'start_month_year'    => $validated['start_month_year'],
-                    'subscription_period' => $validated['subscription_period'],
-                    'due_date'            => $validated['due_date'] ?? null,
+                    'subscription_period' => 1,
+                    'due_date'            => $globalSetting->due_date_pascabayar ?? 20,
                 ];
+
+                // ✅ DISPATCH SATU PER SATU DI DALAM LOOP
+                // Tambahkan delay agar ada jeda waktu pengerjaan
+                BulkInvoiceJob::dispatch($payload)->delay(now()->addSeconds($delayInSeconds));
+
+                $delayInSeconds += 2; // Tambah jeda 2 detik untuk member berikutnya
+                $dispatchedCount++;
             }
 
-            if (empty($bulkPayload)) {
-
-                return ResponseFormatter::error(
-                    null,
-                    'Tidak ada member valid untuk diproses',
-                    400
-                );
+            if ($dispatchedCount === 0) {
+                return ResponseFormatter::error(null, 'Tidak ada member valid untuk diproses', 400);
             }
-
-            /**
-             * dispatch queue
-             */
-            BulkInvoiceJob::dispatch($bulkPayload);
 
             ActivityLogController::logCreate([
                 'action' => 'bulk_create_invoice',
                 'status' => 'queued',
-                'total'  => count($bulkPayload),
+                'total'  => $dispatchedCount,
             ], 'invoices');
 
             return ResponseFormatter::success(
-                [
-                    'total_member' => count($bulkPayload),
-                ],
+                ['total_member' => $dispatchedCount],
                 'Bulk invoice sedang diproses',
                 202
             );
@@ -444,6 +541,7 @@ class InvoiceController extends Controller
                     $deviceId = $this->whatsapp->ensureDeviceByGroup($member->group_id);
                     $message  = $this->whatsapp->buildMessage([
                         'template'  => 'payment_paid',
+                        'group_id'  => $member->group_id,
                         'variables' => [
                             'full_name'       => $member->fullname,
                             'no_invoice'      => $invoice->inv_number,
@@ -491,6 +589,127 @@ class InvoiceController extends Controller
             ActivityLogController::logCreateF([
                 'invoice_id' => $request->input('invoice_id'),
                 'action'     => 'manual_payment',
+                'error'      => $th->getMessage(),
+            ], 'invoices');
+
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
+            );
+        }
+    }
+
+    public function paymentCancel(Request $request)
+    {
+        DB::beginTransaction();
+
+        try {
+
+            $user = $this->getAuthUser();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            $validated = $request->validate([
+                'invoice_id' => 'required|exists:invoices,id',
+            ]);
+
+            $invoice = Invoice::with([
+                'member',
+                'connection.profile'
+            ])
+                ->where('id', $validated['invoice_id'])
+                ->where('group_id', $user->group_id)
+                ->firstOrFail();
+
+            if ($invoice->status !== 'paid') {
+
+                return ResponseFormatter::error(
+                    null,
+                    'Invoice belum dibayar',
+                    400
+                );
+            }
+
+            $invoice->update([
+                'status'         => 'unpaid',
+                'payment_method' => null,
+                'paid_at'        => null,
+                'payer_id'       => null,
+            ]);
+
+            DB::commit();
+
+            $member = $invoice->member;
+
+            try {
+
+                if (
+                    !empty($member->phone_number) &&
+                    str_starts_with($member->phone_number, '62')
+                ) {
+
+                    $deviceId = $this->whatsapp->ensureDeviceByGroup(
+                        $member->group_id
+                    );
+
+                    $message = $this->whatsapp->buildMessage([
+                        'template'  => 'payment_cancel',
+                        'group_id'  => $member->group_id,
+                        'variables' => [
+                            'full_name'   => $member->fullname,
+                            'no_invoice'  => $invoice->inv_number,
+                            'total'       => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
+                            'invoice_date' => optional($invoice->created_at)->format('d-m-Y'),
+                            'due_date'    => optional($invoice->due_date)->format('d-m-Y'),
+                            'period'      => $invoice->subscription_period,
+                            'footer'      => 'PT. Anugerah Media Data Nusantara',
+                        ],
+                    ]);
+
+                    $this->whatsapp->sendMessage(
+                        $member->group_id,
+                        $deviceId,
+                        [
+                            'phone'   => $member->phone_number,
+                            'message' => $message,
+                        ]
+                    );
+                }
+            } catch (\Exception $e) {
+
+                Log::error('Failed to send WhatsApp payment_cancel', [
+                    'invoice_id' => $invoice->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+
+            /**
+             * activity log
+             */
+            ActivityLogController::logCreate([
+                'invoice_id' => $invoice->id,
+                'member_id'  => $invoice->member_id,
+                'amount'     => $invoice->amount,
+                'action'     => 'payment_cancel',
+                'status'     => 'success',
+            ], 'invoices');
+
+            return ResponseFormatter::success(
+                $invoice->fresh(),
+                'Pembayaran berhasil dibatalkan'
+            );
+        } catch (\Throwable $th) {
+
+            DB::rollBack();
+
+            ActivityLogController::logCreateF([
+                'invoice_id' => $request->input('invoice_id'),
+                'action'     => 'payment_cancel',
                 'error'      => $th->getMessage(),
             ], 'invoices');
 

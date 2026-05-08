@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SendWhatsappBroadcastJob;
 use App\Models\Connection;
 use App\Models\Groups;
+use App\Models\Invoice;
 use App\Models\Member;
 use App\Models\User;
 use App\Models\WhatsappMessageLog;
@@ -308,6 +309,7 @@ class WhatsappController extends Controller
     public function broadcastInvoice(Request $request)
     {
         $user = $this->getAuthUser();
+
         if (!$user) {
             return response()->json(['message' => 'Unauthorized'], 401);
         }
@@ -318,77 +320,90 @@ class WhatsappController extends Controller
         $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
         $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
 
-        // Ambil member yang belum bayar bulan ini
-        $membersQuery = Member::with(['paymentDetail', 'connection.profile'])
+        /**
+         * 🔥 AMBIL INVOICE UNPAID SAJA
+         */
+        $invoices = Invoice::with([
+            'member.paymentDetail',
+            'connection.profile'
+        ])
             ->where('group_id', $user->group_id)
-            ->whereDoesntHave('invoices', function ($q) use ($startOfMonth, $endOfMonth) {
-                $q->where('status', 'paid')
-                    ->whereDate('start_date', '<=', $endOfMonth)
-                    ->whereDate('due_date', '>=', $startOfMonth);
-            });
+            ->where('status', 'unpaid')
+            ->whereDate('created_at', '>=', $startOfMonth)
+            ->whereDate('created_at', '<=', $endOfMonth)
+            ->get();
 
-
-        $members = $membersQuery->get();
-
-        if ($members->isEmpty()) {
+        if ($invoices->isEmpty()) {
             return response()->json([
                 'success' => false,
-                'message' => 'No members found for selected area/month'
+                'message' => 'Tidak ada invoice unpaid pada periode ini'
             ], 404);
         }
 
+        /**
+         * 🔄 Chunking broadcast
+         */
+        $invoices->chunk(10)->each(function ($chunk) use ($user, $year, $month) {
 
-        // Chunk setiap 5 member
-        $members->chunk(10)->each(function ($chunk, $batchIndex) use ($user, $year, $month) {
             $counter = 0;
-            foreach ($chunk as $index => $member) {
+
+            foreach ($chunk as $invoice) {
+
+                $member = $invoice->member;
+
                 $target = $this->formatWhatsappNumber($member->phone_number);
 
                 if (!$target) continue;
+
                 $delay = ($counter * 2) + rand(1, 3);
+
+                $amount   = $invoice->amount ?? 0;
+                $discount = $invoice->discount ?? 0;
+                $total    = $amount - $discount;
 
                 $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
                 $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
-                $amount = $member->paymentDetail->amount ?? 0;
-                $discount = $member->paymentDetail->discount ?? 0;
 
-                $total = $amount - $discount;
-                // Variabel untuk template
+                /**
+                 * 📦 VARIABLES
+                 */
                 $variables = [
                     'full_name'     => $member->fullname,
-                    'uid'           => $member->connection->internet_number ?? '-',          // ID Pelanggan
-                    'amount'        => number_format($amount ?? 0, 0, ',', '.'),
-                    'discount'      => number_format($discount ?? 0, 0, ',', '.'),
-                    'total'         => number_format($total ?? 0, 0, ',', '.'),
+                    'uid'           => $member->connection->internet_number ?? '-',
+                    'amount'        => number_format($amount, 0, ',', '.'),
+                    'discount'      => number_format($discount, 0, ',', '.'),
+                    'total'         => number_format($total, 0, ',', '.'),
                     'pppoe_user'    => $member->connection->username ?? '-',
                     'pppoe_profile' => $member->connection->profile->name ?? '-',
-                    'period'        => $startOfMonth->translatedFormat('F Y'),  // contoh: "Februari 2026"
-                    'due_date'      => $endOfMonth->format('d/m/Y'),           // contoh: "28/02/2026"
+                    'period'        => $startOfMonth->translatedFormat('F Y'),
+                    'due_date'      => $endOfMonth->format('d/m/Y'),
                     'payment_url'   => 'https://bayar.amanisp.net.id',
-                    'footer'        => "Pembayaran diatas sudah termasuk PPn 11%\nPembayaran Manual silahkan hubungi admin kami."
                 ];
 
-                Log::info('DISPATCH JOB', [
-                    'target' => $target,
-                    'delay'  => $delay
+                Log::info('DISPATCH INVOICE BROADCAST', [
+                    'invoice_id' => $invoice->id,
+                    'target'     => $target,
+                    'delay'      => $delay
                 ]);
 
-                // Dispatch job dengan delay batch
                 SendWhatsAppBroadcastJob::dispatch(
                     $user->group_id,
                     $target,
                     [
                         'template'  => 'invoice_terbit',
+                        'group_id'  => $user->group_id,
                         'variables' => $variables
                     ],
-                    [] // options: bisa isi delay per pesan
+                    []
                 )->delay(now()->addSeconds($delay));
+
+                $counter++;
             }
         });
 
         return response()->json([
             'success' => true,
-            'message' => 'Invoice broadcast queued successfully, messages will be sent shortly.'
+            'message' => 'Invoice unpaid broadcast queued successfully'
         ]);
     }
 }

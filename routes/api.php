@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\PaymentSettingsController;
 use App\Http\Controllers\Api\PayoutController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SessionController;
+use App\Http\Controllers\Api\TemplatesController;
 use App\Http\Controllers\Api\VpnController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\WhatsappController;
@@ -174,7 +175,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('inv')->group(function () {
             Route::get('/', [InvoiceController::class, 'index']);
             Route::get('/stats', [InvoiceController::class, 'stats']);
+            Route::get('/paid', [InvoiceController::class, 'invoicePaid']);
             Route::post('/paid', [InvoiceController::class, 'manualPayment']);
+            Route::post('/cancel', [InvoiceController::class, 'paymentCancel']);
             Route::post('/', [InvoiceController::class, 'store']);
             Route::post('/bulk', [InvoiceController::class, 'bulkInv']);
             Route::delete('/{id}', [InvoiceController::class, 'destroy']);
@@ -185,6 +188,15 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/', [PaymentSettingsController::class, 'index']);
             Route::put('/', [PaymentSettingsController::class, 'update']);
             // Route::delete('/{id}', [InvoiceController::class, 'destroy']);
+        });
+
+
+        // Template Whatsapp
+        Route::prefix('templates')->group(function () {
+            Route::get('/', [TemplatesController::class, 'index']);
+            Route::get('/{type}', [TemplatesController::class, 'show']);
+            Route::put('/{type}', [TemplatesController::class, 'update']);
+            Route::post('/{type}/reset', [TemplatesController::class, 'reset']);
         });
 
         // Logs

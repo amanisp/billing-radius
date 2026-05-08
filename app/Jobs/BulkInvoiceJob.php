@@ -14,14 +14,14 @@ class BulkInvoiceJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public array $bulkPayload;
+    public array $payload; // Ubah penamaan agar lebih jelas
 
     /**
      * Create a new job instance.
      */
-    public function __construct(array $bulkPayload)
+    public function __construct(array $payload)
     {
-        $this->bulkPayload = $bulkPayload;
+        $this->payload = $payload;
     }
 
     /**
@@ -29,18 +29,14 @@ class BulkInvoiceJob implements ShouldQueue
      */
     public function handle(InvoiceService $invoiceService): void
     {
-        foreach ($this->bulkPayload as $payload) {
-
-            try {
-
-                $invoiceService->createInvoices($payload);
-            } catch (\Throwable $th) {
-
-                Log::error('Bulk invoice failed', [
-                    'member_id' => $payload['member_id'],
-                    'message'   => $th->getMessage(),
-                ]);
-            }
+        // ✅ HAPUS FOREACH. Langsung proses 1 payload.
+        try {
+            $invoiceService->createInvoices($this->payload);
+        } catch (\Throwable $th) {
+            Log::error('Bulk invoice failed', [
+                'member_id' => $this->payload['member_id'],
+                'message'   => $th->getMessage(),
+            ]);
         }
     }
 }
