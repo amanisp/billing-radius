@@ -190,7 +190,7 @@ class InvoiceController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $query = Invoice::with(['member', 'connection.area'])
+            $query = Invoice::with(['member.paymentDetail', 'connection.area', 'connection.profile'])
                 ->where('group_id', $user->group_id)
                 ->where('status', 'unpaid');
 
