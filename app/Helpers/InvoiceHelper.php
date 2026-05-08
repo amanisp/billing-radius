@@ -22,7 +22,7 @@ class InvoiceHelper
     public static function generateInvoiceNumber($areaId, $type, $modelClass = null)
     {
         if (!$modelClass) {
-            $modelClass = $type === 'H' ? InvoiceHomepass::class : Invoice::class;
+            $modelClass = Invoice::class;
         }
 
         $segmentasi = $type;
