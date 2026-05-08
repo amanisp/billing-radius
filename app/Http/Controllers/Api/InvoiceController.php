@@ -248,6 +248,42 @@ class InvoiceController extends Controller
         }
     }
 
+    public function memberInvoices($memberId)
+    {
+        try {
+            $user = Auth::user();
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            $invoices = Invoice::with([
+                'member.paymentDetail',
+                'connection.area',
+                'connection.profile'
+            ])
+                ->where('group_id', $user->group_id)
+                ->where('member_id', $memberId)
+                ->where('status', 'unpaid')
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            return ResponseFormatter::success(
+                $invoices,
+                'Data invoice member berhasil dimuat'
+            );
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
+            );
+        }
+    }
+
+
     public function invoicePaid(Request $request)
     {
         try {
