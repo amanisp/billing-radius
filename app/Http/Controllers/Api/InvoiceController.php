@@ -477,7 +477,6 @@ class InvoiceController extends Controller
                     'amount'              => $amount,
                     'start_month_year'    => $validated['start_month_year'],
                     'subscription_period' => 1,
-                    'due_date'            => $globalSetting->due_date_pascabayar ?? 20,
                 ];
 
                 // ✅ DISPATCH SATU PER SATU DI DALAM LOOP

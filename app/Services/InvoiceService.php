@@ -95,7 +95,9 @@ class InvoiceService
             for ($i = 0; $i < $subscriptionPeriod; $i++) {
 
                 $startDate = $currentStartDate->copy();
-                $areaId = $member->connection?->area_id ?? $member->area_id;
+                $areaId = $member->connection?->area_id
+                    ?? $member->area_id
+                    ?? 0;
 
                 if (!$areaId) {
                     throw new \Exception(
@@ -172,6 +174,7 @@ class InvoiceService
                     'subscription_period' => 1,
 
                     'inv_number'          => InvoiceHelper::generateInvoiceNumber(
+                        $member->group_id,
                         $areaId,
                         'H',
                         Invoice::class,
