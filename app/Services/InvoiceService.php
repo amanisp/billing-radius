@@ -95,6 +95,13 @@ class InvoiceService
             for ($i = 0; $i < $subscriptionPeriod; $i++) {
 
                 $startDate = $currentStartDate->copy();
+                $areaId = $member->connection?->area_id ?? $member->area_id;
+
+                if (!$areaId) {
+                    throw new \Exception(
+                        "Member {$member->id} tidak memiliki area koneksi."
+                    );
+                }
 
                 /**
                  * =========================================
@@ -165,7 +172,7 @@ class InvoiceService
                     'subscription_period' => 1,
 
                     'inv_number'          => InvoiceHelper::generateInvoiceNumber(
-                        $member->connection?->area_id ?? $member->group_id,
+                        $areaId,
                         'H',
                         Invoice::class,
                         $startDate

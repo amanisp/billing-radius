@@ -26,6 +26,10 @@ class InvoiceHelper
             $modelClass = Invoice::class;
         }
 
+        if (!$areaId) {
+            throw new \Exception('Area invoice tidak valid.');
+        }
+
         $segmentasi = $type;
         $kodeArea = $areaId;
         $period = $periodStart instanceof Carbon
@@ -36,15 +40,16 @@ class InvoiceHelper
         $month = $period->format('m');
 
         return DB::transaction(function () use ($modelClass, $type, $areaId, $segmentasi, $kodeArea, $year, $month, $period) {
-            Area::whereKey($areaId)->lockForUpdate()->first();
+            $area = Area::whereKey($areaId)->lockForUpdate()->first();
+
+            if (!$area) {
+                throw new \Exception("Area invoice tidak ditemukan: {$areaId}");
+            }
 
             // Use lockForUpdate untuk row-level locking
             $latestInvoice = $modelClass::where('invoice_type', $type)
                 ->whereYear('start_date', $period->year)
                 ->whereMonth('start_date', $period->month)
-                ->whereHas('connection', function ($q) use ($areaId) {
-                    $q->where('area_id', $areaId);
-                })
                 ->where('inv_number', 'like', "INV{$segmentasi}{$kodeArea}-{$year}{$month}%")
                 ->lockForUpdate()
                 ->orderByDesc('inv_number')
