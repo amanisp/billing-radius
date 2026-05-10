@@ -11,33 +11,37 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use App\Services\WhatsappRateLimiter;
+use Throwable;
 
 class SendWhatsappBroadcastJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 60;  // 1 menit per pesan
+    public $timeout = 60; // 1 menit
+    public $tries = 3;    // Maksimal percobaan ulang jika gagal (opsional)
 
     public function __construct(
         public int $groupId,
         public string $target,
-        public array $data,       // ['message'=>'...', 'template'=>'...', 'variables'=>[...] ]
-        public array $options = [] // ['delay'=>10, 'footer'=>'...']
+        public array $data,
+        public ?int $logId = null // Ambil ID log spesifik dari controller
     ) {}
 
     public function handle(WhatsappCoreService $wa, WhatsappRateLimiter $rateLimiter)
     {
         try {
+            // 🔒 GLOBAL RATE LIMITER
+            // Jika limit tercapai, kembalikan ke antrean dengan delay 10 detik
+            // (Asumsi $rateLimiter->hit() me-return boolean)
+            if (!$rateLimiter->hit()) {
+                $this->release(10);
+                return;
+            }
 
-
-            // 🔒 GLOBAL RATE LIMIT
-            $rateLimiter->hit();
-
-            // ⏱️ Delay natural
-            sleep(rand(5, 12));
+            // HAPUS sleep()! 
+            // Delay sudah diatur via ->delay() saat dispatch di Controller
 
             $deviceId = $wa->ensureDeviceByGroup($this->groupId);
-
 
             $payload = [
                 'phone'   => $this->target,
@@ -50,35 +54,42 @@ class SendWhatsappBroadcastJob implements ShouldQueue
                 $payload
             );
 
-            // Update log queued jika ada
-            $log = WhatsappMessageLog::where('recipient', $this->target)
-                ->where('status', 'queued')
-                ->latest()
-                ->first();
-
-            if ($log) {
-                $log->update([
+            // Update log secara presisi menggunakan ID
+            if ($this->logId) {
+                WhatsappMessageLog::where('id', $this->logId)->update([
                     'status'        => $result['success'] ? 'sent' : 'failed',
                     'sent_at'       => now(),
-                    'message'       => $this->data['message'] ?? ($this->data['template'] ?? null),
                     'response_data' => json_encode($result),
                 ]);
             }
 
-            // Log error jika gagal
+            // Jika gagal dari sisi API WA (bukan exception)
             if (!$result['success']) {
-                Log::error('Broadcast failed', [
+                Log::error('WhatsApp API response error', [
                     'target' => $this->target,
                     'error'  => $result['error'] ?? 'Unknown error',
-                    'data'   => $this->data,
+                ]);
+
+                // Jika ingin job ini diulang oleh Laravel saat gagal kirim, uncomment ini:
+                // throw new \Exception("Gagal mengirim WA: " . json_encode($result));
+            }
+        } catch (Throwable $e) {
+            // Update status log menjadi failed karena system error
+            if ($this->logId) {
+                WhatsappMessageLog::where('id', $this->logId)->update([
+                    'status'        => 'failed',
+                    'response_data' => json_encode(['error' => $e->getMessage()]),
                 ]);
             }
-        } catch (\Throwable $e) {
+
             Log::error('Broadcast job exception', [
-                'target' => $this->target,
+                'target'    => $this->target,
                 'exception' => $e->getMessage(),
-                'data' => $this->data,
             ]);
+
+            // LEMPAR KEMBALI EXCEPTION-NYA
+            // Agar Laravel tahu job ini GAGAL dan bisa masuk ke tabel failed_jobs
+            throw $e;
         }
     }
 }
