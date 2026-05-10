@@ -245,7 +245,7 @@ class WhatsappController extends Controller
             'message' => 'required|string'
         ]);
 
-        // 1. Bangun Query
+        // Ambil koneksi sesuai area
         $query = Connection::with('member')
             ->where('group_id', $user->group_id)
             ->whereHas('member', fn($q) => $q->whereNotNull('phone_number'));
@@ -254,21 +254,22 @@ class WhatsappController extends Controller
             $query->where('area_id', $validated['area']);
         }
 
-        // 2. Cek data dengan exists() (Jauh lebih hemat RAM daripada ->get() lalu isEmpty())
-        if (!$query->exists()) {
+        $connections = $query->get();
+
+        if ($connections->isEmpty()) {
             return response()->json([
                 'success' => false,
                 'message' => 'No members found for selected area'
             ], 404);
         }
 
-        // 3. Deklarasikan counter di LUAR closure
-        $counter = 0;
+        // Chunk setiap 5 koneksi
+        $connections->chunk(5)->each(function ($chunk, $batchIndex) use ($user, $validated) {
 
-        // 4. Gunakan DB Chunking agar tidak meledakkan memori server jika data ada ribuan
-        $query->chunk(50, function ($connections) use ($user, $validated, &$counter) {
+            $counter = 0;
 
-            foreach ($connections as $connection) {
+            foreach ($chunk as $connection) {
+
                 $member = $connection->member;
 
                 if (!$member || !$member->phone_number) continue;
@@ -276,43 +277,32 @@ class WhatsappController extends Controller
                 $target = $this->formatWhatsappNumber($member->phone_number);
                 if (!$target) continue;
 
-                // 5. Perhitungan delay yang aman untuk Unofficial API (5 detik + random)
-                $delay = ($counter * 5) + rand(1, 3);
+                $delay = ($counter * 2) + rand(1, 3);
 
+                // ✅ message per user
                 $message = "Yth. Pelanggan {$member->fullname}\n"
                     . "{$validated['subject']}\n\n"
                     . "{$validated['message']}";
 
-                // 6. Buat row log di Database terlebih dahulu sebelum Job jalan
-                // (Sesuaikan field dengan struktur tabel WhatsappMessageLog milikmu)
-                $log = \App\Models\WhatsappMessageLog::create([
-                    'recipient' => $target,
-                    'status'    => 'queued',
-                    'message'   => $message,
-                    // 'group_id'  => $user->group_id, // Uncomment jika ada relasi group
-                ]);
-
                 Log::info('DISPATCH AREA JOB', [
-                    'target'    => $target,
-                    'delay_sec' => $delay,
-                    'log_id'    => $log->id
+                    'target' => $target,
+                    'delay'  => $delay
                 ]);
 
-                // 7. Dispatch Job dengan menyisipkan ID Log
                 SendWhatsAppBroadcastJob::dispatch(
                     $user->group_id,
                     $target,
                     ['message' => $message],
-                    $log->id // Lempar ID log ke parameter Constructor Job
+                    []
                 )->delay(now()->addSeconds($delay));
 
-                $counter++; // Increment counter untuk antrean berikutnya
+                $counter++; // ✅ penting!
             }
         });
 
         return response()->json([
             'success' => true,
-            'message' => "Broadcast queued successfully. Total: {$counter} messages will be sent shortly."
+            'message' => 'Broadcast queued successfully, messages will be sent shortly.'
         ]);
     }
 
@@ -409,7 +399,7 @@ class WhatsappController extends Controller
                             'group_id'  => $user->group_id,
                             'variables' => $variables
                         ],
-                        []
+                        null
                     )->delay(now()->addSeconds($delay));
 
                     // Increment counter untuk queue selanjutnya
@@ -422,4 +412,105 @@ class WhatsappController extends Controller
             'message' => 'Invoice unpaid broadcast queued successfully. Total: ' . $counter . ' messages.'
         ]);
     }
+
+    // public function broadcastInvoice(Request $request)
+    // {
+    //     $user = $this->getAuthUser();
+
+    //     if (!$user) {
+    //         return response()->json(['message' => 'Unauthorized'], 401);
+    //     }
+
+    //     $month = $request->get('month', now()->month);
+    //     $year  = $request->get('year', now()->year);
+
+    //     $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
+    //     $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
+
+    //     /**
+    //      * 🔥 AMBIL INVOICE UNPAID SAJA
+    //      */
+    //     $invoices = Invoice::with([
+    //         'member.paymentDetail',
+    //         'connection.profile'
+    //     ])
+    //         ->where('group_id', $user->group_id)
+    //         ->where('status', 'unpaid')
+    //         ->whereDate('created_at', '>=', $startOfMonth)
+    //         ->whereDate('created_at', '<=', $endOfMonth)
+    //         ->get();
+
+    //     if ($invoices->isEmpty()) {
+    //         return response()->json([
+    //             'success' => false,
+    //             'message' => 'Tidak ada invoice unpaid pada periode ini'
+    //         ], 404);
+    //     }
+
+    //     /**
+    //      * 🔄 Chunking broadcast
+    //      */
+    //     $invoices->chunk(10)->each(function ($chunk) use ($user, $year, $month) {
+
+    //         $counter = 0;
+
+    //         foreach ($chunk as $invoice) {
+
+    //             $member = $invoice->member;
+
+    //             $target = $this->formatWhatsappNumber($member->phone_number);
+
+    //             if (!$target) continue;
+
+    //             $delay = ($counter * 2) + rand(1, 3);
+
+    //             $amount   = $invoice->amount ?? 0;
+    //             $discount = $invoice->discount ?? 0;
+    //             $total    = $amount - $discount;
+
+    //             $startOfMonth = Carbon::create($year, $month, 1)->startOfMonth();
+    //             $endOfMonth   = Carbon::create($year, $month, 1)->endOfMonth();
+
+    //             /**
+    //              * 📦 VARIABLES
+    //              */
+    //             $variables = [
+    //                 'full_name'     => $member->fullname,
+    //                 'uid'           => $member->connection->internet_number ?? '-',
+    //                 'amount'        => number_format($amount, 0, ',', '.'),
+    //                 'discount'      => number_format($discount, 0, ',', '.'),
+    //                 'total'         => number_format($total, 0, ',', '.'),
+    //                 'pppoe_user'    => $member->connection->username ?? '-',
+    //                 'pppoe_profile' => $member->connection->profile->name ?? '-',
+    //                 'period'        => $startOfMonth->translatedFormat('F Y'),
+    //                 'due_date'      => $endOfMonth->format('d/m/Y'),
+    //                 'payment_url'   => 'https://bayar.amanisp.net.id',
+    //             ];
+
+    //             Log::info('DISPATCH INVOICE BROADCAST', [
+    //                 'invoice_id' => $invoice->id,
+    //                 'target'     => $target,
+    //                 'delay'      => $delay
+    //             ]);
+
+    //             SendWhatsAppBroadcastJob::dispatch(
+    //                 $user->group_id,
+    //                 $target,
+    //                 [
+    //                     'template'  => 'invoice_terbit',
+    //                     'group_id'  => $user->group_id,
+    //                     'variables' => $variables
+    //                 ],
+    //                 []
+    //             )->delay(now()->addSeconds($delay));
+
+    //             $counter++;
+    //         }
+    //     });
+
+    //     return response()->json([
+    //         'success' => true,
+    //         'message' => 'Invoice unpaid broadcast queued successfully'
+    //     ]);
+    // }
 }
