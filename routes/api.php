@@ -8,11 +8,9 @@ use App\Http\Controllers\Api\ConnectionController;
 use App\Http\Controllers\Api\Dashboard;
 use App\Http\Controllers\Api\EosController;
 use App\Http\Controllers\Api\ExpenseController;
-use App\Http\Controllers\Api\FakturController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\LogsController;
 use App\Http\Controllers\Api\MemberController;
-use App\Http\Controllers\Api\MikrotikController;
 use App\Http\Controllers\Api\NasController;
 use App\Http\Controllers\Api\OpticalController;
 use App\Http\Controllers\Api\PaymentSettingsController;
@@ -118,18 +116,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/profiles/{id}', [ProfileController::class, 'update']);
         Route::delete('/profiles/{id}', [ProfileController::class, 'destroy']);
         // ==========End PPP-DHCP=========
-
-        // Faktur
-        Route::get('/invoices', [FakturController::class, 'index']);
-        Route::get('/invoices/member/{id}', [FakturController::class, 'invoiceByMemberId']);
-        Route::post('/invoices', [FakturController::class, 'manualPayment']);
-        Route::post('/invoices/bulk', [FakturController::class, 'bulkManualPayment']);
-        Route::get('/invoices/details/{id}', [FakturController::class, 'fakturDetail']);
-        Route::get('/invoices/stats', [FakturController::class, 'stats']);
-        Route::get('/invoices/pdf/{inv_number}', [FakturController::class, 'single']);
-        Route::get('/invoices/paid/all', [FakturController::class, 'invoicePaid']);
-        Route::delete('/invoices/cancel/{id}', [FakturController::class, 'paymentCancel']);
-
 
         // Expense
         Route::get('/expenses', [ExpenseController::class, 'index']);

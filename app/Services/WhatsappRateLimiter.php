@@ -6,29 +6,36 @@ use Illuminate\Support\Facades\Cache;
 
 class WhatsappRateLimiter
 {
-    protected string $key = 'wa_rate_limit';
+    /**
+     * Key unik per group agar antar-group tidak saling blokir
+     */
+    protected function key(int $groupId): string
+    {
+        return "wa_rate_limit_group_{$groupId}";
+    }
 
     /**
      * @return bool True jika diizinkan, False jika limit tercapai
      */
-    public function hit(): bool
+    public function hit(int $groupId = 0): bool
     {
-        // Increment nilai cache
-        $count = Cache::increment($this->key);
+        $key   = $this->key($groupId);
+        $count = Cache::increment($key);
 
-        // Jika ini adalah request pertama, atur waktu kedaluwarsa (TTL) menjadi 60 detik
         if ($count === 1) {
-            // Gunakan addSeconds() atau set TTL yang jelas agar cache otomatis hilang dalam 1 menit
-            Cache::put($this->key, 1, now()->addSeconds(60));
+            // Aktifkan jendela waktu selama 60 detik
+            Cache::put($key, 1, now()->addSeconds(60));
         }
 
-        // Limit 15 message / menit
-        if ($count > 15) {
-            // JANGAN gunakan sleep(5) di sini karena akan memblokir worker.
-            // Cukup return false agar Job tahu bahwa limit tercapai dan melakukan $this->release()
-            return false;
-        }
+        // MAKSIMAL 5 PESAN
+        return $count <= 5;
+    }
 
-        return true;
+    public function remaining(int $groupId = 0): int
+    {
+        $key   = $this->key($groupId);
+        $count = Cache::get($key, 0);
+        // Sesuaikan juga di sini menjadi 5
+        return max(0, 5 - $count);
     }
 }

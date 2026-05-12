@@ -17,44 +17,50 @@ class SendWhatsappBroadcastJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public $timeout = 60; // 1 menit
-    public $tries = 3;    // Maksimal percobaan ulang jika gagal (opsional)
+    public $timeout = 90;
+    public $tries   = 5;
+
+    /**
+     * Backoff bertingkat: retry ke-1 setelah 30s, ke-2 setelah 60s, dst.
+     */
+    public function backoff(): array
+    {
+        return [30, 60, 120, 180, 300];
+    }
 
     public function __construct(
-        public int $groupId,
+        public int    $groupId,
         public string $target,
-        public array $data,
-        public ?int $logId = null // Ambil ID log spesifik dari controller
+        public array  $data,
+        public ?int   $logId = null
     ) {}
 
-    public function handle(WhatsappCoreService $wa, WhatsappRateLimiter $rateLimiter)
+    public function handle(WhatsappCoreService $wa, WhatsappRateLimiter $rateLimiter): void
     {
+        if (!$rateLimiter->hit($this->groupId)) {
+            // LIMIT TERCAPAI (Sudah 5 pesan). 
+            // Paksa sistem untuk JEDA 1 MENIT (60 detik) sebelum memproses pesan ini.
+            $this->release(60);
+            return;
+        }
+
         try {
-            // 🔒 GLOBAL RATE LIMITER
-            // Jika limit tercapai, kembalikan ke antrean dengan delay 10 detik
-            // (Asumsi $rateLimiter->hit() me-return boolean)
-            if (!$rateLimiter->hit()) {
-                $this->release(10);
+            $deviceId = $wa->ensureDeviceByGroup($this->groupId);
+
+            $message = $wa->buildMessage($this->data);
+
+            if (empty($message)) {
+                Log::warning('Empty message, skip send', ['target' => $this->target]);
                 return;
             }
 
-            // HAPUS sleep()! 
-            // Delay sudah diatur via ->delay() saat dispatch di Controller
-
-            $deviceId = $wa->ensureDeviceByGroup($this->groupId);
-
             $payload = [
                 'phone'   => $this->target,
-                'message' => $wa->buildMessage($this->data),
+                'message' => $message,
             ];
 
-            $result = $wa->sendMessage(
-                $this->groupId,
-                $deviceId,
-                $payload
-            );
+            $result = $wa->sendMessage($this->groupId, $deviceId, $payload);
 
-            // Update log secara presisi menggunakan ID
             if ($this->logId) {
                 WhatsappMessageLog::where('id', $this->logId)->update([
                     'status'        => $result['success'] ? 'sent' : 'failed',
@@ -63,18 +69,29 @@ class SendWhatsappBroadcastJob implements ShouldQueue
                 ]);
             }
 
-            // Jika gagal dari sisi API WA (bukan exception)
             if (!$result['success']) {
-                Log::error('WhatsApp API response error', [
+                $errorBody = json_encode($result['error'] ?? '');
+
+                // Deteksi rate limit / banned dari WA
+                if ($this->isRateLimitError($errorBody)) {
+                    Log::warning('WA rate limit hit, releasing job', [
+                        'target' => $this->target,
+                        'group'  => $this->groupId,
+                    ]);
+                    // Tunggu lebih lama jika kena rate limit WA
+                    $this->release(rand(120, 300));
+                    return;
+                }
+
+                Log::error('WA send failed', [
                     'target' => $this->target,
-                    'error'  => $result['error'] ?? 'Unknown error',
+                    'error'  => $errorBody,
                 ]);
 
-                // Jika ingin job ini diulang oleh Laravel saat gagal kirim, uncomment ini:
-                // throw new \Exception("Gagal mengirim WA: " . json_encode($result));
+                // Lempar exception agar masuk retry/backoff
+                throw new \RuntimeException("WA send failed: {$errorBody}");
             }
         } catch (Throwable $e) {
-            // Update status log menjadi failed karena system error
             if ($this->logId) {
                 WhatsappMessageLog::where('id', $this->logId)->update([
                     'status'        => 'failed',
@@ -87,9 +104,21 @@ class SendWhatsappBroadcastJob implements ShouldQueue
                 'exception' => $e->getMessage(),
             ]);
 
-            // LEMPAR KEMBALI EXCEPTION-NYA
-            // Agar Laravel tahu job ini GAGAL dan bisa masuk ke tabel failed_jobs
-            throw $e;
+            throw $e; // Agar Laravel handle retry/failed_jobs
         }
+    }
+
+    /**
+     * Deteksi error rate limit / spam dari respons WA
+     */
+    private function isRateLimitError(string $body): bool
+    {
+        $patterns = ['463', '429', 'rate limit', 'spam', 'blocked', 'banned'];
+        foreach ($patterns as $pattern) {
+            if (stripos($body, $pattern) !== false) {
+                return true;
+            }
+        }
+        return false;
     }
 }

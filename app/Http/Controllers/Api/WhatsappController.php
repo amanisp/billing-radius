@@ -20,13 +20,19 @@ use App\Services\WhatsappCoreService;
 
 class WhatsappController extends Controller
 {
-    protected $fonnte;
-
-    public function __construct(FonnteService $fonnte)
+    private function humanDelay(int $index): int
     {
-        $this->fonnte = $fonnte;
-    }
+        // Jika index kelipatan 5 (pesan ke-6, ke-11, ke-16, dst), 
+        // berikan jeda 1 menit (60 detik) + sedikit jitter agar natural
+        if ($index > 0 && $index % 5 === 0) {
+            return 60 + rand(2, 5);
+        }
 
+        // Untuk pesan ke-1 sampai ke-5 dalam satu batch, 
+        // berikan jeda acak pendek (misal 3 sampai 8 detik).
+        // Total jeda 5 pesan maksimal 40 detik, jadi tetap terkirim dalam "1 menit".
+        return rand(5, 9);
+    }
 
     private function formatWhatsappNumber(?string $phone): ?string
     {
@@ -264,41 +270,34 @@ class WhatsappController extends Controller
         }
 
         // Chunk setiap 5 koneksi
-        $connections->chunk(5)->each(function ($chunk, $batchIndex) use ($user, $validated) {
+        Connection::with('member')
+            ->where('group_id', $user->group_id)
+            ->whereHas('member', fn($q) => $q->whereNotNull('phone_number'))
+            ->when($validated['area'] !== 'all', fn($q) => $q->where('area_id', $validated['area']))
+            ->chunk(20, function ($chunk) use ($user, $validated, &$counter) {
+                foreach ($chunk as $connection) {
+                    $member = $connection->member;
+                    if (!$member || !$member->phone_number) continue;
 
-            $counter = 0;
+                    $target = $this->formatWhatsappNumber($member->phone_number);
+                    if (!$target) continue;
 
-            foreach ($chunk as $connection) {
+                    $delay = $this->humanDelay($counter);
 
-                $member = $connection->member;
+                    $message = "Yth. Pelanggan {$member->fullname}\n"
+                        . "{$validated['subject']}\n\n"
+                        . "{$validated['message']}";
 
-                if (!$member || !$member->phone_number) continue;
+                    SendWhatsAppBroadcastJob::dispatch(
+                        $user->group_id,
+                        $target,
+                        ['message' => $message],
+                        null
+                    )->delay(now()->addSeconds($delay));
 
-                $target = $this->formatWhatsappNumber($member->phone_number);
-                if (!$target) continue;
-
-                $delay = ($counter * 2) + rand(1, 3);
-
-                // ✅ message per user
-                $message = "Yth. Pelanggan {$member->fullname}\n"
-                    . "{$validated['subject']}\n\n"
-                    . "{$validated['message']}";
-
-                Log::info('DISPATCH AREA JOB', [
-                    'target' => $target,
-                    'delay'  => $delay
-                ]);
-
-                SendWhatsAppBroadcastJob::dispatch(
-                    $user->group_id,
-                    $target,
-                    ['message' => $message],
-                    []
-                )->delay(now()->addSeconds($delay));
-
-                $counter++; // ✅ penting!
-            }
-        });
+                    $counter++;
+                }
+            });
 
         return response()->json([
             'success' => true,
@@ -366,7 +365,8 @@ class WhatsappController extends Controller
 
                     // Delay aman untuk Unofficial API: (Counter * 5 detik) + random 1-3 detik
                     // Contoh: Pesan 1 (1s), Pesan 2 (6s), Pesan 3 (12s), dst.
-                    $delay = ($counter * 5) + rand(1, 3);
+                    $delay = $this->humanDelay($counter);
+
 
                     $amount   = $invoice->amount ?? 0;
                     $discount = $invoice->discount ?? 0;

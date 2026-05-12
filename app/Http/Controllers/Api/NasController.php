@@ -8,6 +8,7 @@ use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Controller;
 use App\Models\Nas;
 use App\Models\Radius\RadGroupCheck;
+use App\Models\Radius\RadGroupReply;
 use App\Models\Radius\RadNas;
 use App\Models\Radius\RadReload;
 use App\Models\User;
@@ -121,6 +122,14 @@ class NasController extends Controller
                 'group_id' => $groupId
             ]);
 
+            RadGroupReply::create([
+                'groupname' => 'mitra_' . $groupId,
+                'attribute' => 'Fall-Through',
+                'op' => '=',
+                'value' => 'Yes',
+                'group_id' => $groupId
+            ]);
+
             ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'nas');
             return ResponseFormatter::success($data, 'Data NAS berhasil disimpan', 200);
         } catch (\Throwable $th) {
@@ -140,6 +149,7 @@ class NasController extends Controller
             }
 
             RadNas::where('group_id', $data->group_id)->delete();
+            RadReload::where('nasipaddress', $data->ip_router)->delete();
             RadGroupCheck::where('group_id', $data->group_id)->delete();
             $data->delete();
 
