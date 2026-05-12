@@ -251,57 +251,52 @@ class WhatsappController extends Controller
             'message' => 'required|string'
         ]);
 
-        // Ambil koneksi sesuai area
-        $query = Connection::with('member')
-            ->where('group_id', $user->group_id)
-            ->whereHas('member', fn($q) => $q->whereNotNull('phone_number'));
+        // 1. Siapkan query dasar
+        $query = Connection::where('group_id', $user->group_id)
+            ->whereHas('member', fn($q) => $q->whereNotNull('phone_number'))
+            ->when($validated['area'] !== 'all', fn($q) => $q->where('area_id', $validated['area']));
 
-        if ($validated['area'] !== 'all') {
-            $query->where('area_id', $validated['area']);
-        }
-
-        $connections = $query->get();
-
-        if ($connections->isEmpty()) {
+        // 2. Gunakan exists() alih-alih get() agar RAM tidak jebol
+        if (!$query->exists()) {
             return response()->json([
                 'success' => false,
                 'message' => 'No members found for selected area'
             ], 404);
         }
 
-        // Chunk setiap 5 koneksi
-        Connection::with('member')
-            ->where('group_id', $user->group_id)
-            ->whereHas('member', fn($q) => $q->whereNotNull('phone_number'))
-            ->when($validated['area'] !== 'all', fn($q) => $q->where('area_id', $validated['area']))
-            ->chunk(20, function ($chunk) use ($user, $validated, &$counter) {
-                foreach ($chunk as $connection) {
-                    $member = $connection->member;
-                    if (!$member || !$member->phone_number) continue;
+        // 3. ✅ DEKLARASIKAN COUNTER SEBELUM CHUNK
+        $counter = 0;
 
-                    $target = $this->formatWhatsappNumber($member->phone_number);
-                    if (!$target) continue;
+        // 4. Eksekusi chunk. (Panggil with('member') di sini agar query relasinya digabung)
+        $query->with('member')->chunk(20, function ($chunk) use ($user, $validated, &$counter) {
+            foreach ($chunk as $connection) {
+                $member = $connection->member;
+                if (!$member || !$member->phone_number) continue;
 
-                    $delay = $this->humanDelay($counter);
+                $target = $this->formatWhatsappNumber($member->phone_number);
+                if (!$target) continue;
 
-                    $message = "Yth. Pelanggan {$member->fullname}\n"
-                        . "{$validated['subject']}\n\n"
-                        . "{$validated['message']}";
+                $delay = $this->humanDelay($counter);
 
-                    SendWhatsAppBroadcastJob::dispatch(
-                        $user->group_id,
-                        $target,
-                        ['message' => $message],
-                        null
-                    )->delay(now()->addSeconds($delay));
+                $message = "Yth. Pelanggan {$member->fullname}\n"
+                    . "{$validated['subject']}\n\n"
+                    . "{$validated['message']}";
 
-                    $counter++;
-                }
-            });
+                SendWhatsAppBroadcastJob::dispatch(
+                    $user->group_id,
+                    $target,
+                    ['message' => $message],
+                    null
+                )->delay(now()->addSeconds($delay));
+
+                // Increment counter untuk delay pesan selanjutnya
+                $counter++;
+            }
+        });
 
         return response()->json([
             'success' => true,
-            'message' => 'Broadcast queued successfully, messages will be sent shortly.'
+            'message' => "Broadcast queued successfully. Total: {$counter} messages."
         ]);
     }
 
