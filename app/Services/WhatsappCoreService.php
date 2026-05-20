@@ -99,7 +99,37 @@ class WhatsappCoreService
     public function sendMessage(int $groupId, string $deviceId, array $payload)
     {
         $recipient = $payload['phone'] ?? null;
+        $rawPhone = $payload['phone'] ?? null;
         $message   = $payload['message'] ?? null;
+
+
+        // 1. PENGAMAN NOMOR HP: Bersihkan semua karakter selain angka
+        if ($rawPhone) {
+            // Bersihkan semua karakter selain angka (misal ada +, spasi, strip)
+            $cleanPhone = preg_replace('/[^0-9]/', '', $rawPhone);
+
+            // Tambahkan akhiran yang diminta oleh service WA
+            $recipient = $cleanPhone . '@s.whatsapp.net';
+
+            // Timpa nilai phone di payload dengan format yang baru
+            $payload['phone'] = $recipient;
+        } else {
+            $recipient = null;
+        }
+
+        // 2. PENGAMAN PESAN KOSONG: Hentikan pengiriman jika pesan kosong
+        if (empty($message) || empty($recipient)) {
+            Log::warning('Skip SendMessage: Pesan atau nomor tujuan kosong.', [
+                'group_id' => $groupId,
+                'phone'    => $recipient,
+                'message'  => $message
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Pesan atau nomor telepon tidak boleh kosong.'
+            ];
+        }
 
         $log = \App\Models\WhatsappMessageLog::create([
             'group_id'  => $groupId,
@@ -110,6 +140,7 @@ class WhatsappCoreService
         ]);
 
         try {
+            Log::info('DEBUG PAYLOAD WA (SEBELUM KIRIM):', $payload);
             $response = Http::timeout(15)
                 // ✅ hapus retry — jangan retry saat WA lagi rate limit
                 ->withHeaders(['X-Device-Id' => $deviceId])
