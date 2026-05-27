@@ -14,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 // Pastikan baris ini tetap ada
-use App\Jobs\SendWhatsAppBroadcastJob;
+use App\Jobs\SendWhatsappBroadcastJob;
 
 class BulkManualPaymentJob implements ShouldQueue
 {
@@ -124,7 +124,7 @@ class BulkManualPaymentJob implements ShouldQueue
                         ]);
 
                         // Dispatch WA Job
-                        SendWhatsAppBroadcastJob::dispatch(
+                        SendWhatsappBroadcastJob::dispatch(
                             $member->group_id,
                             $target,
                             [
