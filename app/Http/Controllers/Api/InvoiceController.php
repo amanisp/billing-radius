@@ -6,6 +6,7 @@ use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\ActivityLogController;
 use App\Jobs\BulkInvoiceJob;
+use App\Jobs\BulkManualPaymentJob;
 use App\Models\GlobalSettings;
 use App\Models\Invoice;
 use App\Models\Member;
@@ -17,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class InvoiceController extends Controller
 {
@@ -30,6 +32,22 @@ class InvoiceController extends Controller
         $this->whatsapp = $whatsapp;
     }
 
+
+
+
+    private function formatPeriod(?string $date): string
+    {
+        if (!$date) {
+            return '-'; // Fallback jika tanggal kosong
+        }
+
+        // Set locale ke bahasa Indonesia
+        \Carbon\Carbon::setLocale('id');
+
+        // F = Nama Bulan penuh, Y = Tahun 4 digit
+        return \Carbon\Carbon::parse($date)->translatedFormat('F Y');
+    }
+
     private function getAuthUser()
     {
         $user = Auth::user();
@@ -39,6 +57,78 @@ class InvoiceController extends Controller
         if ($id) return User::find($id);
 
         return null;
+    }
+
+    public function generatePdf(Request $request, $inv_number)
+    {
+        try {
+            $user = Auth::user();
+
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            // 1. Base Query (Sama dengan index, ambil relasi yang dibutuhkan template HTML)
+            $query = Invoice::with(['member.connection.profile', 'member.paymentDetail'])
+                ->where('group_id', $user->group_id)
+                ->where('inv_number', $inv_number);
+
+            // 2. 🛡️ Filter area khusus untuk teknisi / kasir
+            if (in_array($user->role, ['teknisi', 'kasir'])) {
+                $areaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id');
+
+                if ($areaIds->isEmpty()) {
+                    return response()->json(['message' => 'Anda tidak memiliki akses area'], 403);
+                }
+
+                $query->whereHas('connection', function ($q) use ($areaIds) {
+                    $q->whereIn('area_id', $areaIds);
+                });
+            }
+
+            // 3. Eksekusi query (Gunakan firstOrFail agar jika tidak ada/bukan areanya, langsung error 404)
+            $invoice = $query->firstOrFail();
+
+            // 4. Siapkan variabel yang dibutuhkan oleh template HTML kamu
+            // Asumsi nomor internet diambil dari connection
+            $nomor_pelanggan = $invoice->member->connection->internet_number ?? $invoice->member->connection->username ?? '-';
+
+            // Format bulan bahasa indonesia (Contoh: "Mei 2026")
+            $moon = Carbon::parse($invoice->start_date)->locale('id')->translatedFormat('F Y');
+
+            // Kalkulasi nominal
+            $amount = $invoice->amount ?? 0;
+            $discount = $invoice->discount ?? 0;
+            $total = $amount - $discount;
+
+            // 5. Render view HTML menjadi PDF
+            // Asumsi template file blade kamu ada di: resources/views/pdf/invoice.blade.php
+            $pdf = Pdf::loadView('invoice.homepass', compact(
+                'invoice',
+                'nomor_pelanggan',
+                'moon',
+                'amount',
+                'discount',
+                'total'
+            ));
+
+            // Set ukuran kertas (opsional)
+            $pdf->setPaper('A4', 'portrait');
+
+            // 6. Return response stream (akan terbuka langsung di browser)
+            // Gunakan ->download() jika ingin file otomatis terunduh
+            return $pdf->stream('Invoice-' . $invoice->inv_number . '.pdf');
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Invoice tidak ditemukan atau Anda tidak memiliki akses ke invoice ini.'
+            ], 404);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'message' => 'Terjadi kesalahan saat membuat PDF: ' . $th->getMessage()
+            ], 500);
+        }
     }
 
 
@@ -180,7 +270,6 @@ class InvoiceController extends Controller
         }
     }
 
-
     public function index(Request $request)
     {
         try {
@@ -190,13 +279,29 @@ class InvoiceController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
+            // 1. Base Query
             $query = Invoice::with(['member.paymentDetail', 'connection.area', 'connection.profile'])
                 ->where('group_id', $user->group_id)
                 ->where('status', 'unpaid');
 
-            /**
-             * 🔍 Search
-             */
+            // 2. 🛡️ Filter area khusus untuk teknisi / kasir
+            if (in_array($user->role, ['teknisi', 'kasir'])) {
+                $areaIds = DB::table('technician_areas')
+                    ->where('user_id', $user->id)
+                    ->pluck('area_id');
+
+                if ($areaIds->isEmpty()) {
+                    // Trik: Paksa query agar tidak mengembalikan data apa pun 
+                    // tapi tetap mempertahankan format response Paginasi (agar frontend tidak error)
+                    $query->whereRaw('1 = 0');
+                } else {
+                    $query->whereHas('connection', function ($q) use ($areaIds) {
+                        $q->whereIn('area_id', $areaIds);
+                    });
+                }
+            }
+
+            // 3. 🔍 Search
             if ($search = $request->get('search')) {
                 $query->where(function ($q) use ($search) {
                     $q->where('inv_number', 'like', "%{$search}%")
@@ -206,9 +311,7 @@ class InvoiceController extends Controller
                 });
             }
 
-            /**
-             * 📅 Filter bulan & tahun
-             */
+            // 4. 📅 Filter bulan & tahun
             if ($month = $request->get('month')) {
                 $query->whereMonth('start_date', $month);
             }
@@ -217,25 +320,19 @@ class InvoiceController extends Controller
                 $query->whereYear('start_date', $year);
             }
 
-            /**
-             * 📍 Filter area
-             */
+            // 5. 📍 Filter area spesifik dari request (frontend)
             if ($areaId = $request->get('area_id')) {
                 $query->whereHas('connection', function ($q) use ($areaId) {
                     $q->where('area_id', $areaId);
                 });
             }
 
-            /**
-             * 🔄 Sort
-             */
+            // 6. 🔄 Sort
             $sortField = $request->get('sort_field', 'created_at');
             $sortDirection = $request->get('sort_direction', 'desc');
             $query->orderBy($sortField, $sortDirection);
 
-            /**
-             * 📄 Pagination
-             */
+            // 7. 📄 Pagination
             $perPage = $request->get('per_page', 10);
             $invoices = $query->paginate($perPage);
 
@@ -296,7 +393,16 @@ class InvoiceController extends Controller
             // Base query
             // ========================
             $query = Invoice::with(['payer', 'member'])
-                ->where('group_id', $user->group_id)->where('status', 'paid');
+                ->where('group_id', $user->group_id)
+                ->where('status', 'paid');
+
+            // ========================
+            // 🛡️ Role-based Filter (Hak Akses)
+            // ========================
+            // Jika role BUKAN admin atau mitra, batasi hanya melihat datanya sendiri
+            if (!in_array($user->role, ['admin', 'mitra'])) {
+                $query->where('payer_id', $user->id);
+            }
 
             // ========================
             // Target month & year filter
@@ -324,14 +430,13 @@ class InvoiceController extends Controller
             }
 
             // ========================
-            // Payer filter
+            // Payer filter (Hanya berlaku efektif jika admin/mitra, atau jika user biasa mencari namanya sendiri)
             // ========================
             if ($request->filled('payer_id')) {
                 $query->where('payer_id', $request->payer_id);
             } elseif ($request->filled('payer_name')) {
                 $query->whereHas('payer', fn($q) => $q->where('fullname', 'like', "%{$request->payer_name}%"));
             }
-
 
             // ========================
             // Sorting & pagination
@@ -524,7 +629,6 @@ class InvoiceController extends Controller
         }
     }
 
-
     public function manualPayment(Request $request)
     {
         DB::beginTransaction();
@@ -583,7 +687,7 @@ class InvoiceController extends Controller
                             'total'           => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
                             'pppoe_user'      => $member?->connection?->username,
                             'pppoe_profile'   => $member?->connection?->profile->name,
-                            'period'          => $invoice->subscription_period,
+                            'period'          => $this->formatPeriod($invoice->start_date),
                             'payment_gateway' => $invoice->payment_method === 'bank_transfer' ? 'Transfer Bank' : 'Cash',
                             'footer'          => 'PT. Anugerah Media Data Nusantara',
                         ],
@@ -625,6 +729,57 @@ class InvoiceController extends Controller
                 'invoice_id' => $request->input('invoice_id'),
                 'action'     => 'manual_payment',
                 'error'      => $th->getMessage(),
+            ], 'invoices');
+
+            return ResponseFormatter::error(
+                null,
+                $th->getMessage(),
+                500
+            );
+        }
+    }
+
+    public function manualPaymentBulk(Request $request)
+    {
+        $user = $this->getAuthUser();
+
+        if (!$user) {
+            return response()->json([
+                'message' => 'Unauthorized'
+            ], 401);
+        }
+
+        // 1. Validasi request
+        $validated = $request->validate([
+            'invoice_ids'   => 'required|array',
+            'invoice_ids.*' => 'exists:invoices,id',
+            'payment_method' => 'required|string',
+        ]);
+
+        $paymentMethodInput = strtolower($validated['payment_method']);
+        $paymentMethod = in_array($paymentMethodInput, ['transfer', 'bank_transfer'])
+            ? 'bank_transfer'
+            : 'cash';
+
+        try {
+            // 2. Tembak antrean ke Job (Background Process)
+            BulkManualPaymentJob::dispatch(
+                $validated['invoice_ids'],
+                $paymentMethod,
+                $user->id,
+                $user->group_id
+            );
+
+            // 3. Return response secepatnya tanpa harus menunggu proses update selesai
+            return ResponseFormatter::success(
+                null,
+                count($validated['invoice_ids']) . ' tagihan sedang diproses di latar belakang'
+            );
+        } catch (\Throwable $th) {
+
+            ActivityLogController::logCreateF([
+                'action' => 'manual_payment_bulk_dispatch',
+                'error'  => $th->getMessage(),
             ], 'invoices');
 
             return ResponseFormatter::error(
@@ -700,8 +855,8 @@ class InvoiceController extends Controller
                             'no_invoice'  => $invoice->inv_number,
                             'total'       => 'Rp ' . number_format($invoice->amount, 0, ',', '.'),
                             'invoice_date' => optional($invoice->created_at)->format('d-m-Y'),
-                            'due_date'    => optional($invoice->due_date)->format('d-m-Y'),
-                            'period'      => $invoice->subscription_period,
+                            'due_date'    => $invoice->due_date,
+                            'period'      =>  $this->formatPeriod($invoice->start_date),
                             'footer'      => 'PT. Anugerah Media Data Nusantara',
                         ],
                     ]);

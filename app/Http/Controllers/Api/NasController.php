@@ -122,13 +122,21 @@ class NasController extends Controller
                 'group_id' => $groupId
             ]);
 
-            RadGroupReply::create([
-                'groupname' => 'mitra_' . $groupId,
-                'attribute' => 'Fall-Through',
-                'op' => '=',
-                'value' => 'Yes',
-                'group_id' => $groupId
-            ]);
+
+
+            RadGroupReply::firstOrCreate(
+                [
+                    // Kondisi pencarian (Cek apakah kombinasi groupname dan attribute ini sudah ada)
+                    'groupname' => 'mitra_' . $groupId,
+                    'attribute' => 'Fall-Through',
+                ],
+                [
+                    // Data tambahan yang akan di-insert JIKA data di atas belum ada
+                    'op' => '=',
+                    'value' => 'Yes',
+                    'group_id' => $groupId
+                ]
+            );
 
             ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'nas');
             return ResponseFormatter::success($data, 'Data NAS berhasil disimpan', 200);

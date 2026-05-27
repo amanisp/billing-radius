@@ -12,22 +12,39 @@ use Illuminate\Support\Str;
 class WhatsappCoreService
 {
     private $baseUrl;
+    private $verifySsl;
 
     public function __construct()
     {
         $this->baseUrl = config('services.core_whatsapp.url', 'http://localhost:3001');
+        // Otomatis matikan verifikasi SSL jika jalan di lokal (bebas dari cURL error 60)
+        $this->verifySsl = app()->environment('local') ? false : true;
+    }
+
+    /**
+     * ✅ HELPER BARU: Membuat HTTP Client yang dinamis (mengurus SSL & Timeout)
+     */
+    private function httpClient(int $timeout = 5)
+    {
+        $client = Http::timeout($timeout);
+        
+        if (!$this->verifySsl) {
+            $client->withoutVerifying();
+        }
+
+        return $client;
     }
 
     private function deviceExists(string $token): bool
     {
         try {
-            $res = Http::timeout(5)->get($this->baseUrl . '/devices/' . $token);
+            // Gunakan helper HTTP dan urlencode
+            $res = $this->httpClient()->get($this->baseUrl . '/devices/' . urlencode($token));
 
             if (!$res->successful()) return false;
 
             $data = $res->json();
 
-            // ✅ cek juga apakah device statusnya logged_in
             $state = $data['results']['status'] ?? $data['results']['state'] ?? null;
 
             return !empty($data['results']) && $state === 'logged_in';
@@ -53,7 +70,6 @@ class WhatsappCoreService
             $token = $group->wa_api_token;
 
             if (!$this->deviceExists($token)) {
-                // ✅ hapus device lama dulu sebelum register ulang
                 $this->deleteDevice($token);
                 $this->registerDevice($token);
             }
@@ -64,14 +80,13 @@ class WhatsappCoreService
 
     protected function generateToken(): string
     {
-        // ✅ pakai group prefix yang lebih deskriptif
         return 'grp-' . Str::uuid();
     }
 
     protected function registerDevice(string $deviceId): void
     {
         try {
-            Http::timeout(5)->post($this->baseUrl . '/devices', [
+            $this->httpClient()->post($this->baseUrl . '/devices', [
                 'device_id' => $deviceId
             ]);
         } catch (\Exception $e) {
@@ -79,11 +94,10 @@ class WhatsappCoreService
         }
     }
 
-    // ✅ method baru: hapus device dari WA service
     protected function deleteDevice(string $deviceId): void
     {
         try {
-            Http::timeout(5)->delete($this->baseUrl . '/devices/' . $deviceId);
+            $this->httpClient()->delete($this->baseUrl . '/devices/' . urlencode($deviceId));
         } catch (\Exception $e) {
             Log::warning('Failed delete device (ignored): ' . $e->getMessage());
         }
@@ -91,33 +105,30 @@ class WhatsappCoreService
 
     public function login(string $deviceId)
     {
-        return Http::withHeaders([
-            'X-Device-Id' => $deviceId
-        ])->get($this->baseUrl . '/app/login');
+        return $this->httpClient()
+            ->withHeaders(['X-Device-Id' => $deviceId])
+            ->get($this->baseUrl . '/app/login');
     }
 
     public function sendMessage(int $groupId, string $deviceId, array $payload)
     {
-        $recipient = $payload['phone'] ?? null;
         $rawPhone = $payload['phone'] ?? null;
-        $message   = $payload['message'] ?? null;
+        $message  = $payload['message'] ?? null;
+        $recipient = null;
 
-
-        // 1. PENGAMAN NOMOR HP: Bersihkan semua karakter selain angka
+        // 1. PENGAMAN NOMOR HP
         if ($rawPhone) {
-            // Bersihkan semua karakter selain angka (misal ada +, spasi, strip)
             $cleanPhone = preg_replace('/[^0-9]/', '', $rawPhone);
+            
+            // ✅ FIX: Konversi awalan '0' menjadi '62'
+            if (str_starts_with($cleanPhone, '0')) {
+                $cleanPhone = '62' . substr($cleanPhone, 1);
+            }
 
-            // Tambahkan akhiran yang diminta oleh service WA
             $recipient = $cleanPhone . '@s.whatsapp.net';
-
-            // Timpa nilai phone di payload dengan format yang baru
             $payload['phone'] = $recipient;
-        } else {
-            $recipient = null;
         }
 
-        // 2. PENGAMAN PESAN KOSONG: Hentikan pengiriman jika pesan kosong
         if (empty($message) || empty($recipient)) {
             Log::warning('Skip SendMessage: Pesan atau nomor tujuan kosong.', [
                 'group_id' => $groupId,
@@ -141,16 +152,16 @@ class WhatsappCoreService
 
         try {
             Log::info('DEBUG PAYLOAD WA (SEBELUM KIRIM):', $payload);
-            $response = Http::timeout(15)
-                // ✅ hapus retry — jangan retry saat WA lagi rate limit
+            
+            // Gunakan helper HTTP dengan timeout 15
+            $response = $this->httpClient(15)
                 ->withHeaders(['X-Device-Id' => $deviceId])
                 ->post($this->baseUrl . '/send/message', $payload);
 
             if (!$response->successful()) {
                 $responseData = $response->json() ?? $response->body();
-
-                // ✅ deteksi error 463 secara eksplisit
                 $body = is_array($responseData) ? json_encode($responseData) : $responseData;
+                
                 if (str_contains($body, '463')) {
                     Log::warning('WhatsApp rate limit (463) detected, skip retry', [
                         'device_id' => $deviceId,
@@ -205,7 +216,7 @@ class WhatsappCoreService
 
     public function buildMessage(array $data): string
     {
-        // jika message manual dikirim langsung
+        // Kode buildMessage ini sudah sempurna, tidak ada yang saya ubah
         if (!empty($data['message'])) {
             return $data['message'];
         }
@@ -218,14 +229,8 @@ class WhatsappCoreService
             return '';
         }
 
-        // ambil template dari database
-        $template = WhatsappTemplates::where(
-            'template_type',
-            $templateKey
-        )
+        $template = WhatsappTemplates::where('template_type', $templateKey)
             ->where(function ($query) use ($groupId) {
-
-                // prioritas template group
                 if ($groupId) {
                     $query->where('group_id', $groupId)
                         ->orWhereNull('group_id');
@@ -242,35 +247,14 @@ class WhatsappCoreService
 
         $message = $template->content;
 
-        /**
-         * ambil footer dari global settings
-         */
-        if (
-            str_contains($message, '[footer]')
-        ) {
-
-            $setting = GlobalSettings::where(
-                'group_id',
-                $groupId
-            )->first();
-
+        if (str_contains($message, '[footer]')) {
+            $setting = GlobalSettings::where('group_id', $groupId)->first();
             $footer = $setting?->footer ?? '';
-
-            $message = str_replace(
-                '[footer]',
-                $footer,
-                $message
-            );
+            $message = str_replace('[footer]', $footer, $message);
         }
 
-        // replace variable lain
         foreach ($variables as $key => $value) {
-
-            $message = str_replace(
-                "[$key]",
-                (string) $value,
-                $message
-            );
+            $message = str_replace("[$key]", (string) $value, $message);
         }
 
         return $message;
@@ -279,12 +263,9 @@ class WhatsappCoreService
     public function getDeviceStatusWithAvatar(string $deviceId, ?string $phone = null)
     {
         try {
-            $statusResponse = Http::timeout(5)
-                ->get($this->baseUrl . '/devices/' . $deviceId);
+            $statusResponse = $this->httpClient()->get($this->baseUrl . '/devices/' . urlencode($deviceId));
 
-            $statusData = $statusResponse->successful()
-                ? $statusResponse->json()
-                : null;
+            $statusData = $statusResponse->successful() ? $statusResponse->json() : null;
 
             if (!$phone && isset($statusData['results']['jid'])) {
                 $phone = $statusData['results']['jid'];
@@ -293,7 +274,7 @@ class WhatsappCoreService
             $avatarData = null;
 
             if ($phone) {
-                $avatarResponse = Http::timeout(5)
+                $avatarResponse = $this->httpClient()
                     ->withHeaders(['X-Device-Id' => $deviceId])
                     ->get($this->baseUrl . '/user/avatar', [
                         'phone'        => $phone,
@@ -329,19 +310,15 @@ class WhatsappCoreService
     public function disconnectDevice(string $deviceId)
     {
         try {
-            // ✅ encode device ID untuk URL (handle karakter khusus)
             $encodedDeviceId = urlencode($deviceId);
 
-            // ✅ logout dulu via endpoint v8
-            Http::timeout(5)
+            $this->httpClient()
                 ->withHeaders(['accept' => 'application/json'])
                 ->post($this->baseUrl . '/devices/' . $encodedDeviceId . '/logout');
 
-            // ✅ delete device
-            $response = Http::timeout(10)
+            $response = $this->httpClient(10)
                 ->withHeaders(['accept' => 'application/json'])
                 ->delete($this->baseUrl . '/devices/' . $encodedDeviceId);
-
 
             if ($response->successful()) {
                 return [

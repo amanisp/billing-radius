@@ -21,7 +21,10 @@ class PaymentDetail extends Model
     protected $casts = [
         'active_date' => 'date',
         'last_invoice' => 'date',
+        'active_date' => 'date:Y-m-d', 
     ];
+
+  
 
     public function group()
     {

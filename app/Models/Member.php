@@ -65,9 +65,11 @@ class Member extends Model
     }
 
     // PERBAIKAN: Relasi ke InvoiceHomepass (bukan Invoice)
+
     public function invoices()
     {
-        return $this->hasMany(InvoiceHomepass::class, 'member_id');
+        // Pastikan mengarah ke 'member_id' sebagai foreign key, dan 'id' sebagai local key
+        return $this->hasMany(Invoice::class, 'member_id', 'id');
     }
 
 

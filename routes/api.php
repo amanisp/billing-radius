@@ -160,6 +160,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Prefic New Invoice
         Route::prefix('inv')->group(function () {
             Route::get('/', [InvoiceController::class, 'index']);
+            Route::get('/pdf/{inv_number}', [InvoiceController::class, 'generatePdf']);
             Route::get('/members/{id}', [InvoiceController::class, 'memberInvoices']);
             Route::get('/stats', [InvoiceController::class, 'stats']);
             Route::get('/paid', [InvoiceController::class, 'invoicePaid']);
@@ -167,6 +168,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/cancel', [InvoiceController::class, 'paymentCancel']);
             Route::post('/', [InvoiceController::class, 'store']);
             Route::post('/bulk', [InvoiceController::class, 'bulkInv']);
+            Route::post('/bulk-payment', [InvoiceController::class, 'manualPaymentBulk']);
             Route::delete('/{id}', [InvoiceController::class, 'destroy']);
         });
 
