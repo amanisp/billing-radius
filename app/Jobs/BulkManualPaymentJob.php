@@ -13,6 +13,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+// Pastikan baris ini tetap ada
 use App\Jobs\SendWhatsAppBroadcastJob;
 
 class BulkManualPaymentJob implements ShouldQueue
@@ -37,8 +38,17 @@ class BulkManualPaymentJob implements ShouldQueue
 
     public function handle()
     {
+        Log::info('--- BULK PAYMENT JOB STARTED ---', [
+            'user_id' => $this->userId,
+            'group_id' => $this->groupId,
+            'invoice_ids_count' => count($this->invoiceIds)
+        ]);
+
         $user = User::find($this->userId);
-        if (!$user) return;
+        if (!$user) {
+            Log::warning('Bulk Payment Aborted: User not found', ['user_id' => $this->userId]);
+            return;
+        }
 
         $paymentMethodLabel = $this->paymentMethod === 'bank_transfer' ? 'Transfer Bank' : 'Cash';
 
@@ -49,7 +59,14 @@ class BulkManualPaymentJob implements ShouldQueue
             ->where('status', 'unpaid')
             ->get();
 
-        if ($invoices->isEmpty()) return;
+        Log::info('Bulk Payment Query Result:', [
+            'found_invoices' => $invoices->count()
+        ]);
+
+        if ($invoices->isEmpty()) {
+            Log::warning('Bulk Payment Aborted: No valid/unpaid invoices found.');
+            return;
+        }
 
         $counter = 0;
 
@@ -57,6 +74,8 @@ class BulkManualPaymentJob implements ShouldQueue
 
         try {
             foreach ($invoices as $invoice) {
+                Log::info("Processing Invoice ID: {$invoice->id}");
+
                 // 2. Update status invoice
                 $invoice->update([
                     'status'         => 'paid',
@@ -98,7 +117,7 @@ class BulkManualPaymentJob implements ShouldQueue
                             'footer'          => 'PT. Anugerah Media Data Nusantara',
                         ];
 
-                        Log::info('DISPATCH INVOICE PAID BROADCAST VIA JOB', [
+                        Log::info('Dispatching WA Job...', [
                             'invoice_id' => $invoice->id,
                             'target'     => $target,
                             'delay_sec'  => $delay
@@ -117,16 +136,26 @@ class BulkManualPaymentJob implements ShouldQueue
                         )->delay(now()->addSeconds($delay));
 
                         $counter++;
+                    } else {
+                        Log::warning("WA Dispatch Skipped: Invalid phone number for member ID {$member->id}");
                     }
+                } else {
+                    Log::warning("WA Dispatch Skipped: Member not found for Invoice ID {$invoice->id}");
                 }
             }
 
             DB::commit();
+            Log::info('--- BULK PAYMENT JOB COMPLETED SUCCESSFULLY ---');
         } catch (\Throwable $th) {
             DB::rollBack();
-            Log::error('Bulk Manual Payment Job Failed', [
-                'error' => $th->getMessage()
+            Log::error('--- BULK PAYMENT JOB FAILED ---', [
+                'error_message' => $th->getMessage(),
+                'line' => $th->getLine(),
+                'file' => $th->getFile()
             ]);
+
+            // INI SANGAT PENTING: Wajib dilempar ulang agar Horizon mendeteksinya sebagai Failed Job
+            throw $th;
         }
     }
 
