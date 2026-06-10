@@ -3,11 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Laravel\Sanctum\HasApiTokens;
 
 class Member extends Model
 {
+    use HasApiTokens;
+
+    protected $guarded = [];
+
     protected $fillable = [
         'group_id',
+        'pin',
         'fullname',
         'phone_number',
         'email',

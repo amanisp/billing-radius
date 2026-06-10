@@ -32,9 +32,6 @@ class InvoiceController extends Controller
         $this->whatsapp = $whatsapp;
     }
 
-
-
-
     private function formatPeriod(?string $date): string
     {
         if (!$date) {
@@ -135,7 +132,6 @@ class InvoiceController extends Controller
     public function stats(Request $request)
     {
         try {
-
             $user = Auth::user();
 
             if (!$user) {
@@ -143,6 +139,15 @@ class InvoiceController extends Controller
                     'message' => 'Unauthorized'
                 ], 401);
             }
+
+            // Mendapatkan parameter waktu bulan ini dan bulan kemarin
+            $now = now();
+            $currentMonth = $now->month;
+            $currentYear = $now->year;
+
+            $lastMonthDate = $now->copy()->subMonth();
+            $lastMonth = $lastMonthDate->month;
+            $lastYear = $lastMonthDate->year;
 
             /**
              * base query
@@ -160,7 +165,6 @@ class InvoiceController extends Controller
                     ->pluck('area_id');
 
                 if ($areaIds->isEmpty()) {
-
                     return ResponseFormatter::success([
                         'paid' => [
                             'count'  => 0,
@@ -184,75 +188,61 @@ class InvoiceController extends Controller
             }
 
             /**
-             * clone query
+             * PAID - Bulan Ini
              */
-            $paidQuery = clone $query;
-            $unpaidQuery = clone $query;
-            $overdueQuery = clone $query;
-
-            /**
-             * PAID
-             */
-            $paidCount = $paidQuery
+            $paidQuery = (clone $query)
                 ->where('status', 'paid')
-                ->count();
+                ->whereMonth('created_at', $currentMonth)
+                ->whereYear('created_at', $currentYear);
 
-            $paidAmount = $paidQuery
-                ->where('status', 'paid')
-                ->sum('amount');
-
-            /**
-             * UNPAID
-             */
-            $unpaidCount = $unpaidQuery
-                ->where('status', 'unpaid')
-                ->count();
-
-            $unpaidAmount = $unpaidQuery
-                ->where('status', 'unpaid')
-                ->sum('amount');
+            $paidCount = (clone $paidQuery)->count();
+            $paidAmount = (clone $paidQuery)->sum('amount');
 
             /**
-             * OVERDUE
+             * UNPAID - Bulan Ini
              */
-            $overdueCount = $overdueQuery
+            $unpaidQuery = (clone $query)
                 ->where('status', 'unpaid')
-                ->whereDate('due_date', '<', now())
-                ->count();
+                ->whereMonth('created_at', $currentMonth)
+                ->whereYear('created_at', $currentYear);
 
-            $overdueAmount = $overdueQuery
-                ->where('status', 'unpaid')
-                ->whereDate('due_date', '<', now())
-                ->sum('amount');
+            $unpaidCount = (clone $unpaidQuery)->count();
+            $unpaidAmount = (clone $unpaidQuery)->sum('amount');
 
             /**
-             * TOTAL REVENUE
+             * OVERDUE - Bulan Kemarin Saja
              */
-            $totalRevenue = Invoice::where(
-                'group_id',
-                $user->group_id
-            )
+            $overdueQuery = (clone $query)
+                ->where('status', 'unpaid')
+                ->whereMonth('created_at', $lastMonth)
+                ->whereYear('created_at', $lastYear);
+
+            $overdueCount = (clone $overdueQuery)->count();
+            $overdueAmount = (clone $overdueQuery)->sum('amount');
+
+            /**
+             * TOTAL REVENUE - Tagihan Bulan Ini Saja
+             */
+            $totalRevenue = Invoice::where('group_id', $user->group_id)
                 ->where('invoice_type', 'H')
                 ->where('status', 'paid')
+                ->whereMonth('created_at', $currentMonth)
+                ->whereYear('created_at', $currentYear)
                 ->sum('amount');
 
             $stats = [
-
                 'paid' => [
                     'count'  => $paidCount,
                     'amount' => $paidAmount,
                 ],
-
                 'unpaid' => [
                     'count'  => $unpaidCount,
                     'amount' => $unpaidAmount,
                 ],
-
                 'overdue' => [
                     'count'  => $overdueCount,
                     'amount' => $overdueAmount,
                 ],
-
                 'revenue' => $totalRevenue,
             ];
 
@@ -261,7 +251,6 @@ class InvoiceController extends Controller
                 'Stats invoice berhasil dimuat'
             );
         } catch (\Throwable $th) {
-
             return ResponseFormatter::error(
                 null,
                 $th->getMessage(),
@@ -269,7 +258,6 @@ class InvoiceController extends Controller
             );
         }
     }
-
     public function index(Request $request)
     {
         try {

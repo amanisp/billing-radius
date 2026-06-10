@@ -5,16 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Helpers\ResponseFormatter;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\Controller;
-use App\Models\AdminDeposit;
-use App\Models\Expense;
-use App\Models\InvoiceHomepass;
+use App\Models\CashFlow; // 👈 Gunakan model baru
+use App\Models\Invoice;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-
-use function Pest\Laravel\json;
+use Illuminate\Support\Facades\Validator;
 
 class ExpenseController extends Controller
 {
@@ -42,17 +39,19 @@ class ExpenseController extends Controller
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $query = Expense::select(
+            // 👈 Gunakan scope expense() dari model CashFlow
+            $query = CashFlow::query()->select(
                 'id',
+                'type',
                 'description',
                 'category',
                 'amount',
-                'expense_date',
+                'transaction_date as expense_date',
                 'user_id',
+                'admin_id',
                 'group_id',
                 'created_at'
-            )
-                ->with(['user:id,name']);
+            )->with(['user:id,name']);
 
             /** ============================
              * ROLE & GROUP
@@ -62,11 +61,12 @@ class ExpenseController extends Controller
             /** ============================
              * DEFAULT FILTER BULAN INI
              * ============================ */
-            $month = $request->get('month', now()->month);
-            $year  = $request->get('year', now()->year);
+            $rawMonth = $request->get('month', now()->format('m'));
+            $year     = $request->get('year', now()->year);
+            $month = sprintf('%02d', $rawMonth);
 
-            $query->whereMonth('expense_date', $month)
-                ->whereYear('expense_date', $year);
+            $query->whereMonth('transaction_date', $month)
+                ->whereYear('transaction_date', $year);
 
             /** ============================
              * SEARCH
@@ -81,7 +81,11 @@ class ExpenseController extends Controller
             /** ============================
              * SORT
              * ============================ */
-            $sortField = $request->get('sort_field', 'expense_date');
+            $sortField = $request->get('sort_field', 'transaction_date');
+            if ($sortField === 'expense_date') {
+                $sortField = 'transaction_date'; // 👈 Map sort field
+            }
+
             $sortDirection = $request->get('sort_direction', 'desc');
             $query->orderBy($sortField, $sortDirection);
 
@@ -100,7 +104,6 @@ class ExpenseController extends Controller
         }
     }
 
-
     public function store(Request $request)
     {
         try {
@@ -117,23 +120,26 @@ class ExpenseController extends Controller
                 'expense_date' => 'required|date',
             ]);
 
-            $expense = Expense::create([
-                'description'  => $request->description,
-                'amount'       => $request->amount,
-                'category'     => $request->category,
-                'expense_date' => $request->expense_date,
-                'user_id'      => Auth::id(),
-                'group_id'     => Auth::user()->group_id ?? null,
+            // 👈 Simpan ke CashFlow sebagai Pengeluaran
+            $expense = CashFlow::create([
+                'type'             => CashFlow::TYPE_OUT,
+                'source_type'      => CashFlow::SOURCE_UMUM,
+                'description'      => $request->description,
+                'amount'           => $request->amount,
+                'category'         => $request->category,
+                'transaction_date' => $request->expense_date, // Map input ke kolom baru
+                'user_id'          => Auth::id(),
+                'group_id'         => $user->group_id ?? null,
             ]);
 
-            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'expenses');
+            ActivityLogController::logCreate(['action' => 'store', 'status' => 'success'], 'cash_flows');
             return ResponseFormatter::success($expense, 'Data pengeluaran berhasil dibuat');
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
+            return ResponseFormatter::error(null, $th->getMessage(), 500); // Ubah 200 jadi 500 jika error
         }
     }
 
-    public function summary()
+    public function summary(Request $request)
     {
         try {
             $user = $this->getAuthUser();
@@ -141,160 +147,263 @@ class ExpenseController extends Controller
             if (!$user) {
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
-            $now = Carbon::now();
 
-            /** ============================
-             * TOTAL BULAN INI
-             * ============================ */
-            $incomeThisMonth = InvoiceHomepass::whereNotNull('paid_at')
+            $month = $request->query('month', date('m'));
+            $year  = $request->query('year', date('Y'));
+
+            $currentRequestDate = Carbon::createFromDate($year, $month, 1);
+            $lastMonthDate = $currentRequestDate->copy()->subMonth();
+
+
+            // 1. Pemasukan (Dari Invoice Pelanggan)
+            $incomeThisMonth = Invoice::whereNotNull('paid_at')
                 ->where('group_id', $user->group_id)
                 ->where('status', 'paid')
-                ->whereMonth('paid_at', $now->month)
-                ->whereYear('paid_at', $now->year)
+                ->whereMonth('paid_at', $month)
+                ->whereYear('paid_at', $year)
                 ->sum('amount');
 
-
-            $expenseThisMonth = Expense::whereMonth('expense_date', $now->month)
+            // 2. Pengeluaran (Ubah jadi CashFlow)
+            $expenseThisMonth = CashFlow::expense()
                 ->where('group_id', $user->group_id)
-                ->whereYear('expense_date', $now->year)
+                ->whereMonth('transaction_date', $month)
+                ->whereYear('transaction_date', $year)
+                ->sum('amount');
+
+            // 3. Net Cashflow
+            $netCashflowThisMonth = $incomeThisMonth - $expenseThisMonth;
+
+            // 4. Piutang (Invoice Pelanggan Bulan Ini Belum Dibayar)
+            $piutangThisMonth = Invoice::where('group_id', $user->group_id)
+                ->whereIn('status', ['unpaid'])
+
+                ->whereMonth('start_date', $month) // Menggunakan bulan yang di-request
+                ->whereYear('start_date', $year)
+                ->sum('amount');
+
+            // 5. Hutang (Invoice tipe 'H' Bulan Lalu yang Overdue/Belum lunas)
+            $hutangThisMonth = Invoice::where('group_id', $user->group_id)
+                ->where('status', 'unpaid')
+                ->whereMonth('due_date', $lastMonthDate->month) // Acuan overdue biasanya dari due_date bulan lalu
+                ->whereYear('due_date', $lastMonthDate->year)
                 ->sum('amount');
 
             /** ============================
-             * RANGE: 1 BULAN KE BELAKANG + 10 BULAN KE DEPAN
+             * KAS ADMIN (BULAN INI)
              * ============================ */
-            $startDate = $now->copy()->subMonth()->startOfMonth();
-            $endDate   = $now->copy()->addMonths(10)->endOfMonth();
 
-            /** ============================
-             * PEMASUKAN (REAL DATA SAJA)
-             * ============================ */
-            $incomeData = InvoiceHomepass::select(
-                DB::raw("DATE_FORMAT(paid_at, '%Y-%m') as month"),
-                DB::raw("SUM(amount) as total")
-            )
-                ->where('group_id', $user->group_id)
+            // 1. Ambil semua ID user yang berstatus 'mitra'
+            $mitraUserIds = \App\Models\User::where('role', 'mitra')->pluck('id');
+
+            // 2. Pemasukan Admin (Dari Invoice yang dibayar ke Admin/Sistem)
+            $adminIncomeFromInvoice = Invoice::where('group_id', $user->group_id)
                 ->where('status', 'paid')
-                ->whereNotNull('paid_at')
-                ->whereBetween('paid_at', [$startDate, $endDate])
-                ->groupBy('month')
-                ->pluck('total', 'month');
+                ->whereMonth('paid_at', $month)
+                ->whereYear('paid_at', $year)
+                ->where(function ($query) use ($mitraUserIds) {
+                    // Pastikan invoice ini dieksekusi/diterima oleh role SELAIN mitra
+                    $query->whereNotIn('payer_id', $mitraUserIds)
+                        ->orWhereNull('payer_id');
+                })
+                ->sum('amount');
+
+            // 3. Pemasukan Admin (Dari uang Setoran Mitra)
+            $adminIncomeFromSetoran = CashFlow::where('group_id', $user->group_id)
+                ->where('source_type', CashFlow::SOURCE_SETOR_ADMIN)
+                ->whereMonth('transaction_date', $month)
+                ->whereYear('transaction_date', $year)
+                ->sum('amount');
 
             /** ============================
-             * PENGELUARAN (REAL DATA SAJA)
+             * CHART DATA (6 BULAN TERAKHIR)
              * ============================ */
-            $expenseData = Expense::select(
-                DB::raw("DATE_FORMAT(expense_date, '%Y-%m') as month"),
-                DB::raw("SUM(amount) as total")
-            )
-                ->where('group_id', $user->group_id)
-                ->whereBetween('expense_date', [$startDate, $endDate])
-                ->groupBy('month')
-                ->pluck('total', 'month');
+            $chartData = [];
+            $monthsIndo = [
+                1 => 'Jan',
+                2 => 'Feb',
+                3 => 'Mar',
+                4 => 'Apr',
+                5 => 'Mei',
+                6 => 'Jun',
+                7 => 'Jul',
+                8 => 'Agt',
+                9 => 'Sep',
+                10 => 'Okt',
+                11 => 'Nov',
+                12 => 'Des'
+            ];
 
-            /** ============================
-             * BUILD 12 BULAN (DEFAULT 0)
-             * ============================ */
-            $last12Months = [];
+            $currentDate = now()->startOfMonth();
 
-            for ($i = -1; $i <= 4; $i++) {
-                $monthKey = $now->copy()->addMonths($i)->format('Y-m');
+            for ($i = 5; $i >= 0; $i--) {
+                $targetDate = $currentDate->copy()->subMonths($i);
+                $targetMonth = $targetDate->month;
+                $targetYear = $targetDate->year;
 
-                $last12Months[] = [
-                    'month'   => $monthKey,
-                    'income'  => (int) ($incomeData[$monthKey] ?? 0),
-                    'expense' => (int) ($expenseData[$monthKey] ?? 0),
+                $inc = Invoice::whereNotNull('paid_at')
+                    ->where('group_id', $user->group_id)
+                    ->where('status', 'paid')
+                    ->whereMonth('paid_at', $targetMonth)
+                    ->whereYear('paid_at', $targetYear)
+                    ->sum('amount');
+
+                // Ubah jadi CashFlow
+                $exp = CashFlow::expense()
+                    ->where('group_id', $user->group_id)
+                    ->whereMonth('transaction_date', $targetMonth)
+                    ->whereYear('transaction_date', $targetYear)
+                    ->sum('amount');
+
+                $chartData[] = [
+                    'month'   => $monthsIndo[$targetMonth],
+                    'income'  => (int) $inc,
+                    'expense' => (int) $exp,
                 ];
             }
 
             /** ============================
-             * RESPONSE
+             * CHART KATEGORI PENGELUARAN (DONUT CHART)
              * ============================ */
+            // Ubah jadi CashFlow
+            $expenseByCategory = CashFlow::expense()
+                ->selectRaw('category, SUM(amount) as total')
+                ->where('group_id', $user->group_id)
+                ->whereMonth('transaction_date', $month)
+                ->whereYear('transaction_date', $year)
+                ->groupBy('category')
+                ->get();
+
+            $expenseChartLabels = $expenseByCategory->pluck('category')->map(function ($item) {
+                return ucwords($item);
+            });
+
+            $expenseChartSeries = $expenseByCategory->pluck('total')->map(fn($val) => (int) $val);
+
             $data = [
-                'month_now' => [
-                    'income'  => (int) $incomeThisMonth,
-                    'expense' => (int) $expenseThisMonth,
-                    'balance' => (int) ($incomeThisMonth - $expenseThisMonth),
-                ],
-                'last_12_months' => $last12Months,
+                'month'        => (int) $month,
+                'year'         => (int) $year,
+                'income'       => (int) $incomeThisMonth,
+                'expense'      => (int) $expenseThisMonth,
+                'net_cashflow' => (int) $netCashflowThisMonth,
+                'piutang'      => (int) $piutangThisMonth,
+                'hutang'       => (int) $hutangThisMonth,
+                'kas_admin'    => (int) $adminIncomeFromInvoice - $adminIncomeFromSetoran,
+                'setor_admin'    => (int) $adminIncomeFromSetoran,
+                'chart_data'   => $chartData,
+                'expense_category_chart' => [
+                    'labels' => $expenseChartLabels,
+                    'series' => $expenseChartSeries,
+                ]
             ];
 
             return ResponseFormatter::success($data, 'Data ringkasan pembukuan berhasil diambil');
         } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 500);
+            return response()->json([
+                'meta' => [
+                    'code' => 500,
+                    'status' => 'error',
+                    'message' => $th->getMessage()
+                ],
+                'data' => null
+            ], 500);
         }
     }
 
-    public function setor(Request $request)
+    public function setorAdmin(Request $request)
     {
         try {
-
             $user = $this->getAuthUser();
 
-            if (!$user || $user->role !== 'mitra') {
-                return response()->json(['message' => 'Unauthorized'], 403);
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $request->validate([
-                'admin_id' => 'required|exists:users,id',
-                'amount' => 'required|numeric|min:1'
+            // Validasi data menggunakan Facade Validator
+            $validator = Validator::make($request->all(), [
+                'admin_id'         => 'required|exists:users,id',
+                'amount'           => 'required|numeric|min:1',
+                'note'             => 'nullable|string', // Frontend mengirim 'note'
+                'transaction_date' => 'nullable|date'
             ]);
 
-            $data =  AdminDeposit::create([
-                'group_id' => $user->group_id,
-                'admin_id' => $request->admin_id,
-                'created_by' => $user->id,
-                'amount' => $request->amount,
-                'note' => $request->note
+            // Jika validasi gagal, kembalikan error 422
+            if ($validator->fails()) {
+                return ResponseFormatter::error($validator->errors(), 'Validasi form gagal', 422);
+            }
+
+            // Buat (Insert) data baru ke database
+            $data = CashFlow::create([
+                'user_id'          => $user->id,          // Set ID user yang sedang login (kasir/mitra)
+                'group_id'         => $user->group_id,    // Set Group ID dari user tersebut
+                'admin_id'         => $request->admin_id, // Admin yang menerima setoran (dari form)
+                'amount'           => $request->amount,
+                'description'      => $request->note,     // Masukkan 'note' dari frontend ke 'description'
+                'transaction_date' => $request->transaction_date ?? now(),
+                'source_type'      => CashFlow::SOURCE_SETOR_ADMIN,
+                'category'         => 'Setor Admin',
             ]);
 
+            // Catat log aktivitas (opsional)
+            ActivityLogController::logUpdate(['action' => 'create', 'status' => 'success'], 'cash_flows');
 
-            return ResponseFormatter::success($data, 'Data setor berhasil dibuat');
+            return ResponseFormatter::success($data, 'Data setoran berhasil ditambahkan');
         } catch (\Throwable $th) {
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
-
 
     public function adminLedger(Request $request)
     {
         try {
             $user = $this->getAuthUser();
+
             if (!$user) {
                 return response()->json(['message' => 'Unauthorized'], 401);
             }
 
-            $now = Carbon::now();
+            $now = \Carbon\Carbon::now();
 
-            $admins = User::whereIn('role', ['mitra', 'kasir', 'teknisi', 'admin'])
+            // 1. Mengambil daftar petugas terkait dalam satu grup
+            $admins = User::whereIn('role', ['kasir', 'teknisi', 'admin'])
                 ->where('group_id', $user->group_id)
                 ->get();
 
+            // 2. Mapping data untuk menghitung performa masing-masing petugas
             $data = $admins->map(function ($admin) use ($now, $user) {
 
-                $invoiceQuery = InvoiceHomepass::where('payer_id', $admin->id)
+                // 3. Mengambil data Invoice yang diterima oleh petugas di bulan ini
+                $invoiceQuery = Invoice::where('payer_id', $admin->id)
                     ->where('group_id', $user->group_id)
-                    ->paidThisMonth($now);
+                    ->where('status', 'paid') // Sesuaikan 'status' dan 'paid' dengan DB kamu
+                    ->whereMonth('updated_at', $now->month)
+                    ->whereYear('updated_at', $now->year);
 
                 $totalReceived = (int) $invoiceQuery->sum('amount');
                 $invoiceCount  = $invoiceQuery->count();
 
-                $totalDeposited = (int) AdminDeposit::where('admin_id', $admin->id)
+                // 4. Menghitung Total Setoran dari tabel CashFlow di bulan ini
+                $totalDeposited = (int) CashFlow::income()
+                    ->where('source_type', CashFlow::SOURCE_SETOR_ADMIN)
+                    ->where('admin_id', $admin->id)
                     ->where('group_id', $user->group_id)
-                    ->thisMonth($now)
+                    ->whereMonth('transaction_date', $now->month)
+                    ->whereYear('transaction_date', $now->year)
                     ->sum('amount');
 
+                // 5. Return data hasil rekap per petugas
                 return [
                     'admin_id'        => $admin->id,
                     'admin_name'      => $admin->name,
                     'invoice_count'   => $invoiceCount,
-                    'total_received' => $totalReceived,
+                    'total_received'  => $totalReceived,
                     'total_deposited' => $totalDeposited,
-                    'remaining'      => max(0, $totalReceived - $totalDeposited),
+                    'remaining'       => max(0, $totalReceived - $totalDeposited), // Sisa kas di tangan
                 ];
             });
 
-            return ResponseFormatter::success($data, 'Data rekap berhasil di tampilkan');
+            return ResponseFormatter::success($data, 'Data rekap berhasil ditampilkan');
         } catch (\Throwable $th) {
+            // Ubah code dari 200 menjadi 500 karena ini adalah tangkapan error sistem
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }

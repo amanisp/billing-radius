@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ConnectionController;
+use App\Http\Controllers\Api\CustomerPortal;
 use App\Http\Controllers\Api\Dashboard;
 use App\Http\Controllers\Api\EosController;
 use App\Http\Controllers\Api\ExpenseController;
@@ -118,11 +119,13 @@ Route::middleware('auth:sanctum')->group(function () {
         // ==========End PPP-DHCP=========
 
         // Expense
-        Route::get('/expenses', [ExpenseController::class, 'index']);
-        Route::get('/expenses/summary', [ExpenseController::class, 'summary']);
-        Route::get('/expenses/payment-admin', [ExpenseController::class, 'adminLedger']);
-        Route::post('/expenses/setor', [ExpenseController::class, 'setor']);
-        Route::post('/expenses', [ExpenseController::class, 'store']);
+        Route::prefix('expenses')->group(function () {
+            Route::get('/', [ExpenseController::class, 'index']);
+            Route::get('/summary', [ExpenseController::class, 'summary']);
+            Route::get('/payment-admin', [ExpenseController::class, 'adminLedger']);
+            Route::post('/setor', [ExpenseController::class, 'setorAdmin']);
+            Route::post('/', [ExpenseController::class, 'store']);
+        });
 
 
         // ========== Payouts ==========
@@ -188,7 +191,28 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{type}/reset', [TemplatesController::class, 'reset']);
         });
 
+
+
+
+
+
         // Logs
         Route::get('/logs', [LogsController::class, 'index']);
+    });
+});
+
+
+// Portal
+Route::prefix('portal')->group(function () {
+    // 1. Rute Publik (Login)
+    Route::post('/auth/check', [CustomerPortal::class, 'checkIdentity']);
+    Route::post('/auth/setup-pin', [CustomerPortal::class, 'setupPin']);
+    Route::post('/auth/verify-pin', [CustomerPortal::class, 'verifyPin']);
+
+    // 2. Rute Private (Butuh Token)
+    Route::middleware('auth:sanctum')->group(function () {
+        // Cukup panggil begini, URL-nya otomatis jadi /api/portal/dashboard
+        Route::get('/dashboard', [CustomerPortal::class, 'index']);
+        Route::put('/payment-settings', [PaymentSettingsController::class, 'update']);
     });
 });
