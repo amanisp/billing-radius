@@ -11,6 +11,7 @@ use App\Models\GlobalSettings;
 use App\Models\Invoice;
 use App\Models\Member;
 use App\Models\User;
+use App\Services\ExpoNotificationService;
 use App\Services\InvoiceService;
 use App\Services\WhatsappCoreService;
 use Carbon\Carbon;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\Http;
 
 class InvoiceController extends Controller
 {
@@ -150,47 +152,68 @@ class InvoiceController extends Controller
             $lastYear = $lastMonthDate->year;
 
             /**
-             * base query
+             * -------------------------------------------------------------
+             * 1. Ambil Data Area Jika User adalah Teknisi atau Kasir
+             * -------------------------------------------------------------
              */
-            $query = Invoice::query()
-                ->where('group_id', $user->group_id);
-
-            /**
-             * filter area untuk teknisi/kasir
-             */
+            $areaIds = collect();
             if (in_array($user->role, ['teknisi', 'kasir'])) {
-
                 $areaIds = DB::table('technician_areas')
                     ->where('user_id', $user->id)
                     ->pluck('area_id');
 
+                // Jika teknisi/kasir tidak punya area, langsung return 0 semua
                 if ($areaIds->isEmpty()) {
                     return ResponseFormatter::success([
-                        'paid' => [
-                            'count'  => 0,
-                            'amount' => 0,
-                        ],
-                        'unpaid' => [
-                            'count'  => 0,
-                            'amount' => 0,
-                        ],
-                        'overdue' => [
-                            'count'  => 0,
-                            'amount' => 0,
-                        ],
+                        'paid' => ['count' => 0, 'amount' => 0],
+                        'unpaid' => ['count' => 0, 'amount' => 0],
+                        'overdue' => ['count' => 0, 'amount' => 0],
                         'revenue' => 0,
                     ], 'Tidak ada area yang ditugaskan');
                 }
-
-                $query->whereHas('connection', function ($q) use ($areaIds) {
-                    $q->whereIn('area_id', $areaIds);
-                });
             }
 
             /**
-             * PAID - Bulan Ini
+             * -------------------------------------------------------------
+             * 2. Buat Base Query Terpisah untuk Kelompok Data
+             * -------------------------------------------------------------
              */
-            $paidQuery = (clone $query)
+            $paidBaseQuery = Invoice::query()->where('group_id', $user->group_id);
+            $unpaidBaseQuery = Invoice::query()->where('group_id', $user->group_id);
+
+            /**
+             * -------------------------------------------------------------
+             * 3. Terapkan Filter Hak Akses
+             * -------------------------------------------------------------
+             */
+
+            // --- A. FILTER UNTUK METRIK PAID & REVENUE ---
+            // Jika role BUKAN admin atau mitra, maka hanya hitung yang payer_id nya sama dengan user yg login
+            if (!in_array($user->role, ['admin', 'mitra'])) {
+                $paidBaseQuery->where('payer_id', $user->id);
+            }
+
+            // --- B. FILTER UNTUK METRIK UNPAID & OVERDUE ---
+            if (in_array($user->role, ['teknisi', 'kasir'])) {
+                // Teknisi & Kasir: melihat tagihan belum dibayar berdasarkan Area tugasnya
+                $unpaidBaseQuery->whereHas('connection', function ($q) use ($areaIds) {
+                    $q->whereIn('area_id', $areaIds);
+                });
+            } elseif (!in_array($user->role, ['admin', 'mitra'])) {
+                // Role Lainnya (misal Pelanggan): hanya melihat tagihan belum dibayar miliknya sendiri
+                $unpaidBaseQuery->where('payer_id', $user->id);
+            } 
+            // NOTE: Jika role adalah 'admin' atau 'mitra', query tidak difilter (melihat global grup)
+
+
+            /**
+             * -------------------------------------------------------------
+             * 4. Eksekusi Perhitungan Metrik
+             * -------------------------------------------------------------
+             */
+
+            /** METRIK PAID - Bulan Ini (Menggunakan paidBaseQuery) */
+            $paidQuery = (clone $paidBaseQuery)
                 ->where('status', 'paid')
                 ->whereMonth('created_at', $currentMonth)
                 ->whereYear('created_at', $currentYear);
@@ -198,10 +221,8 @@ class InvoiceController extends Controller
             $paidCount = (clone $paidQuery)->count();
             $paidAmount = (clone $paidQuery)->sum('amount');
 
-            /**
-             * UNPAID - Bulan Ini
-             */
-            $unpaidQuery = (clone $query)
+            /** METRIK UNPAID - Bulan Ini (Menggunakan unpaidBaseQuery) */
+            $unpaidQuery = (clone $unpaidBaseQuery)
                 ->where('status', 'unpaid')
                 ->whereMonth('created_at', $currentMonth)
                 ->whereYear('created_at', $currentYear);
@@ -209,10 +230,8 @@ class InvoiceController extends Controller
             $unpaidCount = (clone $unpaidQuery)->count();
             $unpaidAmount = (clone $unpaidQuery)->sum('amount');
 
-            /**
-             * OVERDUE - Bulan Kemarin Saja
-             */
-            $overdueQuery = (clone $query)
+            /** METRIK OVERDUE - Bulan Kemarin Saja (Menggunakan unpaidBaseQuery) */
+            $overdueQuery = (clone $unpaidBaseQuery)
                 ->where('status', 'unpaid')
                 ->whereMonth('created_at', $lastMonth)
                 ->whereYear('created_at', $lastYear);
@@ -220,16 +239,19 @@ class InvoiceController extends Controller
             $overdueCount = (clone $overdueQuery)->count();
             $overdueAmount = (clone $overdueQuery)->sum('amount');
 
-            /**
-             * TOTAL REVENUE - Tagihan Bulan Ini Saja
-             */
-            $totalRevenue = Invoice::where('group_id', $user->group_id)
+            /** METRIK TOTAL REVENUE - Tagihan Bulan Ini Saja (Menggunakan paidBaseQuery) */
+            $totalRevenue = (clone $paidBaseQuery)
                 ->where('invoice_type', 'H')
                 ->where('status', 'paid')
                 ->whereMonth('created_at', $currentMonth)
                 ->whereYear('created_at', $currentYear)
                 ->sum('amount');
 
+            /**
+             * -------------------------------------------------------------
+             * 5. Response Output
+             * -------------------------------------------------------------
+             */
             $stats = [
                 'paid' => [
                     'count'  => $paidCount,
@@ -258,6 +280,7 @@ class InvoiceController extends Controller
             );
         }
     }
+
     public function index(Request $request)
     {
         try {
@@ -367,7 +390,6 @@ class InvoiceController extends Controller
             );
         }
     }
-
 
     public function invoicePaid(Request $request)
     {
@@ -523,7 +545,6 @@ class InvoiceController extends Controller
         }
     }
 
-
     public function bulkInv(Request $request)
     {
         try {
@@ -617,12 +638,11 @@ class InvoiceController extends Controller
         }
     }
 
-    public function manualPayment(Request $request)
+    public function manualPayment(Request $request, ExpoNotificationService $expoService) // Inject service di parameter
     {
         DB::beginTransaction();
 
         try {
-
             $user = $this->getAuthUser();
 
             if (!$user) {
@@ -636,7 +656,6 @@ class InvoiceController extends Controller
                 'payment_method' => 'required|in:bank_transfer,cash',
             ]);
 
-
             $invoice = Invoice::with([
                 'member',
                 'connection.profile'
@@ -646,7 +665,6 @@ class InvoiceController extends Controller
                 ->firstOrFail();
 
             if ($invoice->status === 'paid') {
-
                 return ResponseFormatter::error(
                     null,
                     'Invoice sudah dibayar',
@@ -662,11 +680,17 @@ class InvoiceController extends Controller
             ]);
 
             DB::commit();
+
             $member = $invoice->member;
+
+            // ==========================================
+            // 📲 1. WHATSAPP NOTIFICATION
+            // ==========================================
             try {
                 if (!empty($member->phone_number) && str_starts_with($member->phone_number, '62')) {
                     $deviceId = $this->whatsapp->ensureDeviceByGroup($member->group_id);
                     $message  = $this->whatsapp->buildMessage([
+                        // ... (kode WA kamu biarkan utuh seperti sebelumnya)
                         'template'  => 'payment_paid',
                         'group_id'  => $member->group_id,
                         'variables' => [
@@ -687,15 +711,26 @@ class InvoiceController extends Controller
                     ]);
                 }
             } catch (\Exception $e) {
-                // Jangan gagalkan payment kalau WhatsApp error
                 Log::error('Failed to send WhatsApp payment_paid', [
                     'invoice_id' => $invoice->id,
                     'error'      => $e->getMessage(),
                 ]);
             }
-            /**
-             * activity log
-             */
+
+            // ==========================================
+            // 🔔 2. EXPO PUSH NOTIFICATION (VIA SERVICE)
+            // ==========================================
+            // Panggil fungsi service, kirimkan parameter yang dibutuhkan
+            $expoService->sendPaymentSuccessNotification(
+                $user->group_id,
+                $invoice,
+                $member,
+                $validated['payment_method']
+            );
+
+            // ==========================================
+            // 📝 3. ACTIVITY LOG
+            // ==========================================
             ActivityLogController::logCreate([
                 'invoice_id' => $invoice->id,
                 'member_id'  => $invoice->member_id,
@@ -710,7 +745,6 @@ class InvoiceController extends Controller
                 'Pembayaran berhasil'
             );
         } catch (\Throwable $th) {
-
             DB::rollBack();
 
             ActivityLogController::logCreateF([

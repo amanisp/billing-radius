@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
@@ -310,61 +311,71 @@ class AuthController extends Controller
         }
     }
 
-    public function updateAccountToken(Request $request)
+    public function updateProfile(Request $request)
     {
-        try {
-            $request->validate([
-                'account_token' => 'required|string|min:10|max:255',  // Fonnte Account Token
-            ]);
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'phone_number' => 'required|string|max:20',
+        ]);
 
-            $user = Auth::user();
+        $user = $request->user();
 
-            GlobalSettings::updateOrCreate(
-                ['group_id' => $user->group_id],
-                ['whatsapp_api_key' => $request->account_token]  // Account Token
-            );
+        $user->update([
+            'name' => $request->name,
+            'phone_number' => $request->phone_number,
+        ]);
 
-            ActivityLogController::logCreate([
-                'action' => 'update_account_token',
-                'group_id' => $user->group_id,
-                'status' => 'success'
-            ], 'global_settings');
-
-            return ResponseFormatter::success([
-                'account_token_saved' => true,
-                'next_step' => 'Call GET /whatsapp/status to see devices'
-            ], 'Fonnte Account Token saved! Next: generate QR', 200);
-        } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
-        }
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Profil berhasil diperbarui.',
+            'items' => $user
+        ]);
     }
 
-    public function updateWhatsappToken(Request $request)
+    // Update Password
+    public function updatePassword(Request $request)
     {
-        try {
-            $request->validate([
-                'device_token' => 'required|string|min:10|max:255',  // Fonnte Account Token
+        $request->validate([
+            'current_password' => 'required',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        // Cek apakah password saat ini benar
+        if (!Hash::check($request->current_password, $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['Password saat ini tidak sesuai.'],
             ]);
-
-            $user = Auth::user();
-
-            Groups::updateOrCreate(
-                ['id' => $user->group_id],
-                ['wa_api_token' => $request->device_token]  // Account Token
-            );
-
-            ActivityLogController::logCreate([
-                'action' => 'update_account_token',
-                'group_id' => $user->group_id,
-                'status' => 'success'
-            ], 'global_settings');
-
-            return ResponseFormatter::success([
-                'device_token_saved' => true,
-                'next_step' => 'Call GET /whatsapp/status to see devices'
-            ], 'Fonnte Account Token saved! Next: generate QR', 200);
-        } catch (\Throwable $th) {
-            return ResponseFormatter::error(null, $th->getMessage(), 200);
         }
+
+        // Update ke password baru
+        $user->update([
+            'password' => Hash::make($request->password),
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Password berhasil diperbarui.'
+        ]);
+    }
+
+    public function savePushToken(Request $request)
+    {
+        $request->validate([
+            'expo_push_token' => 'required|string',
+        ]);
+
+        $user = $request->user();
+
+        // Update ke token expo yang baru
+        $user->update([
+            'expo_push_token' => $request->expo_push_token,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Push token berhasil disimpan.'
+        ]);
     }
 }

@@ -35,6 +35,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', [AuthController::class, 'me']);
         Route::put('/me/account-token', [AuthController::class, 'updateAccountToken']);
         Route::put('/me/whatsapp-token', [AuthController::class, 'updateWhatsappToken']);
+        Route::put('/profile/update', [AuthController::class, 'updateProfile']);
+        Route::put('/profile/password', [AuthController::class, 'updatePassword']);
+        Route::post('/user/save-token', [AuthController::class, 'savePushToken']);
 
         // ======Engginer On SIte======
         Route::get('/engginer', [EosController::class, 'index']);
@@ -125,6 +128,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/payment-admin', [ExpenseController::class, 'adminLedger']);
             Route::post('/setor', [ExpenseController::class, 'setorAdmin']);
             Route::post('/', [ExpenseController::class, 'store']);
+            Route::delete('{id}', [ExpenseController::class, 'destroy']);
         });
 
 

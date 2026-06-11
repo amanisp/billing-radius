@@ -407,4 +407,21 @@ class ExpenseController extends Controller
             return ResponseFormatter::error(null, $th->getMessage(), 500);
         }
     }
+
+    public function destroy($id)
+    {
+        try {
+            $user = Auth::user();
+            if (!$user) {
+                return response()->json(['message' => 'Unauthorized'], 401);
+            }
+
+            $invoice = CashFlow::findOrFail($id);
+            $invoice->delete();
+
+            return ResponseFormatter::success(null, 'Pembukuan berhasil dihapus');
+        } catch (\Throwable $th) {
+            return ResponseFormatter::error(null, $th->getMessage(), 500);
+        }
+    }
 }

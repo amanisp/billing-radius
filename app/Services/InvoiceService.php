@@ -30,6 +30,24 @@ class InvoiceService
             }
 
             /**
+             * =========================================
+             * KALKULASI HARGA DARI PAYMENT DETAIL
+             * =========================================
+             */
+            $baseAmount = (float) $paymentDetail->amount;
+            $discount   = (float) ($paymentDetail->discount ?? 0);
+            $ppn        = (float) ($paymentDetail->ppn ?? 0);
+
+            /**
+             * Asumsi: PPN berbentuk nominal. 
+             * Jika PPN di database berbentuk persentase (misal 11 untuk 11%), 
+             * silakan ganti dengan:
+             * $ppnNominal = ($baseAmount - $discount) * ($ppn / 100);
+             * $finalAmount = $baseAmount - $discount + $ppnNominal;
+             */
+            $finalAmount = $baseAmount - $discount + $ppn;
+
+            /**
              * Global settings
              */
             $settings = GlobalSettings::where(
@@ -55,19 +73,11 @@ class InvoiceService
              * =========================================
              * START DATE
              * =========================================
-             *
-             * Jika start_month_year ada:
-             * gunakan bulan tsb + invoice_generate_days
-             *
-             * jika tidak ada:
-             * gunakan bulan sekarang + invoice_generate_days
              */
-
             $invoiceGenerateDay =
                 (int) ($settings->invoice_generate_days ?? 1);
 
             if (!empty($data['start_month_year'])) {
-
                 $currentStartDate = Carbon::createFromFormat(
                     'Y-m',
                     $data['start_month_year']
@@ -75,7 +85,6 @@ class InvoiceService
                     ->startOfMonth()
                     ->day($invoiceGenerateDay);
             } else {
-
                 $currentStartDate = now()
                     ->startOfMonth()
                     ->day($invoiceGenerateDay);
@@ -83,8 +92,6 @@ class InvoiceService
 
             /**
              * Handle overflow tanggal
-             * contoh:
-             * 31 februari
              */
             if ($currentStartDate->day !== $invoiceGenerateDay) {
                 $currentStartDate->endOfMonth();
@@ -114,23 +121,15 @@ class InvoiceService
                     'member_id',
                     $member->id
                 )
-                    ->whereYear(
-                        'start_date',
-                        $startDate->year
-                    )
-                    ->whereMonth(
-                        'start_date',
-                        $startDate->month
-                    )
+                    ->whereYear('start_date', $startDate->year)
+                    ->whereMonth('start_date', $startDate->month)
                     ->exists();
 
                 if ($exists) {
-
                     throw new \Exception(
                         "Invoice bulan {$startDate->translatedFormat('F Y')} sudah ada."
                     );
                 }
-
 
                 $dueDay = (int) ($settings->due_date_pascabayar ?? 10);
 
@@ -145,8 +144,6 @@ class InvoiceService
 
                 /**
                  * overflow
-                 * contoh:
-                 * due day 31 di februari
                  */
                 if ($dueDate->month !== $startDate->month) {
                     $dueDate = $startDate->copy()->endOfMonth();
@@ -160,19 +157,12 @@ class InvoiceService
                 $invoice = Invoice::create([
 
                     'member_id'           => $member->id,
-
                     'connection_id'       => $member->connection_id,
-
                     'payer_id'            => $member->user_id,
-
                     'invoice_type'        => 'H',
-
                     'start_date'          => $startDate->toDateString(),
-
                     'due_date'            => $dueDate->toDateString(),
-
                     'subscription_period' => 1,
-
                     'inv_number'          => InvoiceHelper::generateInvoiceNumber(
                         $member->group_id,
                         $areaId,
@@ -181,12 +171,17 @@ class InvoiceService
                         $startDate
                     ),
 
-                    'amount'              => $data['amount'],
+                    // Gunakan hasil kalkulasi dari payment detail
+                    'amount'              => $finalAmount,
+
+                    // Jika tabel invoices Anda juga menyimpan riwayat diskon & ppn,
+                    // uncomment bagian di bawah ini:
+                    // 'subtotal'            => $baseAmount,
+                    // 'discount'            => $discount,
+                    // 'ppn'                 => $ppn,
 
                     'status'              => 'unpaid',
-
                     'payment_url'         => 'default',
-
                     'group_id'            => $member->group_id,
                 ]);
 
