@@ -22,21 +22,29 @@ class WhatsappController extends Controller
 {
     private function humanDelay(int $index): int
     {
-        // 1 Batch = 5 pesan
-        $batchIndex = (int) floor($index / 5); // Menentukan ini masuk kelompok/batch ke berapa (0, 1, 2, dst)
-        $positionInBatch = $index % 5;         // Posisi pesan di dalam batch tersebut (0, 1, 2, 3, 4)
+        // 1. Ubah ukuran batch menjadi 3 pesan agar lebih aman (Low-Profile)
+        $batchSize = 3;
+        $batchIndex = (int) floor($index / $batchSize);
+        $positionInBatch = $index % $batchSize;
 
-        // Minimal jeda pesan 15 detik
-        $delayInBatch = $positionInBatch * 15;
+        // 2. Buat jeda antar pesan di dalam batch menjadi sangat ACAK
+        // Daripada pakai kelipatan pasti (15, 30, 45), kita set rentang waktu acak.
+        $delayInBatch = 0;
+        if ($positionInBatch === 1) {
+            // Pesan kedua di batch ini: jeda antara 15 sampai 22 detik dari awal batch
+            $delayInBatch = rand(15, 22);
+        } elseif ($positionInBatch === 2) {
+            // Pesan ketiga di batch ini: jeda antara 35 sampai 45 detik dari awal batch
+            $delayInBatch = rand(35, 45);
+        }
 
-        // Total durasi 1 batch (5 pesan * 15 detik = 60 detik) 
-        // + jeda antar batch 45 detik = 105 detik per siklus batch.
-        $batchDelay = $batchIndex * 105;
+        // 3. Jeda antar batch adalah 60 detik (1 Menit)
+        // Batch 0 mulai di 0s, Batch 1 mulai di 60s, Batch 2 di 120s, dst.
+        $batchDelay = $batchIndex * 60;
 
-        // Tambahkan sedikit angka acak (jitter) 1-3 detik agar tidak terlalu robotik
-        $jitter = rand(1, 3);
+        // 4. Perlebar nilai Jitter agar benar-benar menghancurkan pola matematika
+        $jitter = rand(2, 8);
 
-        // Total detik dari waktu "SEKARANG" job ini harus dieksekusi
         return $batchDelay + $delayInBatch + $jitter;
     }
 
