@@ -12,9 +12,41 @@ class GenieAcsService
 
     public function __construct()
     {
+        // Default mengambil dari .env
         $this->baseUrl = config('services.genieacs.url');
         $this->username = config('services.genieacs.username');
         $this->password = config('services.genieacs.password');
+    }
+
+
+
+    /**
+     * Menimpa konfigurasi default dengan konfigurasi Mandiri
+     * Ditambahkan parameter $port
+     */
+    public function setCustomConfig(?string $url, ?string $port, ?string $username, ?string $password)
+    {
+        if (!empty($url)) {
+            // Hapus slash di akhir URL jika user tidak sengaja mengetiknya
+            $cleanUrl = rtrim($url, '/');
+
+            // Gabungkan port jika datanya ada
+            if (!empty($port)) {
+                $cleanUrl .= ':' . $port;
+            }
+
+            $this->baseUrl = $cleanUrl;
+        }
+
+        if (!empty($username)) {
+            $this->username = $username;
+        }
+
+        if (!empty($password)) {
+            $this->password = $password;
+        }
+
+        return $this;
     }
 
     protected function client()
@@ -31,6 +63,11 @@ class GenieAcsService
                 'query' => json_encode(['_id' => $deviceId])
             ])
             ->json();
+    }
+
+    public function getAllDevices()
+    {
+        return $this->client()->get('/devices')->json();
     }
 
     /**
@@ -70,6 +107,21 @@ class GenieAcsService
             ->post("/devices/{$safeDeviceId}/tags/{$tag}")
             ->json();
     }
+
+    /**
+     * 5. Remove tag group_id dari device
+     */
+    public function removeGroupTag(string $deviceId, string $groupId)
+    {
+        $tag = $groupId;
+        $safeDeviceId = rawurlencode($deviceId);
+
+        // API GenieACS menggunakan HTTP DELETE ke endpoint tags
+        return $this->client()
+            ->delete("/devices/{$safeDeviceId}/tags/{$tag}")
+            ->json();
+    }
+
     /**
      * 4. Get device by group/tag
      */

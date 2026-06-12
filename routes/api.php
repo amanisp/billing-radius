@@ -154,6 +154,14 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/pppoe', [AcsController::class, 'searchPppoe']);
             Route::post('/sn', [AcsController::class, 'searchSn']);
             Route::post('/add-tag', [AcsController::class, 'addGroup']);
+
+            // ⚙️ Endpoint Baru: Pengaturan Mode & Config ACS
+            Route::get('/settings', [AcsController::class, 'getSettings']);
+            Route::post('/mode', [AcsController::class, 'updateMode']);
+            Route::post('/config', [AcsController::class, 'saveMandiriConfig']);
+
+            // 🗑️ Endpoint Baru: Hapus Monitoring (Remove Tag)
+            Route::post('/remove-tag', [AcsController::class, 'removeGroup']);
         });
 
 

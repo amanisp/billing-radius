@@ -20,6 +20,11 @@ class GlobalSettings extends Model
         'footer',
         'group_id',
         'whatsapp_api_key', // account token for WhatsApp API
+        'acs_mode',
+        'acs_url',
+        'acs_port',
+        'acs_username',
+        'acs_password'
     ];
 
     /**
