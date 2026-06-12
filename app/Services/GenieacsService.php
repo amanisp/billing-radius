@@ -52,6 +52,7 @@ class GenieAcsService
     protected function client()
     {
         return Http::baseUrl($this->baseUrl)
+            ->withoutVerifying() // Tambahkan baris ini untuk bypass SSL
             ->withBasicAuth($this->username, $this->password)
             ->acceptJson();
     }
