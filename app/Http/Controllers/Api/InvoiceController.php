@@ -710,7 +710,10 @@ class InvoiceController extends Controller
                         'message' => $message,
                     ]);
                 }
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
+                // UBAH \Exception menjadi \Throwable
+                // Ini akan mengurung SEMUA jenis error (termasuk 503 dari service WA).
+                // Karena error sudah "ditangkap" di sini, kode di bawahnya akan tetap dilanjutkan.
                 Log::error('Failed to send WhatsApp payment_paid', [
                     'invoice_id' => $invoice->id,
                     'error'      => $e->getMessage(),
@@ -721,12 +724,21 @@ class InvoiceController extends Controller
             // 🔔 2. EXPO PUSH NOTIFICATION (VIA SERVICE)
             // ==========================================
             // Panggil fungsi service, kirimkan parameter yang dibutuhkan
-            $expoService->sendPaymentSuccessNotification(
-                $user->group_id,
-                $invoice,
-                $member,
-                $validated['payment_method']
-            );
+            try {
+                $expoService->sendPaymentSuccessNotification(
+                    $user->group_id,
+                    $invoice,
+                    $member,
+                    $validated['payment_method']
+                );
+            } catch (\Throwable $e) {
+                // Bungkus juga dengan try-catch agar jika Expo yang error,
+                // Activity Log di bawahnya tetap tersimpan.
+                Log::error('Failed to send Expo notification', [
+                    'invoice_id' => $invoice->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
 
             // ==========================================
             // 📝 3. ACTIVITY LOG
